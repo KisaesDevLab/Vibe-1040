@@ -17,7 +17,7 @@ import logging
 import os
 from typing import Any
 
-import fitz  # PyMuPDF
+import pymupdf
 from bullmq import Worker
 
 from blobstore import BlobStore
@@ -42,7 +42,7 @@ store = BlobStore()
 
 def _process_pdf(bundle_id: str, source_file_id: str, data: bytes) -> list[dict[str, Any]]:
     pages: list[dict[str, Any]] = []
-    with fitz.open(stream=data, filetype="pdf") as doc:
+    with pymupdf.open(stream=data, filetype="pdf") as doc:
         for index, page in enumerate(doc, start=1):
             result = triage_text_layer(page)
             dpi = choose_dpi(

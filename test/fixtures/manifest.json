@@ -1,0 +1,544 @@
+{
+  "note": "All data is invented. Never replace these with client documents.",
+  "taxYear": 2025,
+  "bundles": [
+    {
+      "name": "smith-joint-2025",
+      "label": "Smith, Robert & Maria \u2014 2025",
+      "expectedTaxYear": 2025,
+      "expectedTaxpayers": [
+        {
+          "name": "ROBERT J SMITH",
+          "tinLast4": "6789",
+          "kind": "SSN"
+        },
+        {
+          "name": "MARIA L SMITH",
+          "tinLast4": "5544",
+          "kind": "ITIN"
+        }
+      ],
+      "documents": [
+        {
+          "file": "w2_robert_native.pdf",
+          "page": 1,
+          "formType": "W-2",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 8500000,
+            "box_2": 1142000,
+            "box_3": 9000000,
+            "box_4": 558000,
+            "box_5": 9000000,
+            "box_6": 130500,
+            "box_7": null,
+            "box_8": 0,
+            "box_10": null,
+            "box_11": null,
+            "box_13_retirement": true,
+            "employer_name": "ACME MANUFACTURING INC",
+            "employer_ein": "43-1122334",
+            "box_12a_code": "D",
+            "box_12a_amount": 500000,
+            "box_16": 9000000,
+            "box_17": 382500
+          },
+          "expectedSoftFailure": "w2_box1_vs_box3_box5"
+        },
+        {
+          "file": "w2_maria_native.pdf",
+          "page": 1,
+          "formType": "W-2",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 4200000,
+            "box_2": 402000,
+            "box_3": 4200000,
+            "box_4": 260400,
+            "box_5": 4200000,
+            "box_6": 60900,
+            "box_7": null,
+            "box_8": 0,
+            "box_10": null,
+            "box_11": null,
+            "box_13_retirement": true,
+            "employer_name": "OZARK REGIONAL HEALTH",
+            "employer_ein": "43-5566778",
+            "box_16": 4200000,
+            "box_17": 168000
+          }
+        },
+        {
+          "file": "1098_current.pdf",
+          "page": 1,
+          "formType": "1098",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 1284400,
+            "box_2": 24800000,
+            "box_4": null,
+            "box_5": null,
+            "box_6": null,
+            "recipient_name": "HERITAGE MORTGAGE CO"
+          }
+        },
+        {
+          "file": "1098_prior_year.pdf",
+          "page": 1,
+          "formType": "1098",
+          "taxYear": 2024,
+          "fields": {
+            "box_1": 1341900,
+            "box_2": 25600000,
+            "box_4": null,
+            "box_5": null,
+            "box_6": null,
+            "recipient_name": "HERITAGE MORTGAGE CO"
+          },
+          "expectedSoftFailure": "tax_year_matches_bundle",
+          "planted": "prior-year document in a 2025 bundle"
+        },
+        {
+          "file": "1099r_code_g.pdf",
+          "page": 1,
+          "formType": "1099-R",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 2500000,
+            "box_2a": null,
+            "box_2b_not_determined": true,
+            "box_3": null,
+            "box_4": null,
+            "box_5": null,
+            "box_7_code": "G",
+            "box_7_ira_sep_simple": false,
+            "payer_name": "VANGUARD FIDUCIARY TRUST"
+          },
+          "expectedSoftFailure": "r_taxable_not_determined",
+          "note": "Code G rollover with taxable amount not determined \u2014 Judgment Required (\u00a79)."
+        },
+        {
+          "file": "1095a_full_year.pdf",
+          "page": 1,
+          "formType": "1095-A",
+          "taxYear": 2025,
+          "fields": {
+            "annual_premium": 1130400,
+            "annual_slcsp": 1218000,
+            "annual_aptc": 744000,
+            "monthly_january_premium": 94200,
+            "monthly_january_slcsp": 101500,
+            "monthly_january_aptc": 62000,
+            "monthly_february_premium": 94200,
+            "monthly_february_slcsp": 101500,
+            "monthly_february_aptc": 62000,
+            "monthly_march_premium": 94200,
+            "monthly_march_slcsp": 101500,
+            "monthly_march_aptc": 62000,
+            "monthly_april_premium": 94200,
+            "monthly_april_slcsp": 101500,
+            "monthly_april_aptc": 62000,
+            "monthly_may_premium": 94200,
+            "monthly_may_slcsp": 101500,
+            "monthly_may_aptc": 62000,
+            "monthly_june_premium": 94200,
+            "monthly_june_slcsp": 101500,
+            "monthly_june_aptc": 62000,
+            "monthly_july_premium": 94200,
+            "monthly_july_slcsp": 101500,
+            "monthly_july_aptc": 62000,
+            "monthly_august_premium": 94200,
+            "monthly_august_slcsp": 101500,
+            "monthly_august_aptc": 62000,
+            "monthly_september_premium": 94200,
+            "monthly_september_slcsp": 101500,
+            "monthly_september_aptc": 62000,
+            "monthly_october_premium": 94200,
+            "monthly_october_slcsp": 101500,
+            "monthly_october_aptc": 62000,
+            "monthly_november_premium": 94200,
+            "monthly_november_slcsp": 101500,
+            "monthly_november_aptc": 62000,
+            "monthly_december_premium": 94200,
+            "monthly_december_slcsp": 101500,
+            "monthly_december_aptc": 62000
+          },
+          "expectedHardFailure": null
+        }
+      ]
+    },
+    {
+      "name": "brokerage-packages-2025",
+      "label": "Consolidated 1099 packages \u2014 three brokerages",
+      "expectedTaxYear": 2025,
+      "expectedTaxpayers": [
+        {
+          "name": "SMITH FAMILY TRUST",
+          "tinLast4": "6789",
+          "kind": "SSN"
+        }
+      ],
+      "documents": [
+        {
+          "file": "consolidated_brokerage_a.pdf",
+          "page": 1,
+          "formType": "1099-CONSOLIDATED",
+          "taxYear": 2025,
+          "isSummary": true,
+          "fields": {
+            "summary_interest": 124500,
+            "summary_ordinary_dividends": 318700,
+            "summary_qualified_dividends": 291400,
+            "summary_capital_gain_distributions": 44900,
+            "summary_proceeds": 4694500,
+            "summary_federal_withheld": 0,
+            "payer_name": "NORTHSHORE SECURITIES LLC"
+          }
+        },
+        {
+          "file": "consolidated_brokerage_a.pdf",
+          "page": 2,
+          "formType": "1099-INT",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 124500,
+            "box_2": null,
+            "box_3": null,
+            "box_4": null,
+            "box_5": null,
+            "box_8": null,
+            "corrected": false,
+            "payer_name": "NORTHSHORE SECURITIES LLC"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_a.pdf",
+          "page": 3,
+          "formType": "1099-DIV",
+          "taxYear": 2025,
+          "fields": {
+            "box_1a": 318700,
+            "box_1b": 291400,
+            "box_2a": 44900,
+            "box_2b": null,
+            "box_3": null,
+            "box_4": null,
+            "box_5": null,
+            "box_12": null,
+            "payer_name": "NORTHSHORE SECURITIES LLC"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_a.pdf",
+          "page": 4,
+          "formType": "1099-B",
+          "taxYear": 2025,
+          "fields": {
+            "section_code": "A",
+            "summary_total_proceeds": 2454500,
+            "summary_total_cost_basis": 2198000,
+            "box_5_noncovered": false,
+            "payer_name": "NORTHSHORE SECURITIES LLC"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_a.pdf",
+          "page": 5,
+          "formType": "1099-B",
+          "taxYear": 2025,
+          "fields": {
+            "section_code": "B",
+            "summary_total_proceeds": 2240000,
+            "summary_total_cost_basis": null,
+            "box_5_noncovered": true,
+            "payer_name": "NORTHSHORE SECURITIES LLC"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_a.pdf",
+          "page": 6,
+          "formType": null,
+          "taxYear": 2025,
+          "isSupplemental": true,
+          "fields": {}
+        },
+        {
+          "file": "consolidated_brokerage_b.pdf",
+          "page": 1,
+          "formType": "1099-CONSOLIDATED",
+          "taxYear": 2025,
+          "isSummary": true,
+          "fields": {
+            "summary_interest": 11400,
+            "summary_ordinary_dividends": 1204300,
+            "summary_qualified_dividends": 1102800,
+            "summary_capital_gain_distributions": 318600,
+            "summary_proceeds": 4410000,
+            "summary_federal_withheld": 0,
+            "payer_name": "MERIDIAN WEALTH PARTNERS"
+          },
+          "expectedHardFailure": "consolidated_subforms_tie_to_summary:interest"
+        },
+        {
+          "file": "consolidated_brokerage_b.pdf",
+          "page": 2,
+          "formType": "1099-INT",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 8900,
+            "box_2": null,
+            "box_3": null,
+            "box_4": null,
+            "box_5": null,
+            "box_8": null,
+            "corrected": false,
+            "payer_name": "MERIDIAN WEALTH PARTNERS"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_b.pdf",
+          "page": 3,
+          "formType": "1099-DIV",
+          "taxYear": 2025,
+          "fields": {
+            "box_1a": 1204300,
+            "box_1b": 1102800,
+            "box_2a": 318600,
+            "box_2b": null,
+            "box_3": null,
+            "box_4": null,
+            "box_5": null,
+            "box_12": null,
+            "payer_name": "MERIDIAN WEALTH PARTNERS"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_b.pdf",
+          "page": 4,
+          "formType": "1099-B",
+          "taxYear": 2025,
+          "fields": {
+            "section_code": "D",
+            "summary_total_proceeds": 4410000,
+            "summary_total_cost_basis": 2980000,
+            "box_5_noncovered": false,
+            "payer_name": "MERIDIAN WEALTH PARTNERS"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_b.pdf",
+          "page": 5,
+          "formType": null,
+          "taxYear": 2025,
+          "isSupplemental": true,
+          "fields": {}
+        },
+        {
+          "file": "consolidated_brokerage_c.pdf",
+          "page": 1,
+          "formType": "1099-CONSOLIDATED",
+          "taxYear": 2025,
+          "isSummary": true,
+          "fields": {
+            "summary_interest": 61200,
+            "summary_ordinary_dividends": 88400,
+            "summary_qualified_dividends": 74100,
+            "summary_capital_gain_distributions": 0,
+            "summary_proceeds": 1433000,
+            "summary_federal_withheld": 0,
+            "payer_name": "PIONEER TRUST BROKERAGE"
+          }
+        },
+        {
+          "file": "consolidated_brokerage_c.pdf",
+          "page": 2,
+          "formType": "1099-INT",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 61200,
+            "box_2": null,
+            "box_3": null,
+            "box_4": null,
+            "box_5": null,
+            "box_8": null,
+            "corrected": false,
+            "payer_name": "PIONEER TRUST BROKERAGE"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_c.pdf",
+          "page": 3,
+          "formType": "1099-DIV",
+          "taxYear": 2025,
+          "fields": {
+            "box_1a": 88400,
+            "box_1b": 74100,
+            "box_2a": 0,
+            "box_2b": null,
+            "box_3": null,
+            "box_4": null,
+            "box_5": null,
+            "box_12": null,
+            "payer_name": "PIONEER TRUST BROKERAGE"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_c.pdf",
+          "page": 4,
+          "formType": "1099-B",
+          "taxYear": 2025,
+          "fields": {
+            "section_code": "A",
+            "summary_total_proceeds": 318000,
+            "summary_total_cost_basis": 305500,
+            "box_5_noncovered": false,
+            "payer_name": "PIONEER TRUST BROKERAGE"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_c.pdf",
+          "page": 5,
+          "formType": "1099-B",
+          "taxYear": 2025,
+          "fields": {
+            "section_code": "E",
+            "summary_total_proceeds": 1115000,
+            "summary_total_cost_basis": null,
+            "box_5_noncovered": true,
+            "payer_name": "PIONEER TRUST BROKERAGE"
+          },
+          "parentPage": 1
+        },
+        {
+          "file": "consolidated_brokerage_c.pdf",
+          "page": 6,
+          "formType": null,
+          "taxYear": 2025,
+          "isSupplemental": true,
+          "fields": {}
+        }
+      ]
+    },
+    {
+      "name": "corrected-1099-2025",
+      "label": "CORRECTED 1099-INT",
+      "expectedTaxYear": 2025,
+      "expectedTaxpayers": [
+        {
+          "name": "ROBERT J SMITH",
+          "tinLast4": "6789",
+          "kind": "SSN"
+        }
+      ],
+      "documents": [
+        {
+          "file": "1099int_corrected.pdf",
+          "page": 1,
+          "formType": "1099-INT",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 76400,
+            "box_2": null,
+            "box_3": null,
+            "box_4": null,
+            "box_5": null,
+            "box_8": null,
+            "corrected": true,
+            "payer_name": "FIRST MONETT BANK"
+          },
+          "note": "CORRECTED box checked \u2014 must be flagged at classification, not extraction (P4)."
+        }
+      ]
+    },
+    {
+      "name": "k1-renderings-2025",
+      "label": "K-1 (1065) from three tax packages, each with a \u00a7199A statement",
+      "expectedTaxYear": 2025,
+      "expectedTaxpayers": [
+        {
+          "name": "ROBERT J SMITH",
+          "tinLast4": "6789",
+          "kind": "SSN"
+        }
+      ],
+      "documents": [
+        {
+          "file": "k1_1065_ultratax.pdf",
+          "page": 1,
+          "formType": "K-1-1065",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 4120000,
+            "box_5": 18400,
+            "footnote_pages_present": true,
+            "box_20_code_z_statement_present": true
+          },
+          "allJudgmentRequired": true,
+          "rendering": "UltraTax",
+          "pages": 2
+        },
+        {
+          "file": "k1_1065_cch.pdf",
+          "page": 1,
+          "formType": "K-1-1065",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": 890000,
+            "box_2": 210000,
+            "box_9": 55000,
+            "footnote_pages_present": true,
+            "box_20_code_z_statement_present": true
+          },
+          "allJudgmentRequired": true,
+          "rendering": "CCH",
+          "pages": 2
+        },
+        {
+          "file": "k1_1065_lacerte.pdf",
+          "page": 1,
+          "formType": "K-1-1065",
+          "taxYear": 2025,
+          "fields": {
+            "box_1": -240000,
+            "box_6": 12900,
+            "footnote_pages_present": true,
+            "box_20_code_z_statement_present": true
+          },
+          "allJudgmentRequired": true,
+          "rendering": "Lacerte",
+          "pages": 2
+        }
+      ]
+    }
+  ],
+  "degradedVariants": [
+    {
+      "file": "w2_robert_scanned.pdf",
+      "derivedFrom": "w2_robert_native.pdf",
+      "expectedRoute": "raster",
+      "why": "image-only PDF, no text layer"
+    },
+    {
+      "file": "w2_robert_phone.jpg",
+      "derivedFrom": "w2_robert_native.pdf",
+      "expectedRoute": "raster",
+      "why": "loose image"
+    },
+    {
+      "file": "w2_robert_native.pdf",
+      "derivedFrom": null,
+      "expectedRoute": "text_layer",
+      "why": "native digital PDF with an embedded text layer"
+    }
+  ]
+}

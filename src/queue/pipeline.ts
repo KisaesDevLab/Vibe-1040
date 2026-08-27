@@ -195,7 +195,32 @@ export async function extractDocument(
 
   const forms = await registry();
   const resolved = forms.resolve(doc.formType, doc.taxYear ?? 2025);
-  if (!resolved) return;
+
+  if (!resolved) {
+    /**
+     * No registered schema for this form type and year — which happens for a prior-year
+     * document sitting in the pile, exactly the case §7 says to catch.
+     *
+     * This must NOT be a silent skip. A document nobody read, in a bundle whose worksheet
+     * claims to summarize the bundle, is the single worst failure this tool can have. Raise
+     * a hard failure so the gate blocks until a human either registers the schema for that
+     * year or dispositions the document out.
+     */
+    await db.insert(checkResults).values({
+      bundleId,
+      documentId,
+      checkKey: 'no_registered_schema',
+      severity: 'hard',
+      outcome: 'fail',
+      message:
+        `No registered schema for ${doc.formType} tax year ${doc.taxYear ?? 'unknown'}. ` +
+        'This document was not extracted and contributes nothing to the worksheet. Register ' +
+        `data/form-schemas/ty${doc.taxYear ?? '????'}/ or disposition the document out.`,
+      detail: { formType: doc.formType, taxYear: doc.taxYear },
+    });
+    await db.update(documents).set({ status: 'needs_review' }).where(eq(documents.id, documentId));
+    return;
+  }
 
   const spanRows = await db
     .select({

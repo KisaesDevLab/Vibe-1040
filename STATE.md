@@ -220,25 +220,38 @@ The build is only as good as the fixture set. Track what exists.
 
 | Fixture | Have | Notes |
 |---|---|---|
-| Native digital W-2 | no | **blocks P2/P8 exit** |
-| Scanned W-2 | no | |
-| Phone-photo W-2 | no | |
-| Consolidated 1099, brokerage A | no | need at least three brokerages |
-| Consolidated 1099, brokerage B | no | |
-| Consolidated 1099, brokerage C | no | |
-| CORRECTED 1099 | no | |
-| 1099-R, code G rollover | no | |
-| 1095-A, full year | no | |
-| Joint bundle, two TINs | no | |
-| Bundle with planted prior-year document | no | |
-| K-1 1065 with §199A statement | no | P15 |
-| K-1 from three different tax packages | no | P15 |
+| Native digital W-2 | yes | `w2_robert_native.pdf`, `w2_maria_native.pdf` — blank box 7 vs printed `-0-` box 8 |
+| Scanned W-2 | yes | `w2_robert_scanned.pdf` — image-only, no text layer, skew + speckle |
+| Phone-photo W-2 | yes | `w2_robert_phone.jpg` — rotation, keystone, lighting gradient |
+| Consolidated 1099, brokerage A | yes | `consolidated_brokerage_a.pdf` — 6 pages, 2 1099-B sections |
+| Consolidated 1099, brokerage B | yes | `consolidated_brokerage_b.pdf` — **summary deliberately does not tie** |
+| Consolidated 1099, brokerage C | yes | `consolidated_brokerage_c.pdf` — different layout again |
+| CORRECTED 1099 | yes | `1099int_corrected.pdf` |
+| 1099-R, code G rollover | yes | `1099r_code_g.pdf` — taxable amount not determined |
+| 1095-A, full year | yes | `1095a_full_year.pdf` — 12 monthly rows footing to the annual row |
+| Joint bundle, two TINs | yes | SSN + **ITIN**, documents split 5/1 |
+| Bundle with planted prior-year document | yes | `1098_prior_year.pdf` — TY2024 in a TY2025 bundle |
+| K-1 1065 with §199A statement | yes | all three K-1 fixtures carry a box 20 code Z statement page |
+| K-1 from three different tax packages | yes | UltraTax / CCH / Lacerte renderings, visibly different layouts |
 
 All fixtures must be synthetic or fully de-identified. Do not use live client documents as
 test fixtures.
 
-**This table is the critical path.** The build is code-complete and every phase's logic is
-unit-tested, but no phase whose exit criterion reads "on a fixture set" can be closed until
-this inventory has entries. Generating synthetic W-2s, a multi-brokerage consolidated 1099,
-and a joint two-TIN bundle is the highest-value next task in the repo — higher than any
-remaining code.
+**Generated 2026-08-26** by `fixtures/generate.py` — 16 files, fully synthetic, deterministic.
+Ground truth for every field lives in `test/fixtures/manifest.json`, including which boxes
+are blank and which print a zero, so extraction tests can assert correctness rather than
+merely that something came back. Regenerate with:
+
+```bash
+python fixtures/generate.py test/fixtures
+```
+
+**P2's exit criterion is now met**: the sidecar's own triage code was run against all 31
+fixture pages and classified every one correctly — native PDFs to `text_layer`, the scanned
+PDF and the phone photo to `raster`. Encoded page sizes ran 90–184 KB, comfortably inside
+the ~800 KB budget (246 KB base64, 42x headroom against the router's 10 MiB limit). Note
+these synthetic pages are sparser than real scans, so expect real documents to be larger.
+
+**Still unproven:** classification, layout, and extraction accuracy against these fixtures,
+because that needs a live router. The fixtures are ready for that the moment one is
+available.

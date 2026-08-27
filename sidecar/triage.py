@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-import fitz  # PyMuPDF
+import pymupdf
 from PIL import Image
 
 Route = Literal["text_layer", "raster"]
@@ -36,7 +36,7 @@ class TriageResult:
     reason: str
 
 
-def triage_text_layer(page: fitz.Page, min_chars: int = 40) -> TriageResult:
+def triage_text_layer(page: pymupdf.Page, min_chars: int = 40) -> TriageResult:
     """Decide whether a page's embedded text is trustworthy.
 
     Conservative on purpose: anything doubtful goes down the raster path, because a bad
@@ -79,7 +79,7 @@ def choose_dpi(result: TriageResult, *, default: int, digital: int, degraded: in
 
 
 def rasterize(
-    page: fitz.Page,
+    page: pymupdf.Page,
     *,
     dpi: int,
     max_edge_px: int,
@@ -91,7 +91,7 @@ def rasterize(
     sending a 600 DPI page to a model that will downsample it anyway just inflates the
     request body for nothing (§3).
     """
-    pixmap = page.get_pixmap(dpi=dpi, colorspace=fitz.csGRAY, alpha=False)
+    pixmap = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY, alpha=False)
     image = Image.frombytes("L", (pixmap.width, pixmap.height), pixmap.samples)
 
     longest = max(image.width, image.height)
