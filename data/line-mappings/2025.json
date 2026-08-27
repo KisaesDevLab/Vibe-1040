@@ -276,6 +276,11 @@
       "ref": "INFO:payroll_taxes",
       "label": "Detail — Social Security and Medicare wages and withholding (no Form 1040 line). Check for excess Social Security withholding across multiple employers, which is a Schedule 3 credit the preparer must claim.",
       "sortOrder": 1905
+    },
+    {
+      "ref": "SCH1:18",
+      "label": "Schedule 1 line 18 — Penalty on early withdrawal of savings",
+      "sortOrder": 665
     }
   ],
   "mappings": [
@@ -389,6 +394,17 @@
       "lineRef": "INFO:state_withholding"
     },
     {
+      "formType": "1099-INT",
+      "fieldKey": "box_2",
+      "lineRef": "SCH1:18"
+    },
+    {
+      "formType": "1099-INT",
+      "fieldKey": "box_6",
+      "lineRef": "JUDGMENT",
+      "judgmentReason": "Foreign tax paid: the de minimis election (Schedule 3 line 1) versus Form 1116 is a preparer decision that depends on total foreign tax and income type."
+    },
+    {
       "formType": "1099-OID",
       "fieldKey": "box_1",
       "lineRef": "1040:2b",
@@ -413,6 +429,11 @@
       "formType": "1099-OID",
       "fieldKey": "box_4",
       "lineRef": "1040:25b"
+    },
+    {
+      "formType": "1099-OID",
+      "fieldKey": "box_3",
+      "lineRef": "SCH1:18"
     },
     {
       "formType": "1099-DIV",
@@ -449,6 +470,12 @@
       "formType": "1099-DIV",
       "fieldKey": "box_16",
       "lineRef": "INFO:state_withholding"
+    },
+    {
+      "formType": "1099-DIV",
+      "fieldKey": "box_7",
+      "lineRef": "JUDGMENT",
+      "judgmentReason": "Foreign tax paid: the de minimis election (Schedule 3 line 1) versus Form 1116 is a preparer decision that depends on total foreign tax and income type."
     },
     {
       "formType": "1099-B",

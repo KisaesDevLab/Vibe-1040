@@ -11,7 +11,7 @@ to the Resolved section.
 
 ## Blocking
 
-### Q11 — When does Router R5 region pinning land?
+### Q11 — When does Router region pinning (R6) land?
 **Gates:** P14. **Raised:** 2026-08-26.
 
 §11 requires the app to assert US-region pinning at startup and refuse to start otherwise.
@@ -26,6 +26,25 @@ enforcement is the only thing standing between this app and non-US inference.
 This is Router work, not app work. It must be scheduled in the Router repo and land before
 P14 exits. Until it does, P14's exit criterion ("app refuses to start against a Router
 reporting a non-US policy") cannot be met, because there is nothing to report.
+
+**Partial answer, 2026-08-26 — the ticket is written and filed.**
+`Vibe-AI-Router/docs/ticket-R6-region-pinning.md`, indexed in that repo's
+`docs/router-option-addendum.md` backlog (numbered R6; R5 was already taken by the
+preprocess-stage ticket). Proposed shape: `providers.region` declared by the operator,
+`policies.requiredRegionPrefix` asserted per task class, enforced in `modelViolation`
+alongside the existing `local_only` invariant — which means undeclared regions fail closed
+and `policy_blocked` is never substituted around. Plus `GET /v1/policy/regions`, the
+endpoint `src/router/client.ts` already probes. Estimated 3–4 days router-side, zero
+app-side, because the caller is written.
+
+It ships inert — every existing policy is unconstrained — so it can land any time without
+disturbing the other appliances.
+
+**Still open: when.** No decision is required, only scheduling. The forcing moment is not
+this app's deployment but the moment a firm admin widens the three `v1040_*` classes to
+`cloud_deidentified` in the router admin UI. Until then Vibe 1040 runs on local models and
+nothing egresses. That widening step should carry a checklist item requiring this to be in
+place first.
 
 **A:**
 

@@ -106,7 +106,7 @@ historical — read this table first.
 | Router R2 — provider capability matrix | P2 (config), P7, P8 | **already shipped** — `catalog/service.ts` capability keys incl. `vision`; `catalog/probe.ts` probes models live |
 | Router R3 — task classes registered | P7, P8 | **not Router work** — apps self-register; this app registers its own three (Q2) |
 | Router R4 — body-size limits raised | P7 | **not needed** — `ROUTER_MAX_BODY_BYTES` already defaults to 10 MiB vs ~800 KB/page budget |
-| Router R5 — US-region pinning + policy reporting | P14 | **does not exist** — no region concept anywhere in the Router. Real work, must be scheduled. See Q11 |
+| Router R6 — region pinning + policy reporting | P14 | **ticket filed 2026-08-26** — `Vibe-AI-Router/docs/ticket-R6-region-pinning.md`. Not built. Ships inert; 3–4 d router-side, 0 app-side. See Q11 |
 | Router image scrubbing (proposed preprocess stage) | — | proposed, pending operator decision D7. **Not a dependency** — exposure accepted, see decision log |
 | Firm-admin widening of the three classes to `cloud_deidentified` | P7 | not started — app cannot widen itself; must be part of provisioning |
 | Router OpenAPI spec published | P3 | **moot** — no spec exists; SDK is the contract (Q3) |
