@@ -39,6 +39,12 @@ at all. See External dependencies below and QUESTIONS.md Q11.
   `raster` at 300 DPI.
 - **Router-down parking proven end to end**: with no router reachable, classification parked
   1 job and the bundle went to `blocked` rather than failing (§3).
+- **Admin, notifications, and both new factors exercised against a live stack** (2026-08-26)
+  with a real SMTP catcher: settings validation refused a raster window outliving its source
+  documents and an email factor with delivery disabled; the SMTP password stored as
+  ciphertext; a test email arrived; a staff user on the email factor signed in with a mailed
+  code, was rejected on a wrong code, and could not replay a used one; a password reset
+  completed and revoked the prior session. Migration 0002 runs forward and back.
 
 **Verified against a live stack on 2026-08-26** (Postgres 17 + Redis 7 in Docker, app on
 the host):
@@ -218,6 +224,29 @@ Node's `--experimental-strip-types`, which `npm run dev`, `worker`, and the migr
 scripts all use, refuses them outright. They compile fine in the built image and fail in
 development, which is the worst possible split. Fields are declared and assigned
 explicitly instead. *Affects:* anyone adding a class.
+
+**2026-08-26 — Admin UI added; firm policy moved out of the environment.**
+Vibe 1040 had no settings screen, no user management, and no audit viewer — 28 env vars and
+a shell. For a GLBA-scoped app intended for licensing (§13) that was the weakest part of the
+build. Four tabs now: Settings, Users, Audit, Retention.
+
+The split is the decision worth recording. **Firm policy** (tolerance, retention, pass
+counts, rasterization, licensing, notification channels) moved to a `firm_settings` table —
+editable without shell access, audited on every change, effective without a restart, seeded
+from the matching env var so existing deployments do not change behaviour.
+**Infrastructure, key material, and the compliance guardrails stayed in `.env`** and render
+read-only with an explanation. `ROUTER_REQUIRE_US_REGION` is the control keeping taxpayer
+page images inside US inference; making it a toggle would make disabling the guarantee a
+click. A test asserts those keys can never appear in the editable set.
+
+**2026-08-26 — Email and SMS second factors, and password reset.**
+MFA remains mandatory and cannot be switched off — `auth.allowed_mfa_methods` controls only
+*which* factors staff may enrol, and its schema rejects an empty list. Codes are never
+stored, only an HMAC keyed by the session secret; single-use; attempt-limited; issuing a new
+one burns the old. SMS is offered but labelled the weakest option in the UI, because SIM
+swap is real. Completing a password reset revokes every existing session for that account.
+SMTP passwords and SMS auth tokens are sealed with the blob key before storage and are never
+returned to the UI.
 
 **2026-08-26 — Startup assertion is region-based, not sensitivity-based.**
 A local_only assertion was considered and rejected as inconsistent with the

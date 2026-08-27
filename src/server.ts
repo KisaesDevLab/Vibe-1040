@@ -15,6 +15,7 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import staticFiles from '@fastify/static';
 import Fastify from 'fastify';
+import { registerAdminRoutes } from './api/admin-routes.ts';
 import { registerRoutes } from './api/routes.ts';
 import { attachUser } from './api/middleware.ts';
 import { env } from './config/env.ts';
@@ -59,6 +60,7 @@ export async function buildServer() {
   });
 
   registerRoutes(app);
+  registerAdminRoutes(app);
 
   const uiDir = join(here, '..', 'ui', 'dist');
   await app.register(staticFiles, { root: uiDir, prefix: '/', wildcard: false });

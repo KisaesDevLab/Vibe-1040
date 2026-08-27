@@ -33,11 +33,10 @@ import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
 import { startExtraction } from '../queue/pipeline.ts';
 import { blockingFailures } from '../reconcile/gate.ts';
 import { isRouterReachable } from '../router/client.ts';
-import { retentionForecast } from '../retention/purge.ts';
 import { blobs } from '../storage/index.ts';
 import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts';
 import { WorksheetBlockedError } from '../reconcile/gate.ts';
-import { auditAccess, requireRole, requireUser } from './middleware.ts';
+import { auditAccess, requireUser } from './middleware.ts';
 
 export function registerRoutes(app: FastifyInstance): void {
   // ── health ─────────────────────────────────────────────────────────────────
@@ -68,10 +67,13 @@ export function registerRoutes(app: FastifyInstance): void {
     });
 
     // MFA is mandatory (§11). A user without an enrolled factor must enroll before the
-    // session becomes usable — there is no "skip for now".
+    // session becomes usable — there is no "skip for now". What varies is only WHICH
+    // factor: authenticator, emailed code, or texted code.
     return {
       mfaRequired: true,
-      enrolled: user.totpConfirmedAt !== null,
+      method: user.mfaMethod,
+      enrolled: user.totpConfirmedAt !== null || user.mfaEnrolledAt !== null,
+      needsTotpEnrolment: user.mfaMethod === 'totp' && user.totpConfirmedAt === null,
     };
   });
 
@@ -455,10 +457,4 @@ export function registerRoutes(app: FastifyInstance): void {
       .send(bytes);
   });
 
-  // ── admin ──────────────────────────────────────────────────────────────────
-  app.get('/api/admin/retention', async (req, reply) => {
-    const user = await requireRole(req, reply, ['admin', 'partner']);
-    if (!user) return;
-    return retentionForecast();
-  });
 }

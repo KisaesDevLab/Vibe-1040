@@ -29,7 +29,21 @@ export type AuditAction =
   | 'worksheet.download'
   | 'retention.purge'
   | 'admin.user_create'
-  | 'admin.user_disable';
+  | 'admin.user_update'
+  | 'admin.user_disable'
+  | 'admin.user_mfa_reset'
+  | 'admin.user_password_set'
+  | 'admin.setting_change'
+  | 'admin.test_email'
+  | 'admin.test_sms'
+  | 'admin.audit_view'
+  | 'admin.retention_run'
+  | 'auth.phone_verified'
+  | 'auth.password_reset_requested'
+  | 'auth.password_reset_failed'
+  | 'auth.password_reset_completed'
+  | 'auth.password_changed'
+  | 'auth.password_change_failed';
 
 export interface AuditEntry {
   action: AuditAction;

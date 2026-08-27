@@ -36,6 +36,41 @@ docker compose exec api npm run db:seed     # prints a generated admin password
 Then open `http://localhost:8240`, sign in, and complete MFA enrolment. MFA is mandatory —
 a session is not usable until the second factor is satisfied.
 
+## Administration
+
+**Admin → Settings** holds firm policy: reconciliation tolerance, retention windows,
+extraction pass counts, rasterization, licensing, and email/SMS delivery. Changes are
+audited and take effect without a restart.
+
+Infrastructure, key material, and the compliance guardrails stay in `.env` and are shown
+read-only. That is deliberate — the region assertion is what keeps taxpayer page images
+inside US inference, and making it a toggle would make disabling the guarantee a click.
+
+**Admin → Users** creates and disables staff, sets roles, chooses each person's second
+factor, and resets a lost authenticator. **Admin → Audit** reads the access log in-product,
+filterable by action and date. **Admin → Retention** shows what is due to purge and runs the
+job.
+
+### Second factors
+
+Three are supported, and MFA itself can never be turned off:
+
+| Factor | Strength | Needs |
+|---|---|---|
+| Authenticator (TOTP) | strongest | nothing |
+| Emailed code | moderate | SMTP configured |
+| Texted code | weakest — SIM swap and carrier interception are real | SMS configured, phone verified |
+
+Prefer TOTP where staff will accept it. Which factors staff may enrol is set under
+Admin → Settings → Authentication.
+
+### Password reset
+
+Staff use "Forgot your password?" on the sign-in screen. A six-digit code is sent over
+email (or SMS where email is unavailable and the number is verified). Completing a reset
+**revokes every existing session** for that account. The request endpoint is deliberately
+uniform — it reveals nothing about whether an address belongs to an account.
+
 > **`TIN_HASH_SALT` is not rotatable in place.** It is the salt for the client join key;
 > changing it orphans every taxpayer record already stored. Generate it once per
 > deployment and back it up with the rest of the secret store.

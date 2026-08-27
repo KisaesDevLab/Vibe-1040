@@ -88,3 +88,57 @@ export interface WorksheetLine {
     judgmentReason?: string;
   }[];
 }
+
+// ── admin ────────────────────────────────────────────────────────────────────
+
+export interface SettingRow {
+  key: string;
+  group: string;
+  label: string;
+  help: string;
+  input: 'text' | 'password' | 'number' | 'boolean' | 'select';
+  options?: readonly string[];
+  value: unknown;
+  secret: boolean;
+  isSet: boolean;
+}
+
+export interface EnvSetting {
+  key: string;
+  value: string;
+  why: string;
+}
+
+export interface UserRow {
+  id: string;
+  email: string;
+  displayName: string;
+  role: 'admin' | 'partner' | 'staff';
+  mfaMethod: 'totp' | 'email' | 'sms';
+  mfaEnrolled: boolean;
+  phone: string | null;
+  phoneVerified: boolean;
+  disabledAt: string | null;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface AuditRow {
+  id: string;
+  at: string;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  bundleId: string | null;
+  ip: string | null;
+  detail: Record<string, unknown>;
+  actorEmail: string | null;
+}
+
+export interface FactorState {
+  method: 'totp' | 'email' | 'sms';
+  usable: boolean;
+  why: string | null;
+  enrolled: boolean;
+  needsTotpEnrolment: boolean;
+}

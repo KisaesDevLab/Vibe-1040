@@ -1,4 +1,17 @@
-import type { Bundle, CheckRow, DocumentRow, FieldRow, PageRow, SpanRow, WorksheetLine } from './types';
+import type {
+  AuditRow,
+  Bundle,
+  CheckRow,
+  DocumentRow,
+  EnvSetting,
+  FactorState,
+  FieldRow,
+  PageRow,
+  SettingRow,
+  SpanRow,
+  UserRow,
+  WorksheetLine,
+} from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -17,15 +30,85 @@ export const api = {
   me: () => request<{ id: string; email: string; displayName: string; role: string }>('/api/me'),
 
   login: (email: string, password: string) =>
-    request<{ mfaRequired: boolean; enrolled: boolean }>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    }),
+    request<{ mfaRequired: boolean; method: 'totp' | 'email' | 'sms'; enrolled: boolean; needsTotpEnrolment: boolean }>(
+      '/api/auth/login',
+      { method: 'POST', body: JSON.stringify({ email, password }) },
+    ),
 
-  enrollMfa: () => request<{ secret: string; uri: string }>('/api/auth/mfa/enroll', { method: 'POST' }),
+  factor: () => request<FactorState>('/api/auth/factor'),
+
+  enrollMfa: () => request<{ secret: string; uri: string }>('/api/auth/totp/enroll', { method: 'POST' }),
 
   verifyMfa: (token: string) =>
-    request<{ ok: boolean }>('/api/auth/mfa/verify', { method: 'POST', body: JSON.stringify({ token }) }),
+    request<{ ok: boolean }>('/api/auth/totp/verify', { method: 'POST', body: JSON.stringify({ token }) }),
+
+  /** Email/SMS second factor. */
+  sendCode: () =>
+    request<{ ok: boolean; destination: string; channel: 'email' | 'sms' }>('/api/auth/mfa/send', { method: 'POST' }),
+
+  verifyCode: (code: string) =>
+    request<{ ok: boolean }>('/api/auth/mfa/verify-code', { method: 'POST', body: JSON.stringify({ code }) }),
+
+  forgotPassword: (email: string) =>
+    request<{ accepted: boolean; message: string }>('/api/auth/forgot', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (email: string, code: string, password: string) =>
+    request<{ ok: boolean }>('/api/auth/reset', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, password }),
+    }),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: boolean }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
+  // ── admin ──────────────────────────────────────────────────────────────────
+  adminSettings: () =>
+    request<{ settings: SettingRow[]; environment: EnvSetting[] }>('/api/admin/settings'),
+
+  updateSettings: (updates: { key: string; value: unknown }[]) =>
+    request<{ ok: boolean; settings: SettingRow[] }>('/api/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ updates }),
+    }),
+
+  testEmail: (to?: string) =>
+    request<{ ok: boolean }>('/api/admin/settings/test-email', {
+      method: 'POST',
+      body: JSON.stringify(to ? { to } : {}),
+    }),
+
+  testSms: (to: string) =>
+    request<{ ok: boolean }>('/api/admin/settings/test-sms', { method: 'POST', body: JSON.stringify({ to }) }),
+
+  adminUsers: () => request<UserRow[]>('/api/admin/users'),
+
+  createUser: (body: Record<string, string>) =>
+    request<{ id: string }>('/api/admin/users', { method: 'POST', body: JSON.stringify(body) }),
+
+  updateUser: (id: string, body: Record<string, unknown>) =>
+    request<{ ok: boolean }>(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  resetMfa: (id: string) =>
+    request<{ ok: boolean }>(`/api/admin/users/${id}/reset-mfa`, { method: 'POST' }),
+
+  auditLog: (q: { action?: string; from?: string; to?: string; limit: number; offset: number }) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v !== '' && v !== undefined) params.set(k, String(v));
+    return request<{ rows: AuditRow[]; total: number }>(`/api/admin/audit?${params}`);
+  },
+
+  auditActions: () => request<string[]>('/api/admin/audit/actions'),
+
+  retentionForecast: () => request<{ rastersDue: number; sourcesDue: number }>('/api/admin/retention'),
+
+  runRetention: () =>
+    request<Record<string, unknown>>('/api/admin/retention/run', { method: 'POST' }),
 
   logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
 

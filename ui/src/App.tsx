@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, formatCents } from './api';
 import { FieldEditor } from './components/FieldEditor';
 import { PageOverlay } from './components/PageOverlay';
-import type { Bundle, CheckRow, DocumentRow, FieldRow, PageRow, SpanRow, WorksheetLine } from './types';
+import { Admin } from './components/Admin';
+import type { Bundle, CheckRow, DocumentRow, FactorState, FieldRow, PageRow, SpanRow, WorksheetLine } from './types';
 
-type View = 'login' | 'mfa' | 'bundles' | 'review';
+type View = 'login' | 'mfa' | 'forgot' | 'bundles' | 'review' | 'admin';
 
 export default function App() {
   const [view, setView] = useState<View>('login');
@@ -28,6 +29,11 @@ export default function App() {
         <div className="spacer" />
         {me && (
           <>
+            {(me.role === 'admin' || me.role === 'partner') && (
+              <button onClick={() => setView(view === 'admin' ? 'bundles' : 'admin')}>
+                {view === 'admin' ? 'Bundles' : 'Admin'}
+              </button>
+            )}
             <span className="who">{me.displayName}</span>
             <button
               onClick={() => {
@@ -45,7 +51,10 @@ export default function App() {
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
-      {view === 'login' && <Login onNext={() => setView('mfa')} onError={setError} />}
+      {view === 'login' && (
+        <Login onNext={() => setView('mfa')} onForgot={() => setView('forgot')} onError={setError} />
+      )}
+      {view === 'forgot' && <Forgot onDone={() => setView('login')} onError={setError} />}
       {view === 'mfa' && (
         <Mfa
           onDone={() => {
@@ -59,61 +68,192 @@ export default function App() {
       )}
       {view === 'bundles' && <BundleList onOpen={() => setView('review')} onError={setError} />}
       {view === 'review' && <Review onBack={() => setView('bundles')} onError={setError} />}
+      {view === 'admin' && <Admin onError={setError} />}
     </div>
   );
 }
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 
-function Login({ onNext, onError }: { onNext: () => void; onError: (m: string) => void }) {
+function Login({
+  onNext,
+  onForgot,
+  onError,
+}: {
+  onNext: () => void;
+  onForgot: () => void;
+  onError: (m: string) => void;
+}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const go = () => api.login(email, password).then(onNext).catch((e: Error) => onError(e.message));
 
   return (
     <div className="centered card">
       <h1>Sign in</h1>
-      <p className="muted">Staff access only. A second factor is required.</p>
+      <p className="muted">Staff access only. A second factor is always required.</p>
       <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       <input
         placeholder="password"
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') void go(); }}
       />
-      <button
-        onClick={() => {
-          api.login(email, password).then(onNext).catch((e: Error) => onError(e.message));
-        }}
-      >
-        Continue
-      </button>
+      <button onClick={() => void go()}>Continue</button>
+      <button className="link" onClick={onForgot}>Forgot your password?</button>
     </div>
   );
 }
 
+/**
+ * Second factor. MFA is mandatory, so this screen has no skip — what varies is only which
+ * factor the user is enrolled on.
+ */
 function Mfa({ onDone, onError }: { onDone: () => void; onError: (m: string) => void }) {
-  const [token, setToken] = useState('');
+  const [factor, setFactor] = useState<FactorState | null>(null);
+  const [code, setCode] = useState('');
   const [enrollment, setEnrollment] = useState<{ secret: string; uri: string } | null>(null);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.factor().then(setFactor).catch((e: Error) => onError(e.message));
+  }, [onError]);
+
+  const send = useCallback(() => {
+    setBusy(true);
+    api
+      .sendCode()
+      .then((r) => setSentTo(r.destination))
+      .catch((e: Error) => onError(e.message))
+      .finally(() => setBusy(false));
+  }, [onError]);
+
+  // An emailed or texted factor needs a code in hand before anything can be typed.
+  useEffect(() => {
+    if (factor && factor.method !== 'totp' && factor.usable && sentTo === null) send();
+  }, [factor, sentTo, send]);
+
+  if (!factor) return <div className="centered card">Checking your second factor…</div>;
+
+  if (!factor.usable) {
+    return (
+      <div className="centered card">
+        <h1>Second factor unavailable</h1>
+        <p className="warn-note">{factor.why ?? 'Your second factor is not usable.'}</p>
+        <p className="muted">Ask a firm administrator to reset it under Admin → Users.</p>
+      </div>
+    );
+  }
+
+  const isTotp = factor.method === 'totp';
+  const submit = () => {
+    setBusy(true);
+    const call = isTotp ? api.verifyMfa(code) : api.verifyCode(code);
+    call.then(onDone).catch((e: Error) => onError(e.message)).finally(() => setBusy(false));
+  };
 
   return (
     <div className="centered card">
       <h1>Second factor</h1>
+
+      {isTotp && factor.needsTotpEnrolment && !enrollment && (
+        <>
+          <p className="muted">You need to enrol an authenticator before you can sign in.</p>
+          <button onClick={() => api.enrollMfa().then(setEnrollment).catch((e: Error) => onError(e.message))}>
+            Set up authenticator
+          </button>
+        </>
+      )}
+
       {enrollment && (
         <div className="enrollment">
-          <p className="muted">Add this secret to your authenticator, then enter the code.</p>
+          <p className="muted">Add this secret to your authenticator app, then enter the code it shows.</p>
           <code>{enrollment.secret}</code>
         </div>
       )}
-      <input placeholder="6-digit code" value={token} onChange={(e) => setToken(e.target.value)} />
-      <button onClick={() => api.verifyMfa(token).then(onDone).catch((e: Error) => onError(e.message))}>
-        Verify
-      </button>
-      <button
-        className="link"
-        onClick={() => api.enrollMfa().then(setEnrollment).catch((e: Error) => onError(e.message))}
-      >
-        Enrol a new authenticator
-      </button>
+
+      {isTotp && !factor.needsTotpEnrolment && (
+        <p className="muted">Enter the current code from your authenticator app.</p>
+      )}
+
+      {!isTotp && (
+        <p className="muted">
+          {sentTo ? <>We sent a code to <strong>{sentTo}</strong>. It expires shortly.</> : 'Sending a code…'}
+        </p>
+      )}
+
+      <input
+        placeholder="6-digit code"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && code) submit(); }}
+        autoFocus
+      />
+      <button disabled={busy || !code} onClick={submit}>Verify</button>
+
+      {!isTotp && (
+        <button className="link" disabled={busy} onClick={send}>Send another code</button>
+      )}
+    </div>
+  );
+}
+
+function Forgot({ onDone, onError }: { onDone: () => void; onError: (m: string) => void }) {
+  const [stage, setStage] = useState<'request' | 'reset'>('request');
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+
+  return (
+    <div className="centered card">
+      <h1>Reset your password</h1>
+
+      {stage === 'request' ? (
+        <>
+          <p className="muted">
+            Enter your work email. If it belongs to an account, we will send a reset code.
+          </p>
+          <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <button
+            disabled={!email}
+            onClick={() =>
+              api
+                .forgotPassword(email)
+                .then((r) => { setMessage(r.message); setStage('reset'); })
+                .catch((e: Error) => onError(e.message))
+            }
+          >
+            Send reset code
+          </button>
+        </>
+      ) : (
+        <>
+          {message && <p className="muted">{message}</p>}
+          <input placeholder="reset code" value={code} onChange={(e) => setCode(e.target.value)} />
+          <input
+            type="password"
+            placeholder="new password (12+ characters)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button
+            disabled={!code || password.length < 12}
+            onClick={() =>
+              api
+                .resetPassword(email, code, password)
+                .then(() => onDone())
+                .catch((e: Error) => onError(e.message))
+            }
+          >
+            Set new password
+          </button>
+        </>
+      )}
+
+      <button className="link" onClick={onDone}>Back to sign in</button>
     </div>
   );
 }

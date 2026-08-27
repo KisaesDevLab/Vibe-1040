@@ -80,6 +80,10 @@ export const dispositionKind = pgEnum('disposition_kind', [
 
 export const jobState = pgEnum('job_state', ['queued', 'running', 'parked', 'done', 'failed']);
 
+/** Second-factor delivery channels. TOTP is the strongest; email and SMS are conveniences. */
+export const mfaMethod = pgEnum('mfa_method', ['totp', 'email', 'sms']);
+export const otpPurpose = pgEnum('otp_purpose', ['mfa', 'password_reset', 'phone_verify']);
+
 // ── staff, auth, audit (P0) ──────────────────────────────────────────────────
 
 export const users = pgTable('users', {
@@ -91,6 +95,11 @@ export const users = pgTable('users', {
   /** GLBA Safeguards: MFA is required, not optional. Enforced at login (§11). */
   totpSecret: text('totp_secret'),
   totpConfirmedAt: timestamp('totp_confirmed_at', { withTimezone: true }),
+  phone: text('phone'),
+  phoneVerifiedAt: timestamp('phone_verified_at', { withTimezone: true }),
+  /** WHICH factor this user completes. Never whether one is required — it always is (§11). */
+  mfaMethod: mfaMethod('mfa_method').notNull().default('totp'),
+  mfaEnrolledAt: timestamp('mfa_enrolled_at', { withTimezone: true }),
   disabledAt: timestamp('disabled_at', { withTimezone: true }),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   ...timestamps,
@@ -546,4 +555,64 @@ export const purgeLog = pgTable(
     dryRun: boolean('dry_run').notNull().default(false),
   },
   (t) => [index('purge_log_at_idx').on(t.at), index('purge_log_bundle_idx').on(t.bundleId)],
+);
+
+// ── firm settings and notifications (0002) ───────────────────────────────────
+
+/**
+ * Firm-policy configuration, editable by an admin without shell access and audited on every
+ * change (§13: firm-specific configuration lives in config, not code).
+ *
+ * Secrets stored here — an SMTP password, an SMS auth token — are sealed with the same
+ * AES-256-GCM envelope as blob storage before they land in `value`. Infrastructure and key
+ * material stay in the environment and are deliberately NOT represented here.
+ */
+export const firmSettings = pgTable('firm_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  isSecret: boolean('is_secret').notNull().default(false),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * One-time codes. The code is never stored, only its hash — a database read must not let
+ * anyone complete a second factor or reset a password.
+ */
+export const otpChallenges = pgTable(
+  'otp_challenges',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    purpose: otpPurpose('purpose').notNull(),
+    codeHash: text('code_hash').notNull(),
+    /** Redacted for display: "j***@example.com", "***-***-1234". */
+    destination: text('destination').notNull(),
+    channel: mfaMethod('channel').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    ip: text('ip'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('otp_user_purpose_idx').on(t.userId, t.purpose), index('otp_expires_idx').on(t.expiresAt)],
+);
+
+/** Delivery attempts — a factor that silently fails to send looks like a user ignoring it. */
+export const notificationLog = pgTable(
+  'notification_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+    userId: uuid('user_id').references(() => users.id),
+    channel: mfaMethod('channel').notNull(),
+    purpose: otpPurpose('purpose').notNull(),
+    destination: text('destination').notNull(),
+    succeeded: boolean('succeeded').notNull(),
+    error: text('error'),
+  },
+  (t) => [index('notification_log_at_idx').on(t.at)],
 );
