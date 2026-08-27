@@ -1,0 +1,44 @@
+{
+  "formType": "1098-E",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Student Loan Interest Statement",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "borrower_tin",
+      "label": "Borrower's TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "lender_name",
+      "label": "Recipient's/Lender's name",
+      "type": "text"
+    },
+    {
+      "key": "borrower_name",
+      "label": "Borrower's name",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "Student loan interest received by lender",
+      "type": "money",
+      "box": "1"
+    },
+    {
+      "key": "box_2",
+      "label": "Box 1 does not include loan origination fees and/or capitalized interest",
+      "type": "bool",
+      "box": "2"
+    }
+  ]
+}

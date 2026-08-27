@@ -1,0 +1,128 @@
+{
+  "formType": "W-2G",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Certain Gambling Winnings",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "winner_tin",
+      "label": "Winner's taxpayer identification no.",
+      "type": "text",
+      "box": "9",
+      "sensitive": "tin"
+    },
+    {
+      "key": "payer_name",
+      "label": "Payer name",
+      "type": "text"
+    },
+    {
+      "key": "payer_tin",
+      "label": "Payer TIN",
+      "type": "text"
+    },
+    {
+      "key": "winner_name",
+      "label": "Winner's name",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "Reportable winnings",
+      "type": "money",
+      "box": "1"
+    },
+    {
+      "key": "box_2",
+      "label": "Date won",
+      "type": "date",
+      "box": "2"
+    },
+    {
+      "key": "box_3",
+      "label": "Type of wager",
+      "type": "text",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Federal income tax withheld",
+      "type": "money",
+      "box": "4"
+    },
+    {
+      "key": "box_5",
+      "label": "Transaction",
+      "type": "text",
+      "box": "5"
+    },
+    {
+      "key": "box_6",
+      "label": "Race",
+      "type": "text",
+      "box": "6"
+    },
+    {
+      "key": "box_7",
+      "label": "Winnings from identical wagers",
+      "type": "money",
+      "box": "7"
+    },
+    {
+      "key": "box_8",
+      "label": "Cashier",
+      "type": "text",
+      "box": "8"
+    },
+    {
+      "key": "box_10",
+      "label": "Window",
+      "type": "text",
+      "box": "10"
+    },
+    {
+      "key": "box_13_state_id",
+      "label": "State/Payer's state identification no.",
+      "type": "text",
+      "box": "13"
+    },
+    {
+      "key": "box_14",
+      "label": "State winnings",
+      "type": "money",
+      "box": "14"
+    },
+    {
+      "key": "box_15",
+      "label": "State income tax withheld",
+      "type": "money",
+      "box": "15"
+    },
+    {
+      "key": "box_16",
+      "label": "Local winnings",
+      "type": "money",
+      "box": "16"
+    },
+    {
+      "key": "box_17",
+      "label": "Local income tax withheld",
+      "type": "money",
+      "box": "17"
+    },
+    {
+      "key": "box_18",
+      "label": "Name of locality",
+      "type": "text",
+      "box": "18"
+    }
+  ]
+}

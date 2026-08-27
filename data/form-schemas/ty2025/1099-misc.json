@@ -1,0 +1,150 @@
+{
+  "formType": "1099-MISC",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Miscellaneous Information",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "recipient_tin",
+      "label": "Recipient TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "payer_name",
+      "label": "Payer name",
+      "type": "text"
+    },
+    {
+      "key": "payer_tin",
+      "label": "Payer TIN",
+      "type": "text"
+    },
+    {
+      "key": "recipient_name",
+      "label": "Recipient name",
+      "type": "text"
+    },
+    {
+      "key": "account_number",
+      "label": "Account number",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "Rents",
+      "type": "money",
+      "box": "1"
+    },
+    {
+      "key": "box_2",
+      "label": "Royalties",
+      "type": "money",
+      "box": "2"
+    },
+    {
+      "key": "box_3",
+      "label": "Other income",
+      "type": "money",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Federal income tax withheld",
+      "type": "money",
+      "box": "4"
+    },
+    {
+      "key": "box_5",
+      "label": "Fishing boat proceeds",
+      "type": "money",
+      "box": "5"
+    },
+    {
+      "key": "box_6",
+      "label": "Medical and health care payments",
+      "type": "money",
+      "box": "6"
+    },
+    {
+      "key": "box_7",
+      "label": "Direct sales totaling $5,000 or more",
+      "type": "bool",
+      "box": "7"
+    },
+    {
+      "key": "box_8",
+      "label": "Substitute payments in lieu of dividends or interest",
+      "type": "money",
+      "box": "8"
+    },
+    {
+      "key": "box_9",
+      "label": "Crop insurance proceeds",
+      "type": "money",
+      "box": "9"
+    },
+    {
+      "key": "box_10",
+      "label": "Gross proceeds paid to an attorney",
+      "type": "money",
+      "box": "10"
+    },
+    {
+      "key": "box_11",
+      "label": "Fish purchased for resale",
+      "type": "money",
+      "box": "11"
+    },
+    {
+      "key": "box_12",
+      "label": "Section 409A deferrals",
+      "type": "money",
+      "box": "12"
+    },
+    {
+      "key": "box_13",
+      "label": "FATCA filing requirement",
+      "type": "bool",
+      "box": "13"
+    },
+    {
+      "key": "box_14",
+      "label": "Excess golden parachute payments",
+      "type": "money",
+      "box": "14"
+    },
+    {
+      "key": "box_15",
+      "label": "Nonqualified deferred compensation",
+      "type": "money",
+      "box": "15"
+    },
+    {
+      "key": "box_16",
+      "label": "State tax withheld",
+      "type": "money",
+      "box": "16"
+    },
+    {
+      "key": "box_17_state",
+      "label": "State/Payer's state no.",
+      "type": "text",
+      "box": "17"
+    },
+    {
+      "key": "box_18",
+      "label": "State income",
+      "type": "money",
+      "box": "18"
+    }
+  ]
+}

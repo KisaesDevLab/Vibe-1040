@@ -1,0 +1,72 @@
+{
+  "formType": "1099-SA",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Distributions From an HSA, Archer MSA, or Medicare Advantage MSA",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "recipient_tin",
+      "label": "Recipient TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "payer_name",
+      "label": "Payer name",
+      "type": "text"
+    },
+    {
+      "key": "payer_tin",
+      "label": "Payer TIN",
+      "type": "text"
+    },
+    {
+      "key": "recipient_name",
+      "label": "Recipient name",
+      "type": "text"
+    },
+    {
+      "key": "account_number",
+      "label": "Account number",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "Gross distribution",
+      "type": "money",
+      "box": "1"
+    },
+    {
+      "key": "box_2",
+      "label": "Earnings on excess contributions",
+      "type": "money",
+      "box": "2"
+    },
+    {
+      "key": "box_3",
+      "label": "Distribution code",
+      "type": "code",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "FMV on date of death",
+      "type": "money",
+      "box": "4"
+    },
+    {
+      "key": "box_5",
+      "label": "HSA / Archer MSA / MA MSA",
+      "type": "code",
+      "box": "5"
+    }
+  ]
+}

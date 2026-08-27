@@ -1,0 +1,39 @@
+{
+  "formType": "1099-B",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Proceeds From Broker and Barter Exchange Transactions",
+  "checks": ["b_section_subtotals_foot_to_summary"],
+  "fields": [
+    { "key": "recipient_tin", "label": "Recipient TIN", "type": "text", "sensitive": "tin" },
+    { "key": "payer_name", "label": "Payer name", "type": "text" },
+    { "key": "payer_tin", "label": "Payer TIN", "type": "text" },
+    { "key": "recipient_name", "label": "Recipient name", "type": "text" },
+    { "key": "account_number", "label": "Account number", "type": "text" },
+    { "key": "corrected", "label": "CORRECTED", "type": "bool" },
+
+    { "key": "section_code", "label": "Section (short/long, covered/noncovered)", "type": "code", "notes": "A/B/D/E as printed on the summary; drives Schedule D reporting." },
+    { "key": "box_1a_description", "label": "Description of property", "type": "text", "box": "1a", "repeating": true },
+    { "key": "box_1b_date_acquired", "label": "Date acquired", "type": "date", "box": "1b", "repeating": true },
+    { "key": "box_1c_date_sold", "label": "Date sold or disposed", "type": "date", "box": "1c", "repeating": true },
+    { "key": "box_1d_proceeds", "label": "Proceeds", "type": "money", "box": "1d", "repeating": true },
+    { "key": "box_1e_cost_basis", "label": "Cost or other basis", "type": "money", "box": "1e", "repeating": true, "judgmentRequired": true, "judgmentReason": "Missing or noncovered basis cannot be resolved from the form (§9)." },
+    { "key": "box_1f_accrued_market_discount", "label": "Accrued market discount", "type": "money", "box": "1f", "repeating": true },
+    { "key": "box_1g_wash_sale_loss", "label": "Wash sale loss disallowed", "type": "money", "box": "1g", "repeating": true, "judgmentRequired": true, "judgmentReason": "Wash sale adjustment requires preparer review (§9)." },
+    { "key": "box_2_type_of_gain", "label": "Short-term / long-term", "type": "code", "box": "2", "repeating": true },
+    { "key": "box_3_basis_reported", "label": "Basis reported to IRS", "type": "bool", "box": "3", "repeating": true },
+    { "key": "box_4", "label": "Federal income tax withheld", "type": "money", "box": "4" },
+    { "key": "box_5_noncovered", "label": "Noncovered security", "type": "bool", "box": "5", "repeating": true, "judgmentRequired": true, "judgmentReason": "Noncovered security: basis not reported to the IRS (§9)." },
+    { "key": "box_6_gross_or_net", "label": "Gross or net proceeds", "type": "code", "box": "6" },
+    { "key": "box_12_basis_reported_to_irs", "label": "Basis reported to IRS (summary)", "type": "bool", "box": "12" },
+
+    { "key": "summary_total_proceeds", "label": "Total proceeds (package summary)", "type": "money" },
+    { "key": "summary_total_cost_basis", "label": "Total cost basis (package summary)", "type": "money" },
+    { "key": "summary_total_wash_sale", "label": "Total wash sale disallowed (package summary)", "type": "money" },
+    { "key": "summary_total_gain_loss", "label": "Total gain/loss (package summary)", "type": "money" },
+
+    { "key": "box_14_state", "label": "State", "type": "text", "box": "14" },
+    { "key": "box_15_state_id", "label": "State identification no.", "type": "text", "box": "15" },
+    { "key": "box_16", "label": "State tax withheld", "type": "money", "box": "16" }
+  ]
+}

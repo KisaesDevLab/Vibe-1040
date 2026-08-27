@@ -1,0 +1,103 @@
+{
+  "formType": "1098",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Mortgage Interest Statement",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "payer_tin",
+      "label": "Payer's/Borrower's TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "recipient_name",
+      "label": "Recipient's/Lender's name",
+      "type": "text"
+    },
+    {
+      "key": "recipient_tin",
+      "label": "Recipient's/Lender's TIN",
+      "type": "text"
+    },
+    {
+      "key": "borrower_name",
+      "label": "Payer's/Borrower's name",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "Mortgage interest received from payer(s)/borrower(s)",
+      "type": "money",
+      "box": "1"
+    },
+    {
+      "key": "box_2",
+      "label": "Outstanding mortgage principal",
+      "type": "money",
+      "box": "2"
+    },
+    {
+      "key": "box_3",
+      "label": "Mortgage origination date",
+      "type": "date",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Refund of overpaid interest",
+      "type": "money",
+      "box": "4"
+    },
+    {
+      "key": "box_5",
+      "label": "Mortgage insurance premiums",
+      "type": "money",
+      "box": "5"
+    },
+    {
+      "key": "box_6",
+      "label": "Points paid on purchase of principal residence",
+      "type": "money",
+      "box": "6"
+    },
+    {
+      "key": "box_7",
+      "label": "Address of property securing mortgage is the same as payer/borrower address",
+      "type": "bool",
+      "box": "7"
+    },
+    {
+      "key": "box_8",
+      "label": "Address or description of property securing mortgage",
+      "type": "text",
+      "box": "8"
+    },
+    {
+      "key": "box_9",
+      "label": "Number of properties securing the mortgage",
+      "type": "count",
+      "box": "9"
+    },
+    {
+      "key": "box_10",
+      "label": "Other",
+      "type": "text",
+      "box": "10"
+    },
+    {
+      "key": "box_11",
+      "label": "Mortgage acquisition date",
+      "type": "date",
+      "box": "11"
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "formType": "1099-K",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Payment Card and Third Party Network Transactions",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [
+    "k_monthly_rows_foot_to_gross"
+  ],
+  "fields": [
+    {
+      "key": "recipient_tin",
+      "label": "Recipient TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "payer_name",
+      "label": "Payer name",
+      "type": "text"
+    },
+    {
+      "key": "payer_tin",
+      "label": "Payer TIN",
+      "type": "text"
+    },
+    {
+      "key": "recipient_name",
+      "label": "Recipient name",
+      "type": "text"
+    },
+    {
+      "key": "account_number",
+      "label": "Account number",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1a",
+      "label": "Gross amount of payment card/third party network transactions",
+      "type": "money",
+      "box": "1a",
+      "judgmentRequired": true,
+      "judgmentReason": "Business versus personal-item character is undetermined from the form (§9)."
+    },
+    {
+      "key": "box_1b",
+      "label": "Card not present transactions",
+      "type": "money",
+      "box": "1b"
+    },
+    {
+      "key": "box_2",
+      "label": "Merchant category code",
+      "type": "text",
+      "box": "2"
+    },
+    {
+      "key": "box_3",
+      "label": "Number of payment transactions",
+      "type": "count",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Federal income tax withheld",
+      "type": "money",
+      "box": "4"
+    },
+    {
+      "key": "box_5_january",
+      "label": "January",
+      "type": "money",
+      "box": "5a"
+    },
+    {
+      "key": "box_5_february",
+      "label": "February",
+      "type": "money",
+      "box": "5b"
+    },
+    {
+      "key": "box_5_march",
+      "label": "March",
+      "type": "money",
+      "box": "5c"
+    },
+    {
+      "key": "box_5_april",
+      "label": "April",
+      "type": "money",
+      "box": "5d"
+    },
+    {
+      "key": "box_5_may",
+      "label": "May",
+      "type": "money",
+      "box": "5e"
+    },
+    {
+      "key": "box_5_june",
+      "label": "June",
+      "type": "money",
+      "box": "5f"
+    },
+    {
+      "key": "box_5_july",
+      "label": "July",
+      "type": "money",
+      "box": "5g"
+    },
+    {
+      "key": "box_5_august",
+      "label": "August",
+      "type": "money",
+      "box": "5h"
+    },
+    {
+      "key": "box_5_september",
+      "label": "September",
+      "type": "money",
+      "box": "5i"
+    },
+    {
+      "key": "box_5_october",
+      "label": "October",
+      "type": "money",
+      "box": "5j"
+    },
+    {
+      "key": "box_5_november",
+      "label": "November",
+      "type": "money",
+      "box": "5k"
+    },
+    {
+      "key": "box_5_december",
+      "label": "December",
+      "type": "money",
+      "box": "5l"
+    },
+    {
+      "key": "box_6_state",
+      "label": "State",
+      "type": "text",
+      "box": "6"
+    },
+    {
+      "key": "box_7_state_id",
+      "label": "State identification no.",
+      "type": "text",
+      "box": "7"
+    },
+    {
+      "key": "box_8",
+      "label": "State tax withheld",
+      "type": "money",
+      "box": "8"
+    }
+  ]
+}

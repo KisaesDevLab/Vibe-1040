@@ -1,0 +1,86 @@
+{
+  "formType": "1099-LTC",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Long-Term Care and Accelerated Death Benefits",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "recipient_tin",
+      "label": "Recipient TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "payer_name",
+      "label": "Payer name",
+      "type": "text"
+    },
+    {
+      "key": "payer_tin",
+      "label": "Payer TIN",
+      "type": "text"
+    },
+    {
+      "key": "recipient_name",
+      "label": "Recipient name",
+      "type": "text"
+    },
+    {
+      "key": "account_number",
+      "label": "Account number",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "Gross long-term care benefits paid",
+      "type": "money",
+      "box": "1",
+      "judgmentRequired": true,
+      "judgmentReason": "Taxable portion depends on qualified LTC costs (§9)."
+    },
+    {
+      "key": "box_2",
+      "label": "Accelerated death benefits paid",
+      "type": "money",
+      "box": "2"
+    },
+    {
+      "key": "box_3_per_diem",
+      "label": "Per diem",
+      "type": "bool",
+      "box": "3"
+    },
+    {
+      "key": "box_3_reimbursed",
+      "label": "Reimbursed amount",
+      "type": "bool",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Qualified contract",
+      "type": "bool",
+      "box": "4"
+    },
+    {
+      "key": "box_5_chronically_ill",
+      "label": "Chronically ill",
+      "type": "bool",
+      "box": "5"
+    },
+    {
+      "key": "box_5_terminally_ill",
+      "label": "Terminally ill",
+      "type": "bool",
+      "box": "5"
+    }
+  ]
+}

@@ -8,13 +8,45 @@ do not infer progress from the commit log.
 
 ## Current position
 
-**Phase:** P0 — Scaffolding
-**Status:** not started — **unblocked, ready to begin**
-**Blocked by:** nothing. Q1 was answered 2026-08-26 (TypeScript primary + Python sidecar).
+**Phase:** P0–P15 — **all phases implemented 2026-08-26**
+**Status:** code complete; **integration-unverified** (see below)
+**Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
+lands (QUESTIONS.md Q11).
 
 Router integration was verified against Vibe-AI-Router **v0.0.24** on 2026-08-26. Four of
 the five assumed Router dependencies already exist; the region-pinning one does not exist
 at all. See External dependencies below and QUESTIONS.md Q11.
+
+### What "code complete" means here, precisely
+
+**Verified by execution on 2026-08-26:**
+
+- 61 tests pass across 7 files (`npm test`).
+- `tsc --noEmit` clean under `strict` + `exactOptionalPropertyTypes` +
+  `noUncheckedIndexedAccess`.
+- Production build emits `dist/server.js` and copies migration SQL.
+- UI builds (Vite, 32 modules).
+- Python sidecar compiles; `triage`/`blobstore` import.
+- **The AES-256-GCM blob envelope round-trips both directions between TypeScript and
+  Python** — the language boundary at the queue was tested for real, not assumed.
+- Provider-leakage CI check passes, and demonstrably fails when a provider hostname is
+  introduced (P3 exit criterion).
+- Both worksheet renderers produce artifacts whose totals reconcile to the same model.
+
+**NOT verified — no environment existed to verify it in:**
+
+- Nothing has run against a live Postgres, Redis, or Router. `docker compose up` has never
+  been executed. P0's exit criterion ("stack comes up clean on a fresh host") is therefore
+  **unmet**, as are the migration forward/back and MFA-login criteria.
+- No inference has ever been performed. Classification, layout, and field binding are
+  written against the SDK's contract but have never received a real model response.
+- **The fixture set is still empty.** Every phase whose exit criterion says "on a fixture
+  set" is unproven — P2 triage accuracy, P4 consolidated-package splitting, P8 blank-vs-zero
+  on a real W-2, P15 K-1 renderings. This is the largest gap and it is not closeable by
+  writing more code.
+
+Treat the build as a complete, self-consistent implementation awaiting its first contact
+with real documents.
 
 ---
 
@@ -22,22 +54,22 @@ at all. See External dependencies below and QUESTIONS.md Q11.
 
 | Phase | Name | Status | Notes |
 |---|---|---|---|
-| P0 | Scaffolding | not started | **unblocked** — Q1 answered 2026-08-26 |
-| P1 | Ingestion and storage | not started | |
-| P2 | Rasterization and text-layer triage | not started | |
-| P3 | Router SDK integration | not started | no codegen — depends on `@kisaes/vibe-ai-client` (Q3) |
-| P4 | Page classification and bundle splitting | not started | registers `v1040_page_classify` (Q2) |
-| P5 | Identity resolution | not started | |
-| P6 | Form schema registry | not started | |
-| P7 | Layout pass | not started | **no longer gated** — envelope + vision already shipped |
-| P8 | Field-binding extraction | not started | multi-pass is the only confidence signal (Q4) |
-| P9 | Arithmetic reconciliation gate | not started | |
-| P10 | 1040 line mapping engine | not started | |
-| P11 | Review UI | not started | |
-| P12 | Worksheet generation | not started | |
-| P13 | Retention and disposal | not started | |
-| P14 | Compliance hardening and packaging | not started | **gated on Router region pinning (Q11)** |
-| P15 | K-1 support | not started | severable |
+| P0 | Scaffolding | implemented | compose/migrations/auth/audit written; **not yet run on a host** |
+| P1 | Ingestion and storage | implemented | ingest + content-hash dedup + encrypted blob store (local & B2) |
+| P2 | Rasterization and text-layer triage | implemented | Python sidecar: PyMuPDF triage, grayscale JPEG raster; **needs fixtures** |
+| P3 | Router SDK integration | implemented | SDK client, error taxonomy, parking, leakage check verified |
+| P4 | Page classification and bundle splitting | implemented | v1040_page_classify + grouping + consolidated containers |
+| P5 | Identity resolution | implemented | salted HMAC TIN, ITIN-aware, human confirmation gate |
+| P6 | Form schema registry | implemented | **27 form schemas**; all fields nullable; validated at load |
+| P7 | Layout pass | implemented | spans normalized 0..1 on receipt, immutable, model recorded |
+| P8 | Field-binding extraction | implemented | multi-pass agreement (only signal per Q4); no-span forces review |
+| P9 | Arithmetic reconciliation gate | implemented | every §6 check; gate has one door and no bypass |
+| P10 | 1040 line mapping engine | implemented | TY2025 incl. Schedule 1-A → 13b; conditional 1099-R routing |
+| P11 | Review UI | implemented | bbox overlay; corrections layer over model output; dispositions |
+| P12 | Worksheet generation | implemented | XLSX + bookmarked PDF reconcile to one model; prior-year column stubbed |
+| P13 | Retention and disposal | implemented | rasters purge earlier than sources; every disposal logged |
+| P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
+| P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
 
 ---
 
@@ -118,6 +150,26 @@ Two consequences that must not be quietly dropped: the WISP amendment has to nam
 egress explicitly (Q12), and **region pinning becomes the only control keeping this
 inference in the US** — which does not exist yet (Q11). *Affects:* P7, P8, P14.
 
+**2026-08-26 — Build executed, P0–P15. Three bugs found by the tests, not by review.**
+Worth recording because each was a silent-wrong-answer class rather than a crash:
+1. **ITINs were rejected as implausible TINs.** SSN validation treats a 9xx area as
+   invalid, but that is exactly the ITIN range — a joint return with an ITIN-holding spouse
+   resolved to one taxpayer instead of two, with no error anywhere. `isPlausibleTin` now
+   knows the assigned ITIN group ranges.
+2. **A blank box stopped being a contributor.** The mapping engine skipped fields with no
+   value, so a line fed by three documents where one had an empty box reported two clean
+   contributors instead of three with a gap — the precise omission the tool exists to
+   surface (§5). Blanks now contribute as null to mapped lines.
+3. **The audit scrubber only knew dashed TINs.** `123 45 6789` would have been written to
+   the access log verbatim.
+*Affects:* P5, P10, and the §11 audit posture.
+
+**2026-08-26 — No TypeScript parameter properties anywhere in `src/`.**
+Node's `--experimental-strip-types`, which `npm run dev`, `worker`, and the migration
+scripts all use, refuses them outright. They compile fine in the built image and fail in
+development, which is the worst possible split. Fields are declared and assigned
+explicitly instead. *Affects:* anyone adding a class.
+
 **2026-08-26 — Startup assertion is region-based, not sensitivity-based.**
 A local_only assertion was considered and rejected as inconsistent with the
 `cloud_deidentified` tier — the app would refuse to start against its own registration.
@@ -147,7 +199,7 @@ The build is only as good as the fixture set. Track what exists.
 
 | Fixture | Have | Notes |
 |---|---|---|
-| Native digital W-2 | no | |
+| Native digital W-2 | no | **blocks P2/P8 exit** |
 | Scanned W-2 | no | |
 | Phone-photo W-2 | no | |
 | Consolidated 1099, brokerage A | no | need at least three brokerages |
@@ -163,3 +215,9 @@ The build is only as good as the fixture set. Track what exists.
 
 All fixtures must be synthetic or fully de-identified. Do not use live client documents as
 test fixtures.
+
+**This table is the critical path.** The build is code-complete and every phase's logic is
+unit-tested, but no phase whose exit criterion reads "on a fixture set" can be closed until
+this inventory has entries. Generating synthetic W-2s, a multi-brokerage consolidated 1099,
+and a joint two-TIN bundle is the highest-value next task in the repo — higher than any
+remaining code.

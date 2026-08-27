@@ -1,0 +1,272 @@
+{
+  "formType": "1095-A",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Health Insurance Marketplace Statement",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [
+    "a1095_monthly_rows_foot_to_annual"
+  ],
+  "fields": [
+    {
+      "key": "recipient_tin",
+      "label": "Recipient's SSN",
+      "type": "text",
+      "box": "4",
+      "sensitive": "tin"
+    },
+    {
+      "key": "recipient_name",
+      "label": "Recipient's name",
+      "type": "text",
+      "box": "3"
+    },
+    {
+      "key": "marketplace_id",
+      "label": "Marketplace-assigned policy number",
+      "type": "text",
+      "box": "2"
+    },
+    {
+      "key": "policy_issuer_name",
+      "label": "Policy issuer name",
+      "type": "text",
+      "box": "1"
+    },
+    {
+      "key": "monthly_january_premium",
+      "label": "January — monthly enrollment premium",
+      "type": "money",
+      "box": "21A"
+    },
+    {
+      "key": "monthly_january_slcsp",
+      "label": "January — monthly SLCSP premium",
+      "type": "money",
+      "box": "21B"
+    },
+    {
+      "key": "monthly_january_aptc",
+      "label": "January — monthly advance payment of PTC",
+      "type": "money",
+      "box": "21C"
+    },
+    {
+      "key": "monthly_february_premium",
+      "label": "February — monthly enrollment premium",
+      "type": "money",
+      "box": "22A"
+    },
+    {
+      "key": "monthly_february_slcsp",
+      "label": "February — monthly SLCSP premium",
+      "type": "money",
+      "box": "22B"
+    },
+    {
+      "key": "monthly_february_aptc",
+      "label": "February — monthly advance payment of PTC",
+      "type": "money",
+      "box": "22C"
+    },
+    {
+      "key": "monthly_march_premium",
+      "label": "March — monthly enrollment premium",
+      "type": "money",
+      "box": "23A"
+    },
+    {
+      "key": "monthly_march_slcsp",
+      "label": "March — monthly SLCSP premium",
+      "type": "money",
+      "box": "23B"
+    },
+    {
+      "key": "monthly_march_aptc",
+      "label": "March — monthly advance payment of PTC",
+      "type": "money",
+      "box": "23C"
+    },
+    {
+      "key": "monthly_april_premium",
+      "label": "April — monthly enrollment premium",
+      "type": "money",
+      "box": "24A"
+    },
+    {
+      "key": "monthly_april_slcsp",
+      "label": "April — monthly SLCSP premium",
+      "type": "money",
+      "box": "24B"
+    },
+    {
+      "key": "monthly_april_aptc",
+      "label": "April — monthly advance payment of PTC",
+      "type": "money",
+      "box": "24C"
+    },
+    {
+      "key": "monthly_may_premium",
+      "label": "May — monthly enrollment premium",
+      "type": "money",
+      "box": "25A"
+    },
+    {
+      "key": "monthly_may_slcsp",
+      "label": "May — monthly SLCSP premium",
+      "type": "money",
+      "box": "25B"
+    },
+    {
+      "key": "monthly_may_aptc",
+      "label": "May — monthly advance payment of PTC",
+      "type": "money",
+      "box": "25C"
+    },
+    {
+      "key": "monthly_june_premium",
+      "label": "June — monthly enrollment premium",
+      "type": "money",
+      "box": "26A"
+    },
+    {
+      "key": "monthly_june_slcsp",
+      "label": "June — monthly SLCSP premium",
+      "type": "money",
+      "box": "26B"
+    },
+    {
+      "key": "monthly_june_aptc",
+      "label": "June — monthly advance payment of PTC",
+      "type": "money",
+      "box": "26C"
+    },
+    {
+      "key": "monthly_july_premium",
+      "label": "July — monthly enrollment premium",
+      "type": "money",
+      "box": "27A"
+    },
+    {
+      "key": "monthly_july_slcsp",
+      "label": "July — monthly SLCSP premium",
+      "type": "money",
+      "box": "27B"
+    },
+    {
+      "key": "monthly_july_aptc",
+      "label": "July — monthly advance payment of PTC",
+      "type": "money",
+      "box": "27C"
+    },
+    {
+      "key": "monthly_august_premium",
+      "label": "August — monthly enrollment premium",
+      "type": "money",
+      "box": "28A"
+    },
+    {
+      "key": "monthly_august_slcsp",
+      "label": "August — monthly SLCSP premium",
+      "type": "money",
+      "box": "28B"
+    },
+    {
+      "key": "monthly_august_aptc",
+      "label": "August — monthly advance payment of PTC",
+      "type": "money",
+      "box": "28C"
+    },
+    {
+      "key": "monthly_september_premium",
+      "label": "September — monthly enrollment premium",
+      "type": "money",
+      "box": "29A"
+    },
+    {
+      "key": "monthly_september_slcsp",
+      "label": "September — monthly SLCSP premium",
+      "type": "money",
+      "box": "29B"
+    },
+    {
+      "key": "monthly_september_aptc",
+      "label": "September — monthly advance payment of PTC",
+      "type": "money",
+      "box": "29C"
+    },
+    {
+      "key": "monthly_october_premium",
+      "label": "October — monthly enrollment premium",
+      "type": "money",
+      "box": "30A"
+    },
+    {
+      "key": "monthly_october_slcsp",
+      "label": "October — monthly SLCSP premium",
+      "type": "money",
+      "box": "30B"
+    },
+    {
+      "key": "monthly_october_aptc",
+      "label": "October — monthly advance payment of PTC",
+      "type": "money",
+      "box": "30C"
+    },
+    {
+      "key": "monthly_november_premium",
+      "label": "November — monthly enrollment premium",
+      "type": "money",
+      "box": "31A"
+    },
+    {
+      "key": "monthly_november_slcsp",
+      "label": "November — monthly SLCSP premium",
+      "type": "money",
+      "box": "31B"
+    },
+    {
+      "key": "monthly_november_aptc",
+      "label": "November — monthly advance payment of PTC",
+      "type": "money",
+      "box": "31C"
+    },
+    {
+      "key": "monthly_december_premium",
+      "label": "December — monthly enrollment premium",
+      "type": "money",
+      "box": "32A"
+    },
+    {
+      "key": "monthly_december_slcsp",
+      "label": "December — monthly SLCSP premium",
+      "type": "money",
+      "box": "32B"
+    },
+    {
+      "key": "monthly_december_aptc",
+      "label": "December — monthly advance payment of PTC",
+      "type": "money",
+      "box": "32C"
+    },
+    {
+      "key": "annual_premium",
+      "label": "Annual totals — enrollment premium",
+      "type": "money",
+      "box": "33A"
+    },
+    {
+      "key": "annual_slcsp",
+      "label": "Annual totals — SLCSP premium",
+      "type": "money",
+      "box": "33B"
+    },
+    {
+      "key": "annual_aptc",
+      "label": "Annual totals — advance payment of PTC",
+      "type": "money",
+      "box": "33C"
+    }
+  ]
+}

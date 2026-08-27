@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      # §3 — this app reaches AI only through the router. The check runs before anything
+      # else because a provider hostname landing here is a compliance problem, not a bug.
+      - name: Provider-leakage check
+        run: node scripts/check-provider-leakage.mjs
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+        env:
+          # The SDK comes from the suite's private registry.
+          NODE_AUTH_TOKEN: ${{ secrets.KISAES_NPM_TOKEN }}
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - run: npm install --no-audit --no-fund
+        working-directory: ui
+      - run: npm run build
+        working-directory: ui
+
+  sidecar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+        working-directory: sidecar
+      - name: Import check
+        run: python -c "import triage, blobstore"
+        working-directory: sidecar
+        env:
+          STORAGE_ENCRYPTION_KEY: ${{ '' }}
+
+  publish:
+    needs: [build, ui, sidecar]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/kisaesdevlab/vibe-1040
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+      - uses: docker/metadata-action@v5
+        id: meta-sidecar
+        with:
+          images: ghcr.io/kisaesdevlab/vibe-1040-sidecar
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./sidecar
+          push: true
+          tags: ${{ steps.meta-sidecar.outputs.tags }}
+          labels: ${{ steps.meta-sidecar.outputs.labels }}

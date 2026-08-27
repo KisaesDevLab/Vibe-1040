@@ -1,0 +1,157 @@
+{
+  "taxYear": 2025,
+  "version": "2025.1",
+  "notes": [
+    "Adding TY2026 must be a data change only (PHASES.md P10 exit criterion).",
+    "Line 1z reports gross wages including tips and overtime exactly as printed on the W-2. The new TY2025 deductions are below-the-line on Schedule 1-A and this app does not compute them (CLAUDE.md §10).",
+    "A mapping that would require deciding a characterization question routes to JUDGMENT instead (CLAUDE.md §9, §11)."
+  ],
+  "lines": [
+    { "ref": "1040:1a", "label": "Form 1040 line 1a — Total amount from Form(s) W-2, box 1", "sortOrder": 100 },
+    { "ref": "1040:1b", "label": "Form 1040 line 1b — Household employee wages not on Form W-2", "sortOrder": 110 },
+    { "ref": "1040:1z", "label": "Form 1040 line 1z — Total wages (sum of 1a–1h)", "sortOrder": 190, "computed": ["1040:1a", "1040:1b"] },
+    { "ref": "1040:2a", "label": "Form 1040 line 2a — Tax-exempt interest", "sortOrder": 200 },
+    { "ref": "1040:2b", "label": "Form 1040 line 2b — Taxable interest", "sortOrder": 210 },
+    { "ref": "1040:3a", "label": "Form 1040 line 3a — Qualified dividends", "sortOrder": 220 },
+    { "ref": "1040:3b", "label": "Form 1040 line 3b — Ordinary dividends", "sortOrder": 230 },
+    { "ref": "1040:4a", "label": "Form 1040 line 4a — IRA distributions (gross)", "sortOrder": 240 },
+    { "ref": "1040:4b", "label": "Form 1040 line 4b — IRA distributions, taxable amount", "sortOrder": 250 },
+    { "ref": "1040:5a", "label": "Form 1040 line 5a — Pensions and annuities (gross)", "sortOrder": 260 },
+    { "ref": "1040:5b", "label": "Form 1040 line 5b — Pensions and annuities, taxable amount", "sortOrder": 270 },
+    { "ref": "1040:6a", "label": "Form 1040 line 6a — Social security benefits (gross)", "sortOrder": 280 },
+    { "ref": "1040:6b", "label": "Form 1040 line 6b — Social security benefits, taxable amount", "sortOrder": 290, "notComputed": true, "notComputedReason": "Taxable Social Security is a computation this app does not perform (§2, §9)." },
+    { "ref": "1040:7", "label": "Form 1040 line 7 — Capital gain or (loss)", "sortOrder": 300 },
+    { "ref": "1040:8", "label": "Form 1040 line 8 — Additional income from Schedule 1, line 10", "sortOrder": 310 },
+    { "ref": "1040:13b", "label": "Form 1040 line 13b — Total from Schedule 1-A", "sortOrder": 400, "computed": ["SCH1A:total"] },
+    { "ref": "1040:25a", "label": "Form 1040 line 25a — Federal income tax withheld from Form(s) W-2", "sortOrder": 500 },
+    { "ref": "1040:25b", "label": "Form 1040 line 25b — Federal income tax withheld from Form(s) 1099", "sortOrder": 510 },
+    { "ref": "1040:25c", "label": "Form 1040 line 25c — Federal income tax withheld from other forms", "sortOrder": 520 },
+
+    { "ref": "SCH1:1", "label": "Schedule 1 line 1 — Taxable refunds of state and local income taxes", "sortOrder": 600 },
+    { "ref": "SCH1:3", "label": "Schedule 1 line 3 — Business income or (loss) [Schedule C]", "sortOrder": 610 },
+    { "ref": "SCH1:5", "label": "Schedule 1 line 5 — Rental real estate, royalties, partnerships, S corporations, trusts [Schedule E]", "sortOrder": 620 },
+    { "ref": "SCH1:7", "label": "Schedule 1 line 7 — Unemployment compensation", "sortOrder": 630 },
+    { "ref": "SCH1:8b", "label": "Schedule 1 line 8b — Gambling income", "sortOrder": 640 },
+    { "ref": "SCH1:8f", "label": "Schedule 1 line 8f — Income from Form 8889 (HSA distributions)", "sortOrder": 650 },
+    { "ref": "SCH1:8z", "label": "Schedule 1 line 8z — Other income", "sortOrder": 660 },
+    { "ref": "SCH1:20", "label": "Schedule 1 line 20 — IRA deduction", "sortOrder": 670 },
+    { "ref": "SCH1:21", "label": "Schedule 1 line 21 — Student loan interest deduction", "sortOrder": 680 },
+
+    { "ref": "SCH1A:1", "label": "Schedule 1-A — Deduction for qualified tips", "sortOrder": 700, "notComputed": true, "notComputedReason": "The W-2 reports gross wages including tips; this app does not compute the deduction (§10)." },
+    { "ref": "SCH1A:2", "label": "Schedule 1-A — Deduction for qualified overtime", "sortOrder": 710, "notComputed": true, "notComputedReason": "The W-2 reports gross wages including overtime; this app does not compute the deduction (§10)." },
+    { "ref": "SCH1A:3", "label": "Schedule 1-A — Deduction for car loan interest", "sortOrder": 720, "notComputed": true, "notComputedReason": "No source document in scope reports this; preparer input required (§10)." },
+    { "ref": "SCH1A:4", "label": "Schedule 1-A — Enhanced deduction for seniors", "sortOrder": 730, "notComputed": true, "notComputedReason": "Depends on taxpayer age and AGI, which this app does not determine (§10)." },
+    { "ref": "SCH1A:total", "label": "Schedule 1-A — Total (to Form 1040, line 13b)", "sortOrder": 740, "computed": ["SCH1A:1", "SCH1A:2", "SCH1A:3", "SCH1A:4"] },
+
+    { "ref": "SCHA:5a", "label": "Schedule A line 5a — State and local income taxes (withholding as reported)", "sortOrder": 800 },
+    { "ref": "SCHA:8a", "label": "Schedule A line 8a — Home mortgage interest reported on Form 1098", "sortOrder": 810 },
+    { "ref": "SCHA:8c", "label": "Schedule A line 8c — Points reported on Form 1098", "sortOrder": 820 },
+    { "ref": "SCHA:8d", "label": "Schedule A line 8d — Mortgage insurance premiums", "sortOrder": 830 },
+
+    { "ref": "SCHB:1", "label": "Schedule B Part I — Interest (payer detail)", "sortOrder": 900 },
+    { "ref": "SCHB:5", "label": "Schedule B Part II — Ordinary dividends (payer detail)", "sortOrder": 910 },
+
+    { "ref": "SCHD:13", "label": "Schedule D line 13 — Capital gain distributions", "sortOrder": 1000 },
+    { "ref": "SCHD:PROCEEDS", "label": "Schedule D / Form 8949 — Gross proceeds reported on Form(s) 1099-B", "sortOrder": 1010 },
+
+    { "ref": "F2441:12", "label": "Form 2441 — Dependent care benefits from Form W-2, box 10", "sortOrder": 1100 },
+    { "ref": "F8889:14a", "label": "Form 8889 — HSA distributions from Form 1099-SA", "sortOrder": 1110 },
+    { "ref": "F8962:11", "label": "Form 8962 — Premium tax credit reconciliation from Form 1095-A", "sortOrder": 1120 },
+
+    { "ref": "INFO:state_withholding", "label": "Detail — state income tax withheld (no state section in v1)", "sortOrder": 1900 },
+    { "ref": "INFO:ira_fmv", "label": "Detail — IRA fair market value and contribution information", "sortOrder": 1910 },
+    { "ref": "INFO:section_199a", "label": "Detail — Section 199A dividends", "sortOrder": 1920 },
+
+    { "ref": "JUDGMENT", "label": "Judgment Required", "sortOrder": 9000, "judgment": true }
+  ],
+
+  "mappings": [
+    { "formType": "W-2", "fieldKey": "box_1", "lineRef": "1040:1a" },
+    { "formType": "W-2", "fieldKey": "box_2", "lineRef": "1040:25a" },
+    { "formType": "W-2", "fieldKey": "box_10", "lineRef": "F2441:12" },
+    { "formType": "W-2", "fieldKey": "box_17", "lineRef": "SCHA:5a" },
+    { "formType": "W-2", "fieldKey": "box_16", "lineRef": "INFO:state_withholding" },
+    { "formType": "W-2", "fieldKey": "box_7", "lineRef": "SCH1A:1", "informationalOnly": true, "note": "Social security tips as printed. Already inside box 1; shown here only to point the preparer at the Schedule 1-A tips deduction, which this app does not compute." },
+    { "formType": "W-2", "fieldKey": "box_8", "lineRef": "JUDGMENT", "judgmentReason": "Allocated tips are reported on Form 4137; whether they are includible requires preparer judgment." },
+    { "formType": "W-2", "fieldKey": "box_12a_amount", "lineRef": "JUDGMENT", "judgmentReason": "Box 12 treatment depends entirely on the code; the app does not characterize it." },
+    { "formType": "W-2", "fieldKey": "box_12b_amount", "lineRef": "JUDGMENT", "judgmentReason": "Box 12 treatment depends entirely on the code; the app does not characterize it." },
+    { "formType": "W-2", "fieldKey": "box_12c_amount", "lineRef": "JUDGMENT", "judgmentReason": "Box 12 treatment depends entirely on the code; the app does not characterize it." },
+    { "formType": "W-2", "fieldKey": "box_12d_amount", "lineRef": "JUDGMENT", "judgmentReason": "Box 12 treatment depends entirely on the code; the app does not characterize it." },
+
+    { "formType": "1099-INT", "fieldKey": "box_1", "lineRef": "1040:2b", "alsoDetail": "SCHB:1" },
+    { "formType": "1099-INT", "fieldKey": "box_3", "lineRef": "1040:2b", "alsoDetail": "SCHB:1" },
+    { "formType": "1099-INT", "fieldKey": "box_8", "lineRef": "1040:2a" },
+    { "formType": "1099-INT", "fieldKey": "box_4", "lineRef": "1040:25b" },
+    { "formType": "1099-INT", "fieldKey": "box_17", "lineRef": "INFO:state_withholding" },
+
+    { "formType": "1099-OID", "fieldKey": "box_1", "lineRef": "1040:2b", "alsoDetail": "SCHB:1" },
+    { "formType": "1099-OID", "fieldKey": "box_2", "lineRef": "1040:2b" },
+    { "formType": "1099-OID", "fieldKey": "box_8", "lineRef": "1040:2b" },
+    { "formType": "1099-OID", "fieldKey": "box_11", "lineRef": "1040:2a" },
+    { "formType": "1099-OID", "fieldKey": "box_4", "lineRef": "1040:25b" },
+
+    { "formType": "1099-DIV", "fieldKey": "box_1a", "lineRef": "1040:3b", "alsoDetail": "SCHB:5" },
+    { "formType": "1099-DIV", "fieldKey": "box_1b", "lineRef": "1040:3a" },
+    { "formType": "1099-DIV", "fieldKey": "box_2a", "lineRef": "SCHD:13" },
+    { "formType": "1099-DIV", "fieldKey": "box_12", "lineRef": "1040:2a" },
+    { "formType": "1099-DIV", "fieldKey": "box_4", "lineRef": "1040:25b" },
+    { "formType": "1099-DIV", "fieldKey": "box_5", "lineRef": "INFO:section_199a" },
+    { "formType": "1099-DIV", "fieldKey": "box_16", "lineRef": "INFO:state_withholding" },
+
+    { "formType": "1099-B", "fieldKey": "summary_total_proceeds", "lineRef": "SCHD:PROCEEDS" },
+    { "formType": "1099-B", "fieldKey": "box_1d_proceeds", "lineRef": "SCHD:PROCEEDS" },
+    { "formType": "1099-B", "fieldKey": "box_4", "lineRef": "1040:25b" },
+
+    { "formType": "1099-R", "fieldKey": "box_1", "lineRef": "1040:4a", "condition": { "fieldKey": "box_7_ira_sep_simple", "equals": true } },
+    { "formType": "1099-R", "fieldKey": "box_1", "lineRef": "1040:5a", "condition": { "fieldKey": "box_7_ira_sep_simple", "equals": false } },
+    { "formType": "1099-R", "fieldKey": "box_2a", "lineRef": "1040:4b", "condition": { "fieldKey": "box_7_ira_sep_simple", "equals": true } },
+    { "formType": "1099-R", "fieldKey": "box_2a", "lineRef": "1040:5b", "condition": { "fieldKey": "box_7_ira_sep_simple", "equals": false } },
+    { "formType": "1099-R", "fieldKey": "box_4", "lineRef": "1040:25b" },
+    { "formType": "1099-R", "fieldKey": "box_16", "lineRef": "INFO:state_withholding" },
+
+    { "formType": "1099-MISC", "fieldKey": "box_1", "lineRef": "SCH1:5" },
+    { "formType": "1099-MISC", "fieldKey": "box_2", "lineRef": "SCH1:5" },
+    { "formType": "1099-MISC", "fieldKey": "box_3", "lineRef": "SCH1:8z" },
+    { "formType": "1099-MISC", "fieldKey": "box_4", "lineRef": "1040:25b" },
+    { "formType": "1099-MISC", "fieldKey": "box_6", "lineRef": "SCH1:3" },
+    { "formType": "1099-MISC", "fieldKey": "box_10", "lineRef": "JUDGMENT", "judgmentReason": "Gross proceeds paid to an attorney are not necessarily income to the recipient." },
+    { "formType": "1099-MISC", "fieldKey": "box_16", "lineRef": "INFO:state_withholding" },
+
+    { "formType": "1099-NEC", "fieldKey": "box_1", "lineRef": "SCH1:3" },
+    { "formType": "1099-NEC", "fieldKey": "box_4", "lineRef": "1040:25b" },
+    { "formType": "1099-NEC", "fieldKey": "box_5", "lineRef": "INFO:state_withholding" },
+
+    { "formType": "1099-K", "fieldKey": "box_4", "lineRef": "1040:25b" },
+
+    { "formType": "1099-G", "fieldKey": "box_1", "lineRef": "SCH1:7" },
+    { "formType": "1099-G", "fieldKey": "box_4", "lineRef": "1040:25b" },
+    { "formType": "1099-G", "fieldKey": "box_6", "lineRef": "SCH1:8z" },
+    { "formType": "1099-G", "fieldKey": "box_11", "lineRef": "INFO:state_withholding" },
+
+    { "formType": "1099-SA", "fieldKey": "box_1", "lineRef": "F8889:14a" },
+
+    { "formType": "SSA-1099", "fieldKey": "box_5", "lineRef": "1040:6a" },
+    { "formType": "SSA-1099", "fieldKey": "box_6", "lineRef": "1040:25c" },
+    { "formType": "RRB-1099", "fieldKey": "box_4", "lineRef": "1040:6a" },
+    { "formType": "RRB-1099", "fieldKey": "box_10", "lineRef": "1040:25c" },
+
+    { "formType": "1098", "fieldKey": "box_1", "lineRef": "SCHA:8a" },
+    { "formType": "1098", "fieldKey": "box_5", "lineRef": "SCHA:8d" },
+    { "formType": "1098", "fieldKey": "box_6", "lineRef": "SCHA:8c" },
+    { "formType": "1098-E", "fieldKey": "box_1", "lineRef": "SCH1:21" },
+
+    { "formType": "1095-A", "fieldKey": "annual_aptc", "lineRef": "F8962:11" },
+    { "formType": "1095-A", "fieldKey": "annual_premium", "lineRef": "F8962:11" },
+    { "formType": "1095-A", "fieldKey": "annual_slcsp", "lineRef": "F8962:11" },
+
+    { "formType": "5498", "fieldKey": "box_5", "lineRef": "INFO:ira_fmv" },
+    { "formType": "5498", "fieldKey": "box_1", "lineRef": "JUDGMENT", "judgmentReason": "Deductibility of an IRA contribution depends on AGI and plan coverage, which this app does not determine." },
+    { "formType": "5498-SA", "fieldKey": "box_5", "lineRef": "INFO:ira_fmv" },
+
+    { "formType": "W-2G", "fieldKey": "box_1", "lineRef": "SCH1:8b" },
+    { "formType": "W-2G", "fieldKey": "box_4", "lineRef": "1040:25b" },
+    { "formType": "W-2G", "fieldKey": "box_15", "lineRef": "INFO:state_withholding" },
+
+    { "formType": "1099-CONSOLIDATED", "fieldKey": "summary_federal_withheld", "lineRef": "1040:25b", "informationalOnly": true, "note": "Package summary. The sub-form values are what roll up; this is shown for footing only." }
+  ]
+}

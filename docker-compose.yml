@@ -1,0 +1,90 @@
+services:
+  api:
+    image: ghcr.io/kisaesdevlab/vibe-1040:${VIBE_1040_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: [.env]
+    ports:
+      - "127.0.0.1:8240:8240"
+    volumes:
+      - blobs:/data/blobs
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8240/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [vibe1040, vibe-suite]
+
+  worker:
+    image: ghcr.io/kisaesdevlab/vibe-1040:${VIBE_1040_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["node", "dist/queue/worker.js"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: [.env]
+    volumes:
+      - blobs:/data/blobs
+    networks: [vibe1040, vibe-suite]
+
+  sidecar:
+    image: ghcr.io/kisaesdevlab/vibe-1040-sidecar:${VIBE_1040_VERSION:-latest}
+    build:
+      context: ./sidecar
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis: { condition: service_healthy }
+    env_file: [.env]
+    volumes:
+      - blobs:/data/blobs
+    networks: [vibe1040]
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vibe1040
+      POSTGRES_PASSWORD: vibe1040
+      POSTGRES_DB: vibe1040
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibe1040"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [vibe1040]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [vibe1040]
+
+volumes:
+  pgdata:
+  redisdata:
+  blobs:
+
+networks:
+  vibe1040:
+  # The router lives on the shared suite network. It is never reached via Caddy.
+  vibe-suite:
+    external: true

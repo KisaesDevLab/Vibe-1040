@@ -1,0 +1,80 @@
+{
+  "formType": "1099-Q",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Payments From Qualified Education Programs",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "recipient_tin",
+      "label": "Recipient TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "payer_name",
+      "label": "Payer name",
+      "type": "text"
+    },
+    {
+      "key": "payer_tin",
+      "label": "Payer TIN",
+      "type": "text"
+    },
+    {
+      "key": "recipient_name",
+      "label": "Recipient name",
+      "type": "text"
+    },
+    {
+      "key": "account_number",
+      "label": "Account number",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "Gross distribution",
+      "type": "money",
+      "box": "1"
+    },
+    {
+      "key": "box_2",
+      "label": "Earnings",
+      "type": "money",
+      "box": "2",
+      "judgmentRequired": true,
+      "judgmentReason": "Taxability depends on qualified education expenses not reported here (§9)."
+    },
+    {
+      "key": "box_3",
+      "label": "Basis",
+      "type": "money",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Trustee-to-trustee transfer",
+      "type": "bool",
+      "box": "4"
+    },
+    {
+      "key": "box_5",
+      "label": "Program type (private/state/Coverdell)",
+      "type": "code",
+      "box": "5"
+    },
+    {
+      "key": "box_6",
+      "label": "Recipient is not the designated beneficiary",
+      "type": "bool",
+      "box": "6"
+    }
+  ]
+}

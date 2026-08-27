@@ -1,0 +1,90 @@
+{
+  "formType": "1098-T",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Tuition Statement",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "student_tin",
+      "label": "Student's TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "filer_name",
+      "label": "Filer's name",
+      "type": "text"
+    },
+    {
+      "key": "student_name",
+      "label": "Student's name",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "Payments received for qualified tuition and related expenses",
+      "type": "money",
+      "box": "1",
+      "judgmentRequired": true,
+      "judgmentReason": "Payments received versus qualified expenses, and scholarship netting, require preparer judgment (§9)."
+    },
+    {
+      "key": "box_3",
+      "label": "Change of reporting method",
+      "type": "bool",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Adjustments made for a prior year",
+      "type": "money",
+      "box": "4"
+    },
+    {
+      "key": "box_5",
+      "label": "Scholarships or grants",
+      "type": "money",
+      "box": "5",
+      "judgmentRequired": true,
+      "judgmentReason": "Scholarship netting requires preparer judgment (§9)."
+    },
+    {
+      "key": "box_6",
+      "label": "Adjustments to scholarships or grants for a prior year",
+      "type": "money",
+      "box": "6"
+    },
+    {
+      "key": "box_7",
+      "label": "Box 1 includes amounts for an academic period beginning January–March of next year",
+      "type": "bool",
+      "box": "7"
+    },
+    {
+      "key": "box_8",
+      "label": "At least half-time student",
+      "type": "bool",
+      "box": "8"
+    },
+    {
+      "key": "box_9",
+      "label": "Graduate student",
+      "type": "bool",
+      "box": "9"
+    },
+    {
+      "key": "box_10",
+      "label": "Insurance contract reimbursement/refund",
+      "type": "money",
+      "box": "10"
+    }
+  ]
+}

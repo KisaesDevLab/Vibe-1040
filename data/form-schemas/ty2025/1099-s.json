@@ -1,0 +1,80 @@
+{
+  "formType": "1099-S",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Proceeds From Real Estate Transactions",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "recipient_tin",
+      "label": "Recipient TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "payer_name",
+      "label": "Payer name",
+      "type": "text"
+    },
+    {
+      "key": "payer_tin",
+      "label": "Payer TIN",
+      "type": "text"
+    },
+    {
+      "key": "recipient_name",
+      "label": "Recipient name",
+      "type": "text"
+    },
+    {
+      "key": "account_number",
+      "label": "Account number",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "Date of closing",
+      "type": "date",
+      "box": "1"
+    },
+    {
+      "key": "box_2",
+      "label": "Gross proceeds",
+      "type": "money",
+      "box": "2",
+      "judgmentRequired": true,
+      "judgmentReason": "Gain depends on basis and the §121 exclusion, which the app does not compute (§9)."
+    },
+    {
+      "key": "box_3",
+      "label": "Address or legal description",
+      "type": "text",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Transferor received or will receive property or services",
+      "type": "bool",
+      "box": "4"
+    },
+    {
+      "key": "box_5",
+      "label": "Transferor is a foreign person",
+      "type": "bool",
+      "box": "5"
+    },
+    {
+      "key": "box_6",
+      "label": "Buyer's part of real estate tax",
+      "type": "money",
+      "box": "6"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "taxYear": 2025,
+  "socialSecurityWageBaseCents": 17610000,
+  "socialSecurityRate": 0.062,
+  "medicareRate": 0.0145,
+  "additionalMedicareRate": 0.009,
+  "additionalMedicareThresholdCents": 20000000,
+  "notes": [
+    "Wage base and rates are data, not constants in code (PHASES.md P9).",
+    "2025 Social Security wage base is $176,100 (CLAUDE.md §6).",
+    "Additional Medicare tax applies to box 5 wages above $200,000 regardless of filing status; the employer withholds on that basis."
+  ],
+  "form1099K": {
+    "reportingThresholdCents": 2000000,
+    "reportingTransactionCount": 200,
+    "notes": "TY2025 reverts to $20,000 / 200 transactions (CLAUDE.md §10)."
+  },
+  "form1099NecMiscThresholdCents": 60000
+}

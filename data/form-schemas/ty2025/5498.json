@@ -1,0 +1,170 @@
+{
+  "formType": "5498",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "IRA Contribution Information",
+  "container": false,
+  "allJudgmentRequired": false,
+  "checks": [],
+  "fields": [
+    {
+      "key": "participant_tin",
+      "label": "Participant's TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "trustee_name",
+      "label": "Trustee's or issuer's name",
+      "type": "text"
+    },
+    {
+      "key": "participant_name",
+      "label": "Participant's name",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "box_1",
+      "label": "IRA contributions (other than amounts in boxes 2–4, 8–10, 13a, and 14a)",
+      "type": "money",
+      "box": "1"
+    },
+    {
+      "key": "box_2",
+      "label": "Rollover contributions",
+      "type": "money",
+      "box": "2"
+    },
+    {
+      "key": "box_3",
+      "label": "Roth IRA conversion amount",
+      "type": "money",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Recharacterized contributions",
+      "type": "money",
+      "box": "4"
+    },
+    {
+      "key": "box_5",
+      "label": "FMV of account",
+      "type": "money",
+      "box": "5"
+    },
+    {
+      "key": "box_6",
+      "label": "Life insurance cost included in box 1",
+      "type": "money",
+      "box": "6"
+    },
+    {
+      "key": "box_7_ira",
+      "label": "IRA",
+      "type": "bool",
+      "box": "7"
+    },
+    {
+      "key": "box_7_sep",
+      "label": "SEP",
+      "type": "bool",
+      "box": "7"
+    },
+    {
+      "key": "box_7_simple",
+      "label": "SIMPLE",
+      "type": "bool",
+      "box": "7"
+    },
+    {
+      "key": "box_7_roth",
+      "label": "Roth IRA",
+      "type": "bool",
+      "box": "7"
+    },
+    {
+      "key": "box_8",
+      "label": "SEP contributions",
+      "type": "money",
+      "box": "8"
+    },
+    {
+      "key": "box_9",
+      "label": "SIMPLE contributions",
+      "type": "money",
+      "box": "9"
+    },
+    {
+      "key": "box_10",
+      "label": "Roth IRA contributions",
+      "type": "money",
+      "box": "10"
+    },
+    {
+      "key": "box_11",
+      "label": "Check if RMD for next year",
+      "type": "bool",
+      "box": "11"
+    },
+    {
+      "key": "box_12a",
+      "label": "RMD date",
+      "type": "date",
+      "box": "12a"
+    },
+    {
+      "key": "box_12b",
+      "label": "RMD amount",
+      "type": "money",
+      "box": "12b"
+    },
+    {
+      "key": "box_13a",
+      "label": "Postponed/late contribution",
+      "type": "money",
+      "box": "13a"
+    },
+    {
+      "key": "box_13b",
+      "label": "Year of postponed contribution",
+      "type": "year",
+      "box": "13b"
+    },
+    {
+      "key": "box_13c",
+      "label": "Code",
+      "type": "code",
+      "box": "13c"
+    },
+    {
+      "key": "box_14a",
+      "label": "Repayments",
+      "type": "money",
+      "box": "14a"
+    },
+    {
+      "key": "box_14b",
+      "label": "Code",
+      "type": "code",
+      "box": "14b"
+    },
+    {
+      "key": "box_15a",
+      "label": "FMV of certain specified assets",
+      "type": "money",
+      "box": "15a"
+    },
+    {
+      "key": "box_15b",
+      "label": "Code(s)",
+      "type": "code",
+      "box": "15b"
+    }
+  ]
+}

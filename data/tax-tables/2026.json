@@ -1,0 +1,17 @@
+{
+  "taxYear": 2026,
+  "socialSecurityWageBaseCents": 18450000,
+  "socialSecurityRate": 0.062,
+  "medicareRate": 0.0145,
+  "additionalMedicareRate": 0.009,
+  "additionalMedicareThresholdCents": 20000000,
+  "notes": [
+    "2026 Social Security wage base is $184,500 (CLAUDE.md §6).",
+    "Adding a tax year is a data change. If this file needed a code change, something is wrong."
+  ],
+  "form1099K": {
+    "reportingThresholdCents": 2000000,
+    "reportingTransactionCount": 200
+  },
+  "form1099NecMiscThresholdCents": 200000
+}

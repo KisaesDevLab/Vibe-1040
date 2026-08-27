@@ -1,0 +1,76 @@
+{
+  "formType": "1099-CONSOLIDATED",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Consolidated brokerage 1099 package — a container for sub-forms (P4)",
+  "container": true,
+  "allJudgmentRequired": false,
+  "checks": [
+    "consolidated_subforms_tie_to_summary"
+  ],
+  "fields": [
+    {
+      "key": "recipient_tin",
+      "label": "Recipient TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "payer_name",
+      "label": "Brokerage name",
+      "type": "text"
+    },
+    {
+      "key": "account_number",
+      "label": "Account number",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "summary_interest",
+      "label": "Summary — total interest (1099-INT)",
+      "type": "money",
+      "box": "summary"
+    },
+    {
+      "key": "summary_ordinary_dividends",
+      "label": "Summary — total ordinary dividends (1099-DIV)",
+      "type": "money",
+      "box": "summary"
+    },
+    {
+      "key": "summary_qualified_dividends",
+      "label": "Summary — qualified dividends (1099-DIV)",
+      "type": "money",
+      "box": "summary"
+    },
+    {
+      "key": "summary_capital_gain_distributions",
+      "label": "Summary — capital gain distributions (1099-DIV)",
+      "type": "money",
+      "box": "summary"
+    },
+    {
+      "key": "summary_tax_exempt_interest",
+      "label": "Summary — tax-exempt interest",
+      "type": "money",
+      "box": "summary"
+    },
+    {
+      "key": "summary_proceeds",
+      "label": "Summary — gross proceeds (1099-B)",
+      "type": "money",
+      "box": "summary"
+    },
+    {
+      "key": "summary_federal_withheld",
+      "label": "Summary — federal income tax withheld",
+      "type": "money",
+      "box": "summary"
+    }
+  ]
+}
