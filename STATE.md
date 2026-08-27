@@ -32,6 +32,13 @@ at all. See External dependencies below and QUESTIONS.md Q11.
 - Provider-leakage CI check passes, and demonstrably fails when a provider hostname is
   introduced (P3 exit criterion).
 - Both worksheet renderers produce artifacts whose totals reconcile to the same model.
+- **The full TS → Python → TS queue boundary ran for real** (2026-08-26): a 7-file fixture
+  bundle uploaded through the API, the Python sidecar rasterized every file, and the TS
+  worker recorded all 7 page rows and advanced the bundle. Triage matched the fixture
+  expectations exactly — 6 native pages to `text_layer` at 200 DPI, the scanned page to
+  `raster` at 300 DPI.
+- **Router-down parking proven end to end**: with no router reachable, classification parked
+  1 job and the bundle went to `blocked` rather than failing (§3).
 
 **Verified against a live stack on 2026-08-26** (Postgres 17 + Redis 7 in Docker, app on
 the host):
@@ -56,6 +63,12 @@ the host):
 
 **NOT verified:**
 
+- **Extraction accuracy.** Classification, layout, and field binding have still never
+  received a real model response. `scripts/accuracy-run.mjs` scores a processed bundle
+  against the fixture ground truth and is itself verified (seeded with known defects, it
+  correctly caught a blank-read-as-zero, a wrong value, and an orphan field with no span,
+  and exited non-zero). It needs a reachable router with a vision-capable model — see
+  "Blocked on" below.
 - The appliance image has never been built or run — `docker compose up` covered Postgres
   and Redis only, because the API image needs the private SDK from the suite registry.
   "Clean install from GHCR on a fresh host" (P14) remains unproven.
@@ -66,8 +79,23 @@ the host):
   on a real W-2, P15 K-1 renderings. This is the largest gap and it is not closeable by
   writing more code.
 
-Treat the build as a complete, self-consistent implementation awaiting its first contact
-with real documents.
+### Blocked on — what an accuracy run needs from the operator
+
+Everything up to the router boundary is proven. To score extraction, three things are
+needed that this build cannot supply for itself:
+
+1. **The router running** with provider credentials. `vibe-ai-router-postgres` is up but the
+   router app is not, its Redis has been down 12 days, and no local model endpoint is
+   listening (nothing on 11434 or 8090).
+2. **A vision-capable model reachable** — either a local one (Ollama, or GLM-OCR via the
+   `local_ocr` provider kind) or a cloud provider configured in the router.
+3. **An app token** minted for `vibe-1040`, and the three `v1040_*` classes widened from
+   `local_only` in the router admin UI if cloud models are intended.
+
+Then: `node scripts/accuracy-run.mjs <bundleId>`.
+
+Treat the build as a complete, self-consistent implementation whose only unproven half is
+what a model returns.
 
 ---
 

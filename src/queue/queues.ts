@@ -22,6 +22,8 @@ export interface RasterJob {
   sourceFileId: string;
   storageKey: string;
   mediaType: string;
+  /** Carried through so the classify job that follows is attributed to the uploader. */
+  userId?: string;
 }
 
 export interface PageMetadata {

@@ -163,6 +163,7 @@ export function registerRoutes(app: FastifyInstance): void {
         sourceFileId: file.id,
         storageKey: file.storageKey,
         mediaType: file.mediaType,
+        userId: user.id,
       });
     }
     await db.update(bundles).set({ status: 'triaging' }).where(eq(bundles.id, result.bundleId));

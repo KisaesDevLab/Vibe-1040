@@ -3,4 +3,4 @@ pypdfium2==4.30.0
 pdfplumber==0.11.4
 Pillow==11.0.0
 cryptography==44.0.0
-bullmq==2.11.0
+bullmq==3.0.6

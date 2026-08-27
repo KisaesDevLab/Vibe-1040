@@ -7,15 +7,25 @@
 import { Worker } from 'bullmq';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db, pool } from '../db/client.ts';
-import { documents, layoutSpans, pages } from '../db/schema.ts';
+import { documents, layoutSpans, pages, sourceFiles, users } from '../db/schema.ts';
 import {
   classifyBundle,
   extractDocument,
   layoutPage,
   queueExtractionForDocuments,
   reconcileBundle,
+  recordRasterOutput,
 } from './pipeline.ts';
-import { QUEUE_NAMES, closeQueues, connection, pipelineQueue, type PipelineJob } from './queues.ts';
+import {
+  QUEUE_NAMES,
+  closeQueues,
+  connection,
+  pipelineQueue,
+  rasterEvents,
+  rasterQueue,
+  type PageMetadata,
+  type PipelineJob,
+} from './queues.ts';
 
 const log = (msg: string, extra: Record<string, unknown> = {}): void => {
   console.log(JSON.stringify({ at: new Date().toISOString(), msg, ...extra }));
@@ -38,6 +48,26 @@ async function extractionComplete(bundleId: string): Promise<boolean> {
     .from(documents)
     .where(and(eq(documents.bundleId, bundleId), eq(documents.status, 'classified')));
   return (row?.remaining ?? 0) === 0;
+}
+
+
+/**
+ * True once every source file in the bundle has had its pages recorded. Rasterization fans
+ * out one job per file, so the last one to finish is what advances the bundle.
+ */
+async function rasterComplete(bundleId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ pending: sql<number>`count(*)::int` })
+    .from(sourceFiles)
+    .where(and(eq(sourceFiles.bundleId, bundleId), isNull(sourceFiles.pageCount)));
+  return (row?.pending ?? 0) === 0;
+}
+
+/** Fallback actor when a job carries no user — the raster queue is machine-driven. */
+async function systemUserId(): Promise<string> {
+  const [row] = await db.select({ id: users.id }).from(users).limit(1);
+  if (!row) throw new Error('no users exist; run db:seed');
+  return row.id;
 }
 
 const worker = new Worker<PipelineJob>(
@@ -82,6 +112,46 @@ const worker = new Worker<PipelineJob>(
   },
   { connection, concurrency: 4 },
 );
+
+/**
+ * The language boundary (§12).
+ *
+ * The Python sidecar consumes `v1040.raster` and returns page metadata as its job result.
+ * Something on this side has to pick that up and write the `pages` rows — without this
+ * listener the sidecar rasterizes happily, stores the images, and the bundle then sits in
+ * `triaging` forever with no pages recorded.
+ */
+rasterEvents.on('completed', ({ jobId, returnvalue }) => {
+  void (async () => {
+    try {
+      const job = await rasterQueue.getJob(jobId);
+      if (!job) return;
+      const result =
+        typeof returnvalue === 'string'
+          ? (JSON.parse(returnvalue) as { sourceFileId: string; pages: PageMetadata[] })
+          : (returnvalue as unknown as { sourceFileId: string; pages: PageMetadata[] });
+      if (!result?.pages) return;
+
+      await recordRasterOutput(job.data.bundleId, result.sourceFileId, result.pages);
+      log('raster.recorded', {
+        bundleId: job.data.bundleId,
+        sourceFileId: result.sourceFileId,
+        pages: result.pages.length,
+      });
+
+      if (await rasterComplete(job.data.bundleId)) {
+        await pipelineQueue.add('classify_bundle', {
+          kind: 'classify_bundle',
+          bundleId: job.data.bundleId,
+          userId: job.data.userId ?? (await systemUserId()),
+        });
+        log('raster.complete', { bundleId: job.data.bundleId });
+      }
+    } catch (err) {
+      log('raster.record_failed', { jobId, error: (err as Error).message });
+    }
+  })();
+});
 
 worker.on('failed', (job, err) => {
   log('job.failed', { id: job?.id, kind: job?.data.kind, error: err.message });
