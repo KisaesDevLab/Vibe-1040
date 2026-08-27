@@ -15,3 +15,5 @@ Thumbs.db
 test/fixtures/live/
 ui/tsconfig.tsbuildinfo
 *.tsbuildinfo
+vendor/
+.router/

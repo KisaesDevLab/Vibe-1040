@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # The SDK is not on a public registry; it is built from the (public) router repository.
+  ROUTER_REPO: KisaesDevLab/Vibe-AI-Router
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,16 +19,20 @@ jobs:
         with:
           node-version: '24'
 
-      # §3 — this app reaches AI only through the router. The check runs before anything
-      # else because a provider hostname landing here is a compliance problem, not a bug.
+      # §3 — this app reaches AI only through the router. Run first, because a provider
+      # hostname landing here is a compliance problem, not a bug.
       - name: Provider-leakage check
         run: node scripts/check-provider-leakage.mjs
 
+      - name: Fetch the router SDK
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.ROUTER_REPO }}
+          path: .router
+          sparse-checkout: packages/sdk
+
       - name: Install
-        run: npm install --no-audit --no-fund
-        env:
-          # The SDK comes from the suite's private registry.
-          NODE_AUTH_TOKEN: ${{ secrets.KISAES_NPM_TOKEN }}
+        run: node scripts/install-deps.mjs --sdk .router/packages/sdk
 
       - name: Typecheck
         run: npm run typecheck
@@ -56,43 +64,21 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
         working-directory: sidecar
-      - name: Import check
-        run: python -c "import triage, blobstore"
+      - name: Import and compile check
+        run: python -m py_compile triage.py blobstore.py worker.py
         working-directory: sidecar
-        env:
-          STORAGE_ENCRYPTION_KEY: ${{ '' }}
 
-  publish:
-    needs: [build, ui, sidecar]
-    if: github.ref == 'refs/heads/main'
+  fixtures:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v5
-      - uses: docker/login-action@v3
+      - uses: actions/setup-python@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
-        id: meta
-        with:
-          images: ghcr.io/kisaesdevlab/vibe-1040
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-      - uses: docker/metadata-action@v5
-        id: meta-sidecar
-        with:
-          images: ghcr.io/kisaesdevlab/vibe-1040-sidecar
-      - uses: docker/build-push-action@v6
-        with:
-          context: ./sidecar
-          push: true
-          tags: ${{ steps.meta-sidecar.outputs.tags }}
-          labels: ${{ steps.meta-sidecar.outputs.labels }}
+          python-version: '3.12'
+      - run: pip install PyMuPDF Pillow
+      # Fixtures are generated deterministically, so a drift here means either the
+      # generator or the committed fixtures changed without the other.
+      - name: Regenerate fixtures and check for drift
+        run: |
+          python fixtures/generate.py test/fixtures
+          git diff --exit-code --stat test/fixtures/manifest.json

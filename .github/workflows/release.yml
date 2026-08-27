@@ -1,0 +1,135 @@
+name: Release
+
+# Publishes the appliance and sidecar images to GHCR on a version tag.
+#
+#   git tag -a v0.0.1 -m "..." && git push origin v0.0.1
+#
+# Both images are tagged with the version, the major.minor, and `latest`, so a compose file
+# can pin as tightly or as loosely as the operator wants.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version to build (e.g. v0.0.1)'
+        required: true
+
+env:
+  REGISTRY: ghcr.io
+  ROUTER_REPO: KisaesDevLab/Vibe-AI-Router
+
+jobs:
+  # Never publish an image whose tests do not pass. A tag is not a reason to skip the gate.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - run: node scripts/check-provider-leakage.mjs
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ env.ROUTER_REPO }}
+          path: .router
+          sparse-checkout: packages/sdk
+      - run: node scripts/install-deps.mjs --sdk .router/packages/sdk
+      - run: npm run typecheck
+      - run: npm test
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # The Docker build cannot reach the private SDK, so vendor it into the build context.
+      - name: Vendor the router SDK
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.ROUTER_REPO }}
+          path: .router
+          sparse-checkout: packages/sdk
+
+      - name: Stage vendor/sdk
+        run: |
+          mkdir -p vendor
+          cp -r .router/packages/sdk vendor/sdk
+          rm -rf .router
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Appliance image metadata
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.title=Vibe 1040
+            org.opencontainers.image.description=1040 source-document worksheet appliance
+            org.opencontainers.image.vendor=Kisaes
+
+      - name: Build and push the appliance
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta-api.outputs.tags }}
+          labels: ${{ steps.meta-api.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Sidecar image metadata
+        id: meta-sidecar
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-sidecar
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.title=Vibe 1040 sidecar
+            org.opencontainers.image.description=PyMuPDF rasterization and text-layer triage
+            org.opencontainers.image.vendor=Kisaes
+
+      - name: Build and push the sidecar
+        uses: docker/build-push-action@v6
+        with:
+          context: ./sidecar
+          push: true
+          tags: ${{ steps.meta-sidecar.outputs.tags }}
+          labels: ${{ steps.meta-sidecar.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Images published"
+            echo
+            echo '```'
+            echo "${{ steps.meta-api.outputs.tags }}"
+            echo "${{ steps.meta-sidecar.outputs.tags }}"
+            echo '```'
+            echo
+            echo "Packages inherit the repository's visibility. If this repo is private, the"
+            echo "images are too — a droplet pulling them needs a token with read:packages."
+          } >> "$GITHUB_STEP_SUMMARY"
