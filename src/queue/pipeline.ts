@@ -18,7 +18,13 @@ import { persistBoundFields } from '../extract/persist.ts';
 import { resolveDocumentFields } from '../extract/resolve.ts';
 import { proposeIdentity, saveProposal, type TinObservation } from '../identity/resolve.ts';
 import { runLayoutPass } from '../layout/pass.ts';
-import { runChecks, type CheckContext, type FieldValue } from '../reconcile/checks.ts';
+import {
+  excessSocialSecurityWithheld,
+  runChecks,
+  type BundleCheckContext,
+  type CheckContext,
+  type FieldValue,
+} from '../reconcile/checks.ts';
 import { taxTableFor } from '../reconcile/tax-tables.ts';
 import { RouterCallError } from '../router/client.ts';
 import { registry } from '../schemas/registry.ts';
@@ -317,6 +323,54 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
       await db.insert(checkResults).values({
         bundleId,
         documentId: doc.id,
+        checkKey: result.checkKey,
+        severity: result.severity,
+        outcome: result.outcome,
+        message: result.message,
+        expectedCents: result.expectedCents ?? null,
+        actualCents: result.actualCents ?? null,
+        toleranceCents: result.toleranceCents ?? null,
+        detail: result.detail ?? {},
+      });
+    }
+  }
+
+  // ── bundle-level checks ────────────────────────────────────────────────────
+  // Some things are only visible across documents. Excess social security withholding
+  // across employers is invisible to any single W-2 (added 2026-08-26).
+  const bundleTaxYear = bundle?.taxYear ?? 2025;
+  const w2Docs = docs.filter((d) => d.formType === 'W-2');
+  const groups = new Map<string, BundleCheckContext['w2sByTaxpayer'][number]>();
+
+  for (const doc of w2Docs) {
+    const fields = resolvedByDoc.get(doc.id) ?? new Map();
+    const key = doc.taxpayerId ?? 'unassigned';
+    const group = groups.get(key) ?? {
+      taxpayerId: doc.taxpayerId,
+      taxpayerLabel: doc.taxpayerId ? `Taxpayer …${doc.taxpayerId.slice(-4)}` : 'Unassigned W-2s',
+      w2s: [],
+    };
+    group.w2s.push({
+      documentId: doc.id,
+      employer: fields.get('employer_name')?.text ?? doc.payerName,
+      box3: fields.get('box_3')?.cents ?? null,
+      box4: fields.get('box_4')?.cents ?? null,
+    });
+    groups.set(key, group);
+  }
+
+  if (groups.size > 0) {
+    const results = excessSocialSecurityWithheld({
+      taxYear: bundleTaxYear,
+      toleranceCents: env.RECONCILE_TOLERANCE_CENTS,
+      table: await taxTableFor(bundleTaxYear),
+      w2sByTaxpayer: [...groups.values()],
+    });
+    for (const result of results) {
+      if (result.outcome === 'fail') softFailures += 1;
+      await db.insert(checkResults).values({
+        bundleId,
+        documentId: null,
         checkKey: result.checkKey,
         severity: result.severity,
         outcome: result.outcome,

@@ -193,3 +193,102 @@ describe('registry integrity', () => {
     expect(() => runChecks(ctx({}), ['not_a_real_check'])).toThrow(/unknown check/);
   });
 });
+
+describe('excess social security withheld across employers (added 2026-08-26)', () => {
+  const w2 = (employer: string, box4: number | null) => ({
+    documentId: `doc-${employer}`,
+    employer,
+    box3: 15_000_000,
+    box4,
+  });
+
+  const bundleCtx = (
+    groups: { taxpayerId: string | null; taxpayerLabel: string; w2s: ReturnType<typeof w2>[] }[],
+  ) => ({ taxYear: 2025, toleranceCents: 100, table: TABLE_2025, w2sByTaxpayer: groups });
+
+  // 176,100 x 6.2% = 10,918.20 maximum for 2025.
+  const MAX = 1_091_820;
+
+  it('flags an overage across two employers as a Schedule 3 credit', async () => {
+    const { excessSocialSecurityWithheld } = await import('../src/reconcile/checks.ts');
+    const [result] = excessSocialSecurityWithheld(
+      bundleCtx([
+        {
+          taxpayerId: 'tp-1',
+          taxpayerLabel: 'Taxpayer …6789',
+          w2s: [w2('ACME', 700_000), w2('OZARK', 600_000)],
+        },
+      ]),
+    );
+    expect(result!.severity).toBe('soft');
+    expect(result!.outcome).toBe('fail');
+    expect(result!.actualCents).toBe(1_300_000);
+    expect(result!.expectedCents).toBe(MAX);
+    expect(result!.detail?.['excessCents']).toBe(1_300_000 - MAX);
+    expect(result!.message).toMatch(/Schedule 3 credit/);
+    // It is explicitly not a W-2 error — that distinction is the point.
+    expect(result!.message).toMatch(/not an error on any individual W-2/);
+  });
+
+  it('passes when the combined total is within the annual maximum', async () => {
+    const { excessSocialSecurityWithheld } = await import('../src/reconcile/checks.ts');
+    const [result] = excessSocialSecurityWithheld(
+      bundleCtx([
+        {
+          taxpayerId: 'tp-1',
+          taxpayerLabel: 'Taxpayer …6789',
+          w2s: [w2('ACME', 500_000), w2('OZARK', 400_000)],
+        },
+      ]),
+    );
+    expect(result!.outcome).toBe('pass');
+  });
+
+  it('does not fire for a single employer — that would be a per-W-2 error instead', async () => {
+    const { excessSocialSecurityWithheld } = await import('../src/reconcile/checks.ts');
+    const results = excessSocialSecurityWithheld(
+      bundleCtx([
+        { taxpayerId: 'tp-1', taxpayerLabel: 'Taxpayer …6789', w2s: [w2('ACME', 2_000_000)] },
+      ]),
+    );
+    expect(results).toHaveLength(0);
+  });
+
+  it('applies the limit per taxpayer — each spouse has their own wage base', async () => {
+    const { excessSocialSecurityWithheld } = await import('../src/reconcile/checks.ts');
+    const results = excessSocialSecurityWithheld(
+      bundleCtx([
+        {
+          taxpayerId: 'tp-1',
+          taxpayerLabel: 'Robert',
+          w2s: [w2('ACME', 600_000), w2('BOREAL', 600_000)],
+        },
+        {
+          taxpayerId: 'tp-2',
+          taxpayerLabel: 'Maria',
+          w2s: [w2('OZARK', 400_000), w2('CEDAR', 400_000)],
+        },
+      ]),
+    );
+    expect(results).toHaveLength(2);
+    // Combined across the couple would be 2,000,000 — well over — but per person only
+    // Robert exceeds. Summing across spouses would invent a credit that does not exist.
+    expect(results.find((r) => r.message.startsWith('Robert'))!.outcome).toBe('fail');
+    expect(results.find((r) => r.message.startsWith('Maria'))!.outcome).toBe('pass');
+  });
+
+  it('ignores blank box 4 values rather than treating them as zero (§5)', async () => {
+    const { excessSocialSecurityWithheld } = await import('../src/reconcile/checks.ts');
+    const results = excessSocialSecurityWithheld(
+      bundleCtx([
+        {
+          taxpayerId: 'tp-1',
+          taxpayerLabel: 'Taxpayer …6789',
+          w2s: [w2('ACME', 900_000), w2('OZARK', null)],
+        },
+      ]),
+    );
+    // Only one usable figure, so there is nothing to compare across employers.
+    expect(results).toHaveLength(0);
+  });
+});

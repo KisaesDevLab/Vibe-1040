@@ -188,3 +188,80 @@ describe('Judgment Required routing (§9)', () => {
     expect(all.some((c) => c.fieldKey === 'employee_tin')).toBe(false);
   });
 });
+
+describe('W-2 box 12 (reviewed 2026-08-26)', () => {
+  const judgment = (model: Awaited<ReturnType<typeof buildWorksheetModel>>) =>
+    model.lines.find((l) => l.isJudgmentRequired)!;
+
+  it('routes code W to Form 8889 — the one mechanical, consequential code', async () => {
+    const model = await buildWorksheetModel(
+      2025,
+      [
+        await doc('W-2', {
+          box_12a_code: field({ text: 'W' }),
+          box_12a_amount: field({ cents: 425_000 }),
+        }),
+      ],
+      join(DATA_ROOT, 'line-mappings'),
+    );
+    expect(line(model, 'F8889:9').totalCents).toBe(425_000);
+    expect(judgment(model).contributions).toHaveLength(0);
+  });
+
+  it('routes elective deferrals to an informational detail line, not Judgment', async () => {
+    const model = await buildWorksheetModel(
+      2025,
+      [
+        await doc('W-2', {
+          box_12a_code: field({ text: 'D' }),
+          box_12a_amount: field({ cents: 2_300_000 }),
+        }),
+      ],
+      join(DATA_ROOT, 'line-mappings'),
+    );
+    expect(line(model, 'INFO:box12_deferrals').totalCents).toBe(2_300_000);
+    expect(judgment(model).contributions).toHaveLength(0);
+  });
+
+  it('matches codes case-insensitively and tolerates surrounding whitespace', async () => {
+    const model = await buildWorksheetModel(
+      2025,
+      [
+        await doc('W-2', {
+          box_12a_code: field({ text: ' w ' }),
+          box_12a_amount: field({ cents: 100_000 }),
+        }),
+      ],
+      join(DATA_ROOT, 'line-mappings'),
+    );
+    expect(line(model, 'F8889:9').totalCents).toBe(100_000);
+  });
+
+  it('sends an unenumerated code to Judgment rather than dropping it silently', async () => {
+    const model = await buildWorksheetModel(
+      2025,
+      [
+        await doc('W-2', {
+          // Code C — group-term life over $50k. Not enumerated, so not mechanical.
+          box_12a_code: field({ text: 'C' }),
+          box_12a_amount: field({ cents: 18_400 }),
+        }),
+      ],
+      join(DATA_ROOT, 'line-mappings'),
+    );
+    const item = judgment(model).contributions.find((c) => c.fieldKey === 'box_12a_amount');
+    expect(item).toBeDefined();
+    expect(item!.valueCents).toBe(18_400);
+    expect(item!.judgmentReason).toMatch(/code this mapping does not enumerate/);
+  });
+
+  it('routes SSA-1099 voluntary withholding to line 25b (reviewer call)', async () => {
+    const model = await buildWorksheetModel(
+      2025,
+      [await doc('SSA-1099', { box_6: field({ cents: 240_000 }) })],
+      join(DATA_ROOT, 'line-mappings'),
+    );
+    expect(line(model, '1040:25b').totalCents).toBe(240_000);
+    expect(line(model, '1040:25c').totalCents).toBeNull();
+  });
+});

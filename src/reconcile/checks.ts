@@ -460,6 +460,78 @@ export const taxYearMatchesBundle: Check = (ctx) => {
   };
 };
 
+// ── bundle-level checks ──────────────────────────────────────────────────────
+
+export interface BundleCheckContext {
+  taxYear: number;
+  toleranceCents: number;
+  table: TaxTable;
+  /** One entry per W-2, grouped by taxpayer. A joint return has two groups. */
+  w2sByTaxpayer: {
+    taxpayerId: string | null;
+    taxpayerLabel: string;
+    w2s: { documentId: string; employer: string | null; box3: number | null; box4: number | null }[];
+  }[];
+}
+
+/**
+ * Excess Social Security withheld across multiple employers (Schedule 3 credit).
+ *
+ * Not in §6's enumerated list, added 2026-08-26 at the reviewer's direction. It stays
+ * inside the §2 boundary because it is arithmetic on figures the forms already report — it
+ * decides nothing about characterization. It exists because a two-employer client who
+ * over-withholds has a real credit that is easy to miss, and the app can see it plainly.
+ *
+ * Per taxpayer, not per bundle: each spouse has their own wage base.
+ */
+export function excessSocialSecurityWithheld(ctx: BundleCheckContext): CheckResult[] {
+  const maxWithholding = Math.round(
+    ctx.table.socialSecurityWageBaseCents * ctx.table.socialSecurityRate,
+  );
+
+  return ctx.w2sByTaxpayer.flatMap((group): CheckResult[] => {
+    // One employer cannot over-withhold across employers; that would be a W-2 error, which
+    // `w2_ss_tax_rate` already catches per document.
+    if (group.w2s.length < 2) return [];
+
+    const withheld = group.w2s.map((w) => w.box4).filter((v): v is number => v !== null);
+    if (withheld.length < 2) return [];
+
+    const total = withheld.reduce((a, b) => a + b, 0);
+    const excess = total - maxWithholding;
+    const key = `excess_social_security_withheld:${group.taxpayerId ?? 'unassigned'}`;
+
+    if (excess <= ctx.toleranceCents) {
+      return [{
+        checkKey: key,
+        severity: 'soft',
+        outcome: 'pass',
+        message: `${group.taxpayerLabel}: social security withheld across ${group.w2s.length} employers is within the annual maximum.`,
+        expectedCents: maxWithholding,
+        actualCents: total,
+      }];
+    }
+
+    return [{
+      checkKey: key,
+      severity: 'soft',
+      outcome: 'fail',
+      message:
+        `${group.taxpayerLabel}: social security tax withheld across ${group.w2s.length} employers ` +
+        `totals ${total} against a ${ctx.taxYear} maximum of ${maxWithholding} — ` +
+        `excess of ${excess}. This is a Schedule 3 credit the preparer must claim; ` +
+        'it is not an error on any individual W-2.',
+      expectedCents: maxWithholding,
+      actualCents: total,
+      toleranceCents: ctx.toleranceCents,
+      detail: {
+        excessCents: excess,
+        employers: group.w2s.map((w) => ({ employer: w.employer, box4: w.box4 })),
+      },
+    }];
+  });
+}
+
 // ── registry ─────────────────────────────────────────────────────────────────
 
 /**

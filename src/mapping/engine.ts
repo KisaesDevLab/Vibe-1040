@@ -39,8 +39,19 @@ const mappingDef = z
     formType: z.string(),
     fieldKey: z.string(),
     lineRef: z.string(),
-    /** Routes here only when another field on the same document has a given value. */
-    condition: z.object({ fieldKey: z.string(), equals: z.union([z.boolean(), z.string(), z.number()]) }).optional(),
+    /**
+     * Routes here only when another field on the same document has a given value.
+     * `equals` for a single value, `in` for a set — W-2 box 12 needs the set form, because
+     * several codes share a destination.
+     */
+    condition: z
+      .object({
+        fieldKey: z.string(),
+        equals: z.union([z.boolean(), z.string(), z.number()]).optional(),
+        in: z.array(z.string()).optional(),
+      })
+      .refine((c) => c.equals !== undefined || c.in !== undefined, 'condition needs equals or in')
+      .optional(),
     /** Shown on the worksheet but excluded from the line total. */
     informationalOnly: z.boolean().default(false),
     /** Additional line to list the contribution under, for payer-detail schedules. */
@@ -132,13 +143,22 @@ export function __setMapping(file: MappingFile): void {
 
 function conditionHolds(doc: MappedDocument, condition: NonNullable<z.infer<typeof mappingDef>['condition']>): boolean {
   const field = doc.fields.get(condition.fieldKey);
+
+  if (condition.in) {
+    // Codes are compared case-insensitively and trimmed — forms print "W", " w ", "W ".
+    const value = field?.text?.trim().toUpperCase();
+    return value !== undefined && condition.in.some((c) => c.toUpperCase() === value);
+  }
+
   if (!field) return condition.equals === false;
   if (typeof condition.equals === 'boolean') {
     // A blank checkbox reads as false — an unchecked IRA/SEP/SIMPLE box means "not an IRA",
     // which is the whole point of the 4a/5a split.
     return (field.bool ?? false) === condition.equals;
   }
-  if (typeof condition.equals === 'string') return field.text === condition.equals;
+  if (typeof condition.equals === 'string') {
+    return field.text?.trim().toUpperCase() === condition.equals.toUpperCase();
+  }
   return field.cents === condition.equals;
 }
 
@@ -238,12 +258,25 @@ export async function buildWorksheetModel(
       );
 
       if (matches.length === 0) {
-        if (!mappedKeys.has(field.key) && field.type === 'money') {
-          // Unmapped but populated. Surface it rather than dropping it.
+        if (field.type === 'money') {
+          /**
+           * Two different situations, both of which must surface rather than vanish:
+           *
+           *  - the field has no mapping at all; or
+           *  - the field has only *conditional* mappings and none of them matched, which
+           *    happens for a W-2 box 12 code the mapping does not enumerate. Treating that
+           *    as "already mapped, nothing to do" silently dropped the value — a populated
+           *    box disappearing off the worksheet is the exact failure this tool exists to
+           *    prevent.
+           */
+          const conditional = mappedKeys.has(field.key);
           push(JUDGMENT_LINE, {
             ...base,
             informational: false,
-            judgmentReason: `No ${taxYear} line mapping for ${doc.formType} ${field.key}.`,
+            judgmentReason: conditional
+              ? `${doc.formType} ${field.key} has no ${taxYear} mapping for its current value; ` +
+                'treatment depends on a code this mapping does not enumerate.'
+              : `No ${taxYear} line mapping for ${doc.formType} ${field.key}.`,
           });
         }
         continue;

@@ -5,7 +5,8 @@
     "Adding TY2026 must be a data change only (PHASES.md P10 exit criterion).",
     "Line 1z reports gross wages including tips and overtime exactly as printed on the W-2. The new TY2025 deductions are below-the-line on Schedule 1-A and this app does not compute them (CLAUDE.md §10).",
     "A mapping that would require deciding a characterization question routes to JUDGMENT instead (CLAUDE.md §9, §11).",
-    "Boxes with no Form 1040 line (W-2 boxes 3-6) map to an INFO detail line, not to Judgment Required. Judgment Required is for questions a preparer must decide; padding it with routine payroll figures buries the items that actually need attention."
+    "Boxes with no Form 1040 line (W-2 boxes 3-6) map to an INFO detail line, not to Judgment Required. Judgment Required is for questions a preparer must decide; padding it with routine payroll figures buries the items that actually need attention.",
+    "W-2 box 12: code W routes to Form 8889; elective-deferral and similar reported codes route to an informational detail line; any code not enumerated here falls through to Judgment Required, because its treatment is not mechanical. Reviewed 2026-08-26."
   ],
   "lines": [
     {
@@ -281,6 +282,16 @@
       "ref": "SCH1:18",
       "label": "Schedule 1 line 18 — Penalty on early withdrawal of savings",
       "sortOrder": 665
+    },
+    {
+      "ref": "F8889:9",
+      "label": "Form 8889 line 9 — Employer contributions to an HSA (Form W-2, box 12, code W)",
+      "sortOrder": 1115
+    },
+    {
+      "ref": "INFO:box12_deferrals",
+      "label": "Detail — Form W-2 box 12 elective deferrals and reported items (informational; already reflected in box 1)",
+      "sortOrder": 1930
     }
   ],
   "mappings": [
@@ -324,30 +335,6 @@
     },
     {
       "formType": "W-2",
-      "fieldKey": "box_12a_amount",
-      "lineRef": "JUDGMENT",
-      "judgmentReason": "Box 12 treatment depends entirely on the code; the app does not characterize it."
-    },
-    {
-      "formType": "W-2",
-      "fieldKey": "box_12b_amount",
-      "lineRef": "JUDGMENT",
-      "judgmentReason": "Box 12 treatment depends entirely on the code; the app does not characterize it."
-    },
-    {
-      "formType": "W-2",
-      "fieldKey": "box_12c_amount",
-      "lineRef": "JUDGMENT",
-      "judgmentReason": "Box 12 treatment depends entirely on the code; the app does not characterize it."
-    },
-    {
-      "formType": "W-2",
-      "fieldKey": "box_12d_amount",
-      "lineRef": "JUDGMENT",
-      "judgmentReason": "Box 12 treatment depends entirely on the code; the app does not characterize it."
-    },
-    {
-      "formType": "W-2",
       "fieldKey": "box_3",
       "lineRef": "INFO:payroll_taxes"
     },
@@ -365,6 +352,118 @@
       "formType": "W-2",
       "fieldKey": "box_6",
       "lineRef": "INFO:payroll_taxes"
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_12a_amount",
+      "lineRef": "F8889:9",
+      "condition": {
+        "fieldKey": "box_12a_code",
+        "equals": "W"
+      }
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_12a_amount",
+      "lineRef": "INFO:box12_deferrals",
+      "condition": {
+        "fieldKey": "box_12a_code",
+        "in": [
+          "D",
+          "E",
+          "F",
+          "G",
+          "H",
+          "S",
+          "AA",
+          "BB",
+          "EE"
+        ]
+      }
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_12b_amount",
+      "lineRef": "F8889:9",
+      "condition": {
+        "fieldKey": "box_12b_code",
+        "equals": "W"
+      }
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_12b_amount",
+      "lineRef": "INFO:box12_deferrals",
+      "condition": {
+        "fieldKey": "box_12b_code",
+        "in": [
+          "D",
+          "E",
+          "F",
+          "G",
+          "H",
+          "S",
+          "AA",
+          "BB",
+          "EE"
+        ]
+      }
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_12c_amount",
+      "lineRef": "F8889:9",
+      "condition": {
+        "fieldKey": "box_12c_code",
+        "equals": "W"
+      }
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_12c_amount",
+      "lineRef": "INFO:box12_deferrals",
+      "condition": {
+        "fieldKey": "box_12c_code",
+        "in": [
+          "D",
+          "E",
+          "F",
+          "G",
+          "H",
+          "S",
+          "AA",
+          "BB",
+          "EE"
+        ]
+      }
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_12d_amount",
+      "lineRef": "F8889:9",
+      "condition": {
+        "fieldKey": "box_12d_code",
+        "equals": "W"
+      }
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_12d_amount",
+      "lineRef": "INFO:box12_deferrals",
+      "condition": {
+        "fieldKey": "box_12d_code",
+        "in": [
+          "D",
+          "E",
+          "F",
+          "G",
+          "H",
+          "S",
+          "AA",
+          "BB",
+          "EE"
+        ]
+      }
     },
     {
       "formType": "1099-INT",
@@ -627,7 +726,7 @@
     {
       "formType": "SSA-1099",
       "fieldKey": "box_6",
-      "lineRef": "1040:25c"
+      "lineRef": "1040:25b"
     },
     {
       "formType": "RRB-1099",
@@ -637,7 +736,7 @@
     {
       "formType": "RRB-1099",
       "fieldKey": "box_10",
-      "lineRef": "1040:25c"
+      "lineRef": "1040:25b"
     },
     {
       "formType": "1098",

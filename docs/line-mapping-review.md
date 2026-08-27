@@ -1,6 +1,6 @@
 # TY2025 line mapping — review request
 
-**Status: needs a tax professional's sign-off before live use.**
+**Status: reviewed 2026-08-26. Four decisions returned and applied — see §6.**
 Covers `data/line-mappings/2025.json` (50 lines, 79 mappings) as of 2026-08-26.
 
 I made judgment calls while building this. Most are routine; a handful are genuinely
@@ -49,7 +49,7 @@ risks.
 
 These are the ones I would flag in a review of someone else's work.
 
-### 2.1 SSA-1099 box 6 withholding → line 25c, not 25b
+### 2.1 SSA-1099 box 6 withholding → line 25c, not 25b  — **RESOLVED: moved to 25b**
 
 Voluntary withholding on an SSA-1099. Line 25b reads "Form(s) 1099" and an SSA-1099 is
 literally a 1099, so 25b is defensible; I used **25c (other forms)** because the SSA form is
@@ -64,7 +64,7 @@ Correct when the recipient is the provider being paid, which is the common case.
 your client received it for something else. **Confirm this is the right default for your
 client base.**
 
-### 2.3 1099-NEC box 1 → Schedule C
+### 2.3 1099-NEC box 1 → Schedule C  — **RESOLVED: no change**
 
 Right the large majority of the time, but nonemployee compensation also covers director
 fees and genuinely non-business payments that belong on Schedule 1 8z. I took the common
@@ -73,13 +73,13 @@ case rather than routing every NEC to Judgment Required, which would be noisy.
 **Ask:** would you rather every 1099-NEC land in Judgment Required so a human always
 characterizes it?
 
-### 2.4 1098 box 5 (mortgage insurance premiums) → Schedule A 8d
+### 2.4 1098 box 5 (mortgage insurance premiums) → Schedule A 8d  — **RESOLVED: deductible for TY2025, no change**
 
 Mapped on the assumption the MIP deduction is available for TY2025. **This provision has
 lapsed and been retroactively revived repeatedly — please confirm its TY2025 status.** If
 it is not available, the right move is Judgment Required rather than an itemized line.
 
-### 2.5 1099-MISC boxes 1 and 2 (rents, royalties) → Schedule 1 line 5
+### 2.5 1099-MISC boxes 1 and 2 (rents, royalties) → Schedule 1 line 5  — **RESOLVED: no change**
 
 Schedule 1 line 5 is the aggregate of Schedule E. The real destination is Schedule E, which
 this worksheet does not model line by line. Reasonable for a comparison worksheet; flagging
@@ -94,7 +94,7 @@ deduction they need to compute themselves.
 
 **Ask:** helpful signpost, or clutter? Easy to remove.
 
-### 2.7 W-2 boxes 3–6 → a detail line, not Judgment Required
+### 2.7 W-2 boxes 3–6 → a detail line, not Judgment Required  — **RESOLVED: auto-flag built**
 
 Social security and Medicare wages and withholding have no Form 1040 line. They were
 landing in Judgment Required, which meant every single W-2 buried the real judgment items
@@ -130,12 +130,12 @@ any is actually mechanical, tell me and I will map it.
 | 1099-LTC | 1 Gross benefits | Depends on qualified LTC costs |
 | 5498 | 1 IRA contributions | Deductibility depends on AGI and plan coverage |
 | W-2 | 8 Allocated tips | Form 4137 territory; includibility is a judgment |
-| W-2 | 12a–d amounts | Treatment depends entirely on the code |
+| W-2 | 12a–d amounts | ~~All codes~~ **only codes not enumerated in §6** — W and the deferral codes now map |
 | 1099-MISC | 10 Attorney proceeds | Not necessarily income to the recipient |
 | 1099-INT 6 / 1099-DIV 7 | Foreign tax paid | De minimis election vs Form 1116 is a preparer choice |
 | **All K-1s** | Every box | Boxes as printed only in v1 (§8) |
 
-### The W-2 box 12 decision is the one I am least sure about
+### The W-2 box 12 decision  — **RESOLVED: mechanical codes now mapped**
 
 Every populated box 12 amount goes to Judgment Required regardless of code. That is
 defensible — treatment genuinely depends on the code — but it means a code **D** (401(k)
@@ -185,3 +185,35 @@ The two questions I would most like answered:
 1. **W-2 box 12** — map the mechanical codes, or keep everything in Judgment Required?
 2. **Excess Social Security withholding across employers** — should the app flag it
    automatically?
+
+
+---
+
+## 6. Review outcome — 2026-08-26
+
+| Question | Decision | Applied |
+|---|---|---|
+| W-2 box 12 handling | **Map the mechanical codes** | Code W → Form 8889 line 9. Codes D/E/F/G/H/S/AA/BB/EE → an informational detail line (already inside box 1, no separate line). Any code not enumerated still falls through to Judgment Required. |
+| Excess Social Security across employers | **Flag automatically** | New bundle-level soft check, per taxpayer. Fires only with two or more employers, since a single employer over-withholding is a W-2 error that `w2_ss_tax_rate` already catches. |
+| SSA-1099 / RRB-1099 withholding | **Move to line 25b** | Was 25c. |
+| 1098 box 5 MIP | **No change** — deductible for TY2025 | Stays on Schedule A 8d. |
+| 1099-NEC → Schedule C | **No change** | Stays mapped; not routed to Judgment. |
+| 1099-MISC rents/royalties | **No change** | Stays on Schedule 1 line 5; no Schedule E section in v1. |
+
+### A bug the box 12 change exposed
+
+Supporting conditional routing by code meant a field could have mappings where *none* of the
+conditions matched. The engine treated that as "already mapped, nothing to do" and **dropped
+the value silently** — a populated box vanishing off the worksheet, which is the precise
+failure this tool exists to prevent. It only ever had two exhaustive true/false conditions
+before (the 1099-R IRA split), so nothing had exercised it.
+
+Unmatched conditionals now route to Judgment Required with a reason naming the situation.
+That is also what makes the conservative half of the box 12 decision safe: an unrecognised
+code cannot disappear, it lands in front of a human.
+
+### Per-taxpayer, not per-bundle
+
+The excess-withholding check groups W-2s by taxpayer before comparing. Summing across a
+married couple would invent a credit that does not exist, since each spouse has their own
+wage base. Tested explicitly.
