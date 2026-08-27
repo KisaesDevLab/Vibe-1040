@@ -13,3 +13,5 @@ sidecar/.venv/
 Thumbs.db
 # Fixtures are synthetic or de-identified, but never commit anything client-derived.
 test/fixtures/live/
+ui/tsconfig.tsbuildinfo
+*.tsbuildinfo
