@@ -4,8 +4,11 @@ Sixteen phases, P0 through P15. Each phase lists its dependency, its deliverable
 exit criteria that must pass before the next phase starts. A phase is not complete until
 its exit criteria are demonstrably met and STATE.md is updated.
 
-**Hard external dependency:** Router phases R1–R3 in `vibe-ai-router-PHASES-addendum.md`
-must land before P7 here. P0–P6 can proceed in parallel with Router work.
+**Hard external dependency:** exactly one, and it is late — **Router region pinning, which
+gates P14** (QUESTIONS.md Q11). Verified against Vibe-AI-Router v0.0.24 on 2026-08-26:
+R1, R2, and R4 in `vibe-ai-router-PHASES-addendum.md` were already shipped, and R3 turned
+out to be app work rather than Router work. That addendum is now largely historical — read
+STATE.md's External dependencies table instead. **P0–P13 have no external gate.**
 
 ---
 
@@ -17,7 +20,7 @@ Repo, Docker Compose stack, Postgres with migration tooling, BullMQ + Redis, the
 sidecar worker skeleton, GHCR build and publish pipeline, staff auth with MFA, and
 audit-log middleware wired before any route that touches taxpayer data.
 
-Configuration surface: `ROUTER_BASE_URL`, `ROUTER_TOKEN`, `TIN_HASH_SALT`, storage
+Configuration surface: `VIBE_AI_ROUTER_URL`, `VIBE_AI_TOKEN`, `TIN_HASH_SALT`, storage
 backend selection, retention schedule.
 
 **Exit:** stack comes up clean from `docker compose up` on a fresh host, a staff user can
@@ -50,8 +53,10 @@ route the page down the raster path with pypdfium2; otherwise keep the text laye
 available for footing checks alongside the raster.
 
 Rasterize at 300 DPI baseline, 200 for clean digital PDFs, 400 for degraded scans.
-Grayscale JPEG encoding. Downscale to the provider capability ceiling before encoding —
-this depends on Router R2 but should be written against a config value until then.
+Grayscale JPEG encoding. Downscale to a configured resolution ceiling before encoding. The
+Router's capability matrix tracks per-model vision support but is not a caller-facing
+resolution oracle, and policy can change which model serves at any time — so keep the
+ceiling a config value here rather than trying to derive it per request.
 
 **Exit:** across a fixture set of native PDFs, scans, and phone photos, the triage decision
 is correct on every page. Encoded page sizes sit within the documented budget. Page
@@ -59,20 +64,36 @@ records carry DPI, encoding, and text-layer flag.
 
 ---
 
-## P3 — Router client
+## P3 — Router SDK integration
 
-**Depends on:** P0. Router R1 recommended but not strictly required to stub.
+**Depends on:** P0. No Router work required.
 
-Generate the client from the Router OpenAPI spec into `src/router-client/`. Job wrapper
-handling retry, backoff, and Router-unavailable parking. Startup assertion that the
-Router reports US-pinned policy for the two task classes this app consumes.
+Depend on `@kisaes/vibe-ai-client`. **There is no codegen and no `src/router-client/`** —
+the Router publishes no OpenAPI spec, and `docs/integration.md` in the Router repo is the
+frozen contract. Read it before writing this phase.
+
+Register the three task classes at startup via `registerTaskClasses()` —
+`v1040_page_classify`, `v1040_layout`, `v1040_field_extract`. Registration is idempotent and
+version-stamped. Assert the effective binding at startup and surface it: a never-seen class
+is created `local_only` regardless of what is requested, so if provisioning has not done the
+firm-admin widening, the app must say so loudly rather than silently running pinned local.
+
+Job wrapper handling retry, backoff, and Router-unavailable parking. Dispatch on the error
+taxonomy, not HTTP status: `scrubber_blocked` and `policy_blocked` never retry,
+`rate_limited` and `provider_unavailable` retry honoring `retryAfterSeconds`,
+`capability_missing` and `invalid_request` log loudly as bugs.
+
+The US-region startup assertion specified in §11 **cannot be built in this phase** — the
+Router has no region concept to assert against. It moves to P14 and blocks on Q11.
 
 CI check: grep for provider hostnames and SDK imports outside documentation, fail the
-build on any hit.
+build on any hit. Include the GLM-OCR llama-server port in that grep — `local_ocr` is a
+Router provider kind, not something this app calls.
 
-**Exit:** a round-trip call to a stub task class succeeds. Router down parks the job and
-surfaces cleanly in the UI rather than failing the bundle. The provider-leakage CI check
-passes and demonstrably fails when a provider hostname is introduced.
+**Exit:** a round-trip call to a registered task class succeeds. Router down parks the job
+and surfaces cleanly in the UI rather than failing the bundle. A class still pinned
+`local_only` is reported at startup. The provider-leakage CI check passes and demonstrably
+fails when a provider hostname is introduced.
 
 ---
 
@@ -80,9 +101,8 @@ passes and demonstrably fails when a provider hostname is introduced.
 
 **Depends on:** P2, P3.
 
-Page-level form-type classification via the existing `document.classify` task class —
-confirm its response shape fits page images before relying on it, and raise a QUESTIONS.md
-entry if it was built filename-only.
+Page-level form-type classification via this app's own `v1040_page_classify` class,
+registered in P3. There is no pre-existing `document.classify` to reuse — see resolved Q2.
 
 Group contiguous pages into logical documents. Detect CORRECTED and VOID checkboxes as
 first-class fields at this stage, not buried in extraction.
@@ -132,10 +152,16 @@ requires no code change. Schema validation rejects a malformed registration at l
 
 ## P7 — Layout pass
 
-**Depends on:** P2, P3, P6, **Router R1–R3**.
+**Depends on:** P2, P3, P6. **No longer gated on Router work** — the multimodal envelope and
+vision capability matrix shipped before this plan was written.
 
-Call `document.layout` per page. Store returned text spans with page-relative geometry
-verbatim as the provenance substrate. Spans are immutable once written.
+Call `v1040_layout` per page. Store returned text spans with page-relative geometry verbatim
+as the provenance substrate. Spans are immutable once written.
+
+Geometry normalization is this app's problem, not the Router's. The Router passes provider
+output through; it does not reconcile coordinate conventions across providers. Since policy
+decides what serves, normalize to one convention on receipt and record which model produced
+each span set, so a provider swap mid-season is detectable rather than silent drift.
 
 **Exit:** span geometry renders correctly as an overlay on the source page image at
 multiple zoom levels and DPIs. Span storage round-trips without coordinate drift.
@@ -146,13 +172,18 @@ multiple zoom levels and DPIs. Span storage round-trips without coordinate drift
 
 **Depends on:** P6, P7.
 
-Call `document.extract.tax_form` with layout output plus the registered schema. Bind
-schema fields to span IDs. Emit `null` for blank boxes, `0` only where a zero is printed.
-Any field with empty `span_ids` is force-routed to review regardless of reported
-confidence.
+Call `v1040_field_extract` with layout output plus the registered schema. Bind schema fields
+to span IDs. Emit `null` for blank boxes, `0` only where a zero is printed. Any field with
+empty `span_ids` is force-routed to review regardless of confidence.
 
-Multi-pass agreement: run N passes, compare, flag disagreement. Wire confidence scoring
-from whatever the Router surfaces per R2.
+Multi-pass agreement: run N passes, compare, flag disagreement. **This is the only
+confidence signal that exists** — the Router surfaces no logprobs and no provider score
+(resolved Q4), so there is no threshold below which multi-pass can be skipped. Budget at
+least 2× inference per field extraction, N=3 on disagreement.
+
+Handle `output_truncated` from the SDK's forced-JSON path: a long consolidated 1099 can cut
+off at `max_tokens`. It is not retryable as-is — raise the class's max tokens or split the
+input.
 
 **Exit:** on a labeled fixture set, every emitted field carries at least one span ID or is
 force-flagged. Blank versus zero is correctly distinguished on a fixture W-2 with an empty
@@ -247,17 +278,24 @@ policy match.
 
 ## P14 — Compliance hardening and packaging
 
-**Depends on:** P13.
+**Depends on:** P13. **Externally gated on Router region pinning — QUESTIONS.md Q11.**
 
-Startup assertion on Router US-region pinning, failing closed. Full audit-log review pass
-across every taxpayer-data route. Encryption-at-rest key handling review. WISP amendment
-document drafted and shipped in `docs/`. Licensing check stubbed at the standard
-integration point, feature-flagged off. GHCR release, versioned compose file, upgrade and
-rollback documentation.
+Startup assertion on Router US-region pinning, failing closed. **This phase cannot exit
+until that capability exists in the Router**; as of v0.0.24 there is no region concept, no
+enforcement at routing time, and no policy-reporting endpoint. Because these classes are
+`cloud_deidentified` and page images egress unscrubbed, this assertion is the only control
+keeping taxpayer data in US inference — do not soften it to unblock the phase.
+
+Full audit-log review pass across every taxpayer-data route. Encryption-at-rest key handling
+review. WISP amendment document drafted and shipped in `docs/` — it must name unscrubbed
+page-image egress explicitly, not just "inference through the Router" (Q12). Licensing check
+stubbed at the standard integration point, feature-flagged off. GHCR release, versioned
+compose file, upgrade and rollback documentation.
 
 **Exit:** app refuses to start against a Router reporting a non-US policy. Every
-taxpayer-data route audits. A clean install from GHCR on a fresh host reaches a working
-state from documentation alone.
+taxpayer-data route audits. The WISP amendment describes the actual data flow including
+image egress. A clean install from GHCR on a fresh host reaches a working state from
+documentation alone.
 
 ---
 
@@ -279,8 +317,11 @@ appears as a 1040 line total.
 
 ## Sequencing notes
 
-P0–P6 are Router-independent and can run while the Router addendum is in flight. P7 is the
-first hard gate on external work.
+P0–P13 are Router-independent — the multimodal capability P7 needs already shipped. The one
+external gate is region pinning at P14, which is compliance work rather than functional
+work, so it can be scheduled in the Router repo in parallel with the whole build. It must
+not be discovered late: nothing between here and P14 will force the issue, and P14 cannot
+exit without it.
 
 P9 is the phase most likely to expose bad extraction assumptions from P8. If P9 exit
 criteria fight back, the problem is usually in P8's binding or P6's schema, not in the

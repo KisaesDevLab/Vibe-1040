@@ -1,5 +1,22 @@
 # Vibe AI Router — PHASES addendum: multimodal and document task classes
 
+> **⚠️ SUPERSEDED — 2026-08-26. Do not plan from this document.**
+>
+> Written against assumptions about the Router that were checked for the first time on
+> 2026-08-26 against **Vibe-AI-Router v0.0.24**. Most of it was already wrong:
+>
+> | | Status |
+> |---|---|
+> | R1 — multimodal envelope | **already shipped** — `gateway/envelope.ts:122` |
+> | R2 — capability matrix | **already shipped** — `catalog/service.ts`, live probing in `catalog/probe.ts` |
+> | R3 — document task classes | **not Router work** — apps self-register their own; keys are `<app>_<purpose>`, never dotted |
+> | R4 — body size limits | **not needed** — `ROUTER_MAX_BODY_BYTES` already defaults to 10 MiB |
+> | R5 — US-region pinning | **still real, still absent.** The one genuine dependency. Gates P14 |
+>
+> STATE.md's External dependencies table is the current authority. The Router's own
+> `docs/integration.md` is the frozen contract. R5 below is still worth reading; the rest is
+> kept only as a record of what was assumed.
+
 Addendum to the existing 15-phase Router plan. Five phases, R1–R5, adding the multimodal
 capability that Vibe 1040 depends on. Numbered separately so they slot after whatever the
 Router's current phase position is.

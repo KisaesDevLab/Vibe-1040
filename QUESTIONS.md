@@ -11,60 +11,42 @@ to the Resolved section.
 
 ## Blocking
 
-### Q1 — Primary stack confirmation
-**Gates:** P0.
+### Q11 — When does Router R5 region pinning land?
+**Gates:** P14. **Raised:** 2026-08-26.
 
-CLAUDE.md §12 assumes TypeScript for the API and review UI with BullMQ, matching Vibe
-Filer, plus a Python sidecar worker for PyMuPDF, pdfplumber, and pypdfium2, with the queue
-as the boundary between them.
+§11 requires the app to assert US-region pinning at startup and refuse to start otherwise.
+**The Router has no region concept at all** — `grep -i region` across `src/`, `docs/`, and
+`db/` in Vibe-AI-Router returns nothing. There is no region column on policy, no
+enforcement at routing time, and no policy-reporting endpoint.
 
-Is that right for this repo, or is there a reason to go Python-primary given how much of
-the pipeline is document processing? The split adds a language boundary at the most
-active seam in the system, which is a real cost. Going Python-primary loses consistency
-with the rest of the suite and the BullMQ pattern.
+Per the 2026-08-26 decision these classes register `cloud_deidentified`, so the
+"nothing leaves the box" argument does not apply — cloud binding is possible, and region
+enforcement is the only thing standing between this app and non-US inference.
 
-**A:**
-
----
-
-### Q2 — Does `document.classify` accept page images?
-**Gates:** P4.
-
-The existing task class was built for T&B document naming, which suggests it takes a
-filename and possibly extracted text, not a rasterized page. P4 needs page-image
-classification.
-
-If it is filename- or text-only, this becomes either a new task class
-(`document.classify.page`) or an extension of the existing one — Router work either way,
-and it needs to be added to the Router addendum before P4.
-
-Check: the task class's request schema, and whether its provider adapters pass image
-content blocks through.
+This is Router work, not app work. It must be scheduled in the Router repo and land before
+P14 exits. Until it does, P14's exit criterion ("app refuses to start against a Router
+reporting a non-US policy") cannot be met, because there is nothing to report.
 
 **A:**
 
 ---
 
-### Q3 — Is the Router's OpenAPI spec published and stable?
-**Gates:** P3.
+### Q12 — Does the WISP amendment cover unscrubbed page-image egress?
+**Gates:** live client data. **Raised:** 2026-08-26.
 
-P3 generates the client from the spec. If no spec is published, either the Router needs to
-emit one or this app hand-writes a client against documented endpoints — the latter being
-worse, because the calling convention then drifts silently.
+`src/protect/scrub.ts:225` in the Router rewrites `type === 'text'` content parts only —
+image parts are copied through verbatim. A `cloud_deidentified` class declaring
+`vision: true` therefore egresses page images to a cloud provider with no scrubbing. The
+Router records this as accepted exposure for `tb_doc_extract` and `mybooks_receipt_extract`
+(Q-087).
 
-**A:**
+Here the pixels are W-2s and 1099s, so the unscrubbed content includes SSNs, EINs, and full
+account detail. The 2026-08-26 decision accepts that exposure rather than gating on Router
+D7.
 
----
-
-### Q4 — What does the Router surface for per-field confidence?
-**Gates:** P8 exit criteria, P11 confidence highlighting.
-
-The review UI highlights low-confidence fields. That requires the Router to pass through
-something usable — token logprobs, a provider-reported score, or nothing at all.
-
-If nothing is available, P8 falls back entirely to multi-pass agreement as the confidence
-signal, which works but costs N× inference per document and needs to be budgeted. Confirm
-before P8 so the cost model is right.
+The WISP amendment drafted in P14 must therefore name page-image egress explicitly, not
+just "inference through the Router." Confirm with whoever owns the WISP that this is
+described accurately, and confirm the DigitalOcean DPA covers it.
 
 **A:**
 
@@ -108,8 +90,10 @@ per-check tolerance rather than a global one.
 ### Q8 — Multi-pass count for agreement checking
 **Working assumption:** N=2, escalating to N=3 only on disagreement.
 
-Cheaper than a flat N=3. Depends on Q4 — if real confidence scores exist, multi-pass may
-only be needed for fields below a threshold rather than universally.
+Resolved Q4 makes this the *only* confidence signal available — the Router surfaces no
+per-token or per-field confidence. Multi-pass cannot be narrowed to fields below a
+threshold, because there is no threshold to compare against. Budget accordingly: every
+field extraction costs at least 2× inference.
 
 **A:**
 
@@ -140,4 +124,74 @@ Probably a season-two question once real volume exists.
 
 ## Resolved
 
-_(empty)_
+### Q1 — Primary stack confirmation
+**Gated:** P0.
+
+CLAUDE.md §12 assumed TypeScript for the API and review UI with BullMQ, matching Vibe
+Filer, plus a Python sidecar worker for PyMuPDF, pdfplumber, and pypdfium2, with the queue
+as the boundary between them. The alternative was Python-primary, given how much of the
+pipeline is document processing.
+
+**A:** 2026-08-26 — **TypeScript primary with a Python sidecar, as assumed.** Confirmed by
+the Router integration contract: `@kisaes/vibe-ai-client` is a TypeScript SDK and the wire
+contract is semver-major frozen, so a Python-primary build would hand-roll a client against
+a frozen contract and drift silently — the exact failure mode Q3 warned about. The sidecar
+keeps PyMuPDF, pdfplumber, and pypdfium2 where they belong. The language boundary at the
+queue is an accepted cost. **P0 is unblocked.**
+
+---
+
+### Q2 — Does `document.classify` accept page images?
+**Gated:** P4.
+
+**A:** 2026-08-26 — **The question was malformed; there is no `document.classify`.** Router
+task classes are runtime data in the `task_classes` table, not code enums, and the key
+convention is `<app>_<purpose>` (`tb_classification`, `tb_doc_extract`, `v1099_w9_extract`)
+— not dotted names. Apps **self-register** their own classes at startup via
+`registerTaskClasses()`; registration is idempotent and version-stamped, and never changes
+an existing class's sensitivity.
+
+So this app registers its own classes and inherits nothing:
+
+| key | requires | purpose |
+|---|---|---|
+| `v1040_page_classify` | `vision`, `json_schema` | page-level form-type classification (P4) |
+| `v1040_layout` | `vision` | layout pass — spans with geometry (P7) |
+| `v1040_field_extract` | `json_schema` | field binding from spans + schema (P8) |
+
+No Router work is required to create these. Precedent exists: `tb_doc_extract`,
+`mybooks_receipt_extract`, and `v1099_w9_extract` are live vision classes today.
+
+Note the registration default: a class the Router has never seen is created **`local_only`
+regardless of what the app requests**. Widening to `cloud_deidentified` is a deliberate,
+audited firm-admin action — not something this app can do for itself.
+
+---
+
+### Q3 — Is the Router's OpenAPI spec published and stable?
+**Gated:** P3.
+
+**A:** 2026-08-26 — **No spec exists, and none is needed.** There is no OpenAPI document
+anywhere in the Router repo. Instead the Router ships a first-party TypeScript SDK,
+`@kisaes/vibe-ai-client` (`packages/sdk`), and `docs/integration.md` is a **frozen contract
+(Phase 12)**: endpoints, headers, error codes, and envelope semantics are semver-major
+frozen, with a one-minor-release deprecation window and the SDK following the Router's
+major version.
+
+P3 therefore **depends on the SDK rather than generating a client**. There is no
+`src/router-client/` directory and no codegen step. The silent-drift failure mode Q3
+worried about does not arise.
+
+---
+
+### Q4 — What does the Router surface for per-field confidence?
+**Gated:** P8 exit criteria, P11 confidence highlighting.
+
+**A:** 2026-08-26 — **Nothing.** There is no logprobs plumbing in the Router;
+`src/gateway/openai-shape.ts:58` hardcodes `logprobs: null`. No provider-reported score is
+passed through either.
+
+P8 falls back entirely to multi-pass agreement as the confidence signal, per Q8. P11's
+"confidence highlighting" therefore means "fields where passes disagreed," not a calibrated
+model score — the UI copy should say so rather than implying a confidence percentage. Cost
+model: at least 2× inference per field extraction.

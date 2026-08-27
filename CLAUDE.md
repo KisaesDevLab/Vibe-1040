@@ -25,7 +25,9 @@ Read in this order before doing anything:
    ones carry a recorded working assumption. Answer with `**A:**` and a date, then move to
    Resolved.
 4. **vibe-ai-router-PHASES-addendum.md** — R1–R5, work that belongs to the Vibe AI Router
-   repo, not this one. R1–R3 must land before P7 here.
+   repo, not this one. **Largely historical as of 2026-08-26** — most of it already shipped
+   or turned out not to be Router work. STATE.md's External dependencies table supersedes
+   it. Only region pinning (R5) is still real, and it gates P14.
 
 Working rules:
 
@@ -72,28 +74,61 @@ and raise a QUESTIONS.md entry before adding anything in these directions.
 
 ## 3. Integration boundary: Vibe AI Router
 
-The app is a **Router client over HTTP**, against a separately deployed Router instance.
-The Router keeps the firm-owned key model, the task-class policy engine, and the
-local-vibellm-default / cloud-opt-in routing. This app inherits all of it and holds none
-of it.
+The app is a **client of the Vibe AI Router SDK**, against a separately deployed Router
+instance. The Router keeps the firm-owned key model, the task-class policy engine, the
+scrubber, and the local-default / cloud-opt-in routing. This app inherits all of it and
+holds none of it.
+
+**This section was verified against Vibe-AI-Router at v0.0.24 on 2026-08-26.** The
+authority is that repo's `docs/integration.md`, which is a **frozen contract (Phase 12)** —
+endpoints, headers, error codes, and envelope semantics are semver-major frozen. Read it
+before writing any Router-facing code; do not re-derive the contract from this summary.
 
 Rules:
 
-- Generate the client from the Router's OpenAPI spec into `src/router-client/`. That
-  directory is generated output — never hand-edit it, regenerate it.
+- **Use the SDK, `@kisaes/vibe-ai-client`.** There is no OpenAPI spec and no codegen step;
+  there is no `src/router-client/` directory. The SDK follows the Router's major version.
 - Never call a provider directly. No DigitalOcean SDK, no `inference.do-ai.run` string,
-  no Anthropic SDK, no Ollama URL anywhere in this repo. A grep for provider hostnames in
-  CI should return nothing outside of documentation.
-- The Router URL is a single env var, `ROUTER_BASE_URL`. Auth to the Router is a
-  service token, `ROUTER_TOKEN`. There is no fallback path if the Router is unreachable —
-  jobs park in a retry queue and the UI says the Router is down.
-- Two task classes are consumed, both of which are new Router work (see
-  `vibe-ai-router-PHASES-addendum.md`, which must land before Phase 7 here):
-  - `document.layout` — page image in, text with per-span geometry out.
-  - `document.extract.tax_form` — layout output plus a form schema in, bound fields out.
-- The existing `document.classify` class (built for T&B document naming) is reused for
-  page-level form-type classification in Phase 4. Confirm its response shape before
-  assuming it fits; it was designed for filenames, not page images.
+  no Anthropic SDK, no Ollama URL, no direct call to the GLM-OCR llama-server on port 8090
+  anywhere in this repo. A grep for provider hostnames in CI should return nothing outside
+  of documentation.
+- Config is `VIBE_AI_ROUTER_URL` and `VIBE_AI_TOKEN` — the suite-wide names, not
+  `ROUTER_BASE_URL` / `ROUTER_TOKEN`. The URL is the internal Docker network address
+  (`http://vibe-ai-router:8220`), never routed through Caddy. There is no fallback path if
+  the Router is unreachable — jobs park in a retry queue and the UI says the Router is down.
+- **Handle errors by taxonomy code, not HTTP status.** `scrubber_blocked` and
+  `policy_blocked` are never retried; `rate_limited` and `provider_unavailable` are
+  retryable and honor `retryAfterSeconds`; `capability_missing` and `invalid_request` are
+  app bugs and must log loudly.
+- `model` is advisory. **Policy decides what serves**, so handle any model's output shape.
+
+### Task classes
+
+Task classes are **runtime data**, not Router code, and this app registers its own at
+startup via `registerTaskClasses()` — idempotent and version-stamped. The key convention is
+`<app>_<purpose>`; dotted names like `document.layout` are not how the Router names things
+and were never real. Nothing is inherited from T&B or any other app.
+
+| key | requires | phase |
+|---|---|---|
+| `v1040_page_classify` | `vision`, `json_schema` | P4 — page-level form-type classification |
+| `v1040_layout` | `vision` | P7 — spans with page-relative geometry |
+| `v1040_field_extract` | `json_schema` | P8 — binds schema fields to span IDs |
+
+Two-pass extraction (§4) is **built app-side as two task classes and two round trips**. Do
+not wait on the Router's proposed preprocess stage that would fuse them; if it lands, this
+app can migrate to it later.
+
+Sensitivity: these register **`cloud_deidentified`**. Note the Router's registration
+default — a never-before-seen class is created `local_only` regardless of what the app
+asks for, and widening is a deliberate, audited firm-admin action. The app cannot widen
+itself, so provisioning must include that step or every class stays pinned local.
+
+**Accepted exposure, decided 2026-08-26:** the Router's scrubber rewrites text content
+parts only (`src/protect/scrub.ts:225`); image parts pass through verbatim. A
+`cloud_deidentified` vision class therefore egresses page images unscrubbed, and here those
+pixels carry SSNs and EINs. This is accepted rather than gated on the Router's image-scrub
+work. It must be named explicitly in the WISP amendment — see QUESTIONS.md Q12.
 
 ### Image transport
 
@@ -113,8 +148,14 @@ Consequences to respect at the rasterizer:
   provider before encoding. Do not send a 600 DPI page to a model that will downsample it
   anyway.
 - One page per request. Do not batch pages into a single call.
-- Budget roughly 800 KB encoded for a 300 DPI letter page. The Router's body-size limit
-  must be raised deliberately for this, not discovered during filing season.
+- Budget roughly 800 KB encoded for a 300 DPI letter page. **Verified 2026-08-26:** the
+  Router's `ROUTER_MAX_BODY_BYTES` already defaults to 10 MiB, comfortably above that, so
+  no limit raise is needed — confirm the deployed value at P7 rather than assuming it.
+
+The envelope already carries this natively: it accepts `image_url` content parts, and the
+adapters translate a `data:` URI into each provider's native form — a base64 `image` block
+for Anthropic, `image_url` passthrough for OpenAI-compatible providers. No Router work is
+required for image transport.
 
 **Never use DigitalOcean's Files API** for any part of this pipeline. It has a separate
 retention model and is not auto-purged.
@@ -124,10 +165,13 @@ retention model and is not auto-purged.
 A general VLM asked to emit JSON will produce plausible field values and untrustworthy
 coordinates. Because the review UI requires bounding-box overlay, extraction is split:
 
-1. **Layout pass** (`document.layout`) — a document-OCR model that emits geometry
-   natively (PaddleOCR-VL, dots.ocr). Output is text spans with page-relative boxes.
-   Store this verbatim; it is the provenance substrate.
-2. **Field-binding pass** (`document.extract.tax_form`) — takes the layout output plus
+1. **Layout pass** (`v1040_layout`) — a document-OCR model that emits geometry natively.
+   Locally that is GLM-OCR, reached through the Router's `local_ocr` provider kind, never
+   called directly. Output is text spans with page-relative boxes. Store this verbatim; it
+   is the provenance substrate. Normalize the coordinate convention on receipt and record
+   which model produced each span set — policy decides what serves, so a provider swap must
+   be detectable rather than silent.
+2. **Field-binding pass** (`v1040_field_extract`) — takes the layout output plus
    the registered schema for the classified form type and binds schema fields to spans.
    Every emitted field carries `span_ids`, so every number on the worksheet traces to
    pixels without the model ever being asked to invent a coordinate.
@@ -239,8 +283,13 @@ auxiliary service provider treatment under Treas. Reg. §301.7216-2(d), which do
 require written taxpayer consent — but only while processing stays inside the US.
 
 - The Router must enforce US-region pinning for any task class this app calls. This app
-  asserts at startup that the Router reports a US-pinned policy for `document.layout` and
-  `document.extract.tax_form`, and refuses to start if not.
+  asserts at startup that the Router reports a US-pinned policy for `v1040_page_classify`,
+  `v1040_layout`, and `v1040_field_extract`, and refuses to start if not.
+  **This is not currently buildable.** As of Router v0.0.24 there is no region concept
+  anywhere in the Router — no region column on policy, no enforcement at routing time, no
+  policy-reporting endpoint to assert against. It is Router work that must be scheduled and
+  landed before P14 exits. See QUESTIONS.md Q11. Because these classes are
+  `cloud_deidentified`, this assertion is the only control keeping inference in the US.
 - Section 9's Judgment Required behavior is not only a UX choice; it is what keeps the
   app on the data-capture side of the line. Do not add logic that decides a
   characterization question.
@@ -254,7 +303,9 @@ require written taxpayer consent — but only while processing stays inside the 
 
 ## 12. Stack
 
-Confirm before Phase 0 — see QUESTIONS.md Q1. Working assumption:
+**Confirmed 2026-08-26 — QUESTIONS.md Q1 resolved, P0 unblocked.** The Router SDK being
+TypeScript settled it: a Python-primary build would hand-roll a client against a frozen
+wire contract and drift silently.
 
 - API and review UI in TypeScript, matching the rest of the suite. BullMQ for the job
   queue, consistent with Vibe Filer.
