@@ -13,15 +13,21 @@ const scrypt = promisify(scryptCb) as (
   password: string,
   salt: Buffer,
   keylen: number,
-  options: { N: number; r: number; p: number },
+  options: { N: number; r: number; p: number; maxmem: number },
 ) => Promise<Buffer>;
 
+/**
+ * N=32768, r=8 needs roughly 128 × N × r = 33.5 MB, which is over Node's default 32 MB
+ * `maxmem` cap — scrypt throws ERR_CRYPTO_INVALID_SCRYPT_PARAMS rather than allocating.
+ * The cap has to be raised explicitly for these parameters to work at all.
+ */
 const PARAMS = { N: 32_768, r: 8, p: 1 } as const;
+const MAXMEM = 64 * 1024 * 1024;
 const KEYLEN = 64;
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const derived = await scrypt(password, salt, KEYLEN, PARAMS);
+  const derived = await scrypt(password, salt, KEYLEN, { ...PARAMS, maxmem: MAXMEM });
   return `scrypt$${PARAMS.N}$${PARAMS.r}$${PARAMS.p}$${salt.toString('base64')}$${derived.toString('base64')}`;
 }
 
@@ -35,6 +41,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
     N: Number(n),
     r: Number(r),
     p: Number(p),
+    maxmem: MAXMEM,
   });
   return derived.length === expected.length && timingSafeEqual(derived, expected);
 }

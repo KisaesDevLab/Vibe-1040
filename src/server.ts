@@ -20,7 +20,12 @@ import { attachUser } from './api/middleware.ts';
 import { env } from './config/env.ts';
 import { pool } from './db/client.ts';
 import { closeQueues } from './queue/queues.ts';
-import { assertUsRegionPinning, registerAndVerify } from './router/client.ts';
+import {
+  assertUsRegionPinning,
+  registerAndVerify,
+  retryRegistrationInBackground,
+  setRouterReachable,
+} from './router/client.ts';
 import { registry } from './schemas/registry.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -69,16 +74,39 @@ async function main(): Promise<void> {
   const forms = await registry();
   console.log(`[startup] form schema registry loaded: ${forms.size} schemas across ${forms.years().join(', ')}`);
 
-  const report = await registerAndVerify();
-  for (const row of report.registered) {
-    console.log(`[startup] task class ${row.key}: ${row.sensitivity}${row.created ? ' (created)' : ''}`);
-  }
-  for (const warning of report.warnings) {
-    console.warn(`[startup] WARNING ${warning}`);
+  /**
+   * Registration failure is NOT fatal.
+   *
+   * §3: "There is no fallback path if the Router is unreachable — jobs park in a retry
+   * queue and the UI says the Router is down." An unreachable router during a filing-season
+   * restart must leave staff able to sign in, read completed bundles, and download
+   * worksheets. Refusing to boot would turn a router blip into a total outage of work that
+   * needs no inference at all.
+   *
+   * The region assertion below is a different matter and does fail closed.
+   */
+  try {
+    const report = await registerAndVerify();
+    setRouterReachable(true);
+    for (const row of report.registered) {
+      console.log(`[startup] task class ${row.key}: ${row.sensitivity}${row.created ? ' (created)' : ''}`);
+    }
+    for (const warning of report.warnings) {
+      console.warn(`[startup] WARNING ${warning}`);
+    }
+  } catch (err) {
+    setRouterReachable(false);
+    console.error(
+      `[startup] router unreachable — task classes are NOT registered: ${(err as Error).message}\n` +
+        '          Serving in degraded mode: existing bundles are readable, new inference work parks.',
+    );
+    void retryRegistrationInBackground();
   }
 
-  // Fails closed. See QUESTIONS.md Q11 — the router has no region concept yet, so this
-  // will refuse to start unless ROUTER_REQUIRE_US_REGION=false in development.
+  // Fails closed, and deliberately still does so even when the router is unreachable: an
+  // app that cannot confirm US-region pinning must not process taxpayer data through it.
+  // See QUESTIONS.md Q11 — the router has no region concept yet, so this refuses to start
+  // unless ROUTER_REQUIRE_US_REGION=false in development.
   await assertUsRegionPinning();
 
   const app = await buildServer();

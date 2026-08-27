@@ -33,11 +33,32 @@ at all. See External dependencies below and QUESTIONS.md Q11.
   introduced (P3 exit criterion).
 - Both worksheet renderers produce artifacts whose totals reconcile to the same model.
 
-**NOT verified — no environment existed to verify it in:**
+**Verified against a live stack on 2026-08-26** (Postgres 17 + Redis 7 in Docker, app on
+the host):
 
-- Nothing has run against a live Postgres, Redis, or Router. `docker compose up` has never
-  been executed. P0's exit criterion ("stack comes up clean on a fresh host") is therefore
-  **unmet**, as are the migration forward/back and MFA-login criteria.
+- Migrations run **forward and back**: 20 tables up, clean rollback including every enum,
+  forward again. P0 criterion met.
+- Full auth flow: password alone yields a session that is explicitly unusable
+  (`403 mfa_required`); TOTP enrolment and verification make it usable. P0 criterion met.
+- Every taxpayer-data action wrote an audit row — login, failed login, MFA enrolment,
+  disposition, worksheet generate, worksheet download, retention.
+- **Database-enforced invariants proven by direct INSERT**, not by trusting app code:
+  a populated field with no span is rejected by CHECK constraint and accepted only once
+  flagged for review; un-normalized span geometry is rejected; a full SSN in `tin_last4`
+  is rejected.
+- **The blocking gate works end to end through the API**: worksheet generation returned
+  `409 blocked` with the offending check named, and succeeded only after a human
+  disposition with a note.
+- Both artifacts downloaded and are real files (XLSX zip container, `%PDF-1.3`).
+- Retention job runs and logs; dry-run mode works.
+- Server starts in **degraded mode** when the router is unreachable and says so at
+  `/health`, rather than refusing to boot.
+
+**NOT verified:**
+
+- The appliance image has never been built or run — `docker compose up` covered Postgres
+  and Redis only, because the API image needs the private SDK from the suite registry.
+  "Clean install from GHCR on a fresh host" (P14) remains unproven.
 - No inference has ever been performed. Classification, layout, and field binding are
   written against the SDK's contract but have never received a real model response.
 - **The fixture set is still empty.** Every phase whose exit criterion says "on a fixture

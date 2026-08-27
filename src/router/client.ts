@@ -126,6 +126,41 @@ export interface StartupReport {
 }
 
 /**
+ * Whether the router answered at startup. The UI reads this to say "the Router is down"
+ * rather than reporting a bundle as failed (§3).
+ */
+let routerReachable = false;
+
+export function setRouterReachable(value: boolean): void {
+  routerReachable = value;
+}
+
+export function isRouterReachable(): boolean {
+  return routerReachable;
+}
+
+/**
+ * Keep trying to register in the background after a failed startup.
+ *
+ * Without this, a router that comes back five minutes after an app restart would stay
+ * unregistered until someone noticed and restarted the app again — during filing season,
+ * that is a silent halt rather than a recovery.
+ */
+export function retryRegistrationInBackground(intervalMs = 60_000): void {
+  const attempt = async (): Promise<void> => {
+    try {
+      const report = await registerAndVerify();
+      setRouterReachable(true);
+      console.log('[router] registration recovered');
+      for (const warning of report.warnings) console.warn(`[router] WARNING ${warning}`);
+    } catch {
+      setTimeout(() => void attempt(), intervalMs).unref();
+    }
+  };
+  setTimeout(() => void attempt(), intervalMs).unref();
+}
+
+/**
  * Register our classes and check what came back.
  *
  * Two distinct failures are possible and they mean different things:

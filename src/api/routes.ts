@@ -32,6 +32,7 @@ import { ingestBundle, type IncomingFile } from '../ingest/upload.ts';
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
 import { startExtraction } from '../queue/pipeline.ts';
 import { blockingFailures } from '../reconcile/gate.ts';
+import { isRouterReachable } from '../router/client.ts';
 import { retentionForecast } from '../retention/purge.ts';
 import { blobs } from '../storage/index.ts';
 import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts';
@@ -40,7 +41,12 @@ import { auditAccess, requireRole, requireUser } from './middleware.ts';
 
 export function registerRoutes(app: FastifyInstance): void {
   // ── health ─────────────────────────────────────────────────────────────────
-  app.get('/health', async () => ({ ok: true, service: 'vibe-1040' }));
+  app.get('/health', async () => ({
+    ok: true,
+    service: 'vibe-1040',
+    // Degraded but serving: existing bundles remain readable when the router is down (§3).
+    router: isRouterReachable() ? 'reachable' : 'unreachable',
+  }));
 
   // ── auth ───────────────────────────────────────────────────────────────────
   app.post('/api/auth/login', async (req, reply) => {
@@ -204,7 +210,7 @@ export function registerRoutes(app: FastifyInstance): void {
       checks,
       taxpayers: people,
       // The UI says "the Router is down" rather than "extraction failed" (§3).
-      routerDown: parked.length > 0,
+      routerDown: parked.length > 0 || !isRouterReachable(),
       parkedJobs: parked.length,
       blocking: await blockingFailures(id),
     };
