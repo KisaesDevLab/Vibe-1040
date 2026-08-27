@@ -67,6 +67,12 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-08-26 as v0.0.1.** Repository and both GHCR images are **private**;
+`docs/wisp-amendment.md` documents the firm's compliance posture and an accepted exposure,
+which is not something to publish. Images: `ghcr.io/kisaesdevlab/vibe-1040` and
+`-sidecar`, tagged `0.0.1` / `0.0` / `latest`. Both build in CI, and the appliance image was
+pulled back and started to confirm it is real. A droplet needs a token with `read:packages`.
+
 **NOT verified:**
 
 - **Extraction accuracy.** Classification, layout, and field binding have still never
@@ -75,9 +81,9 @@ the host):
   correctly caught a blank-read-as-zero, a wrong value, and an orphan field with no span,
   and exited non-zero). It needs a reachable router with a vision-capable model — see
   "Blocked on" below.
-- The appliance image has never been built or run — `docker compose up` covered Postgres
-  and Redis only, because the API image needs the private SDK from the suite registry.
-  "Clean install from GHCR on a fresh host" (P14) remains unproven.
+- **"Clean install from GHCR on a fresh host" (P14) is still unproven.** The image builds,
+  publishes, pulls, and starts — but nobody has run the documented install end to end on a
+  clean droplet, which is what that criterion actually asks for.
 - No inference has ever been performed. Classification, layout, and field binding are
   written against the SDK's contract but have never received a real model response.
 - **The fixture set is still empty.** Every phase whose exit criterion says "on a fixture

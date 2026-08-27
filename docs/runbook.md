@@ -15,6 +15,25 @@ cd /opt/vibe-1040
 cp .env.example .env
 ```
 
+### The repository and images are private
+
+Both GHCR packages inherit the repository's visibility, so a droplet cannot pull them
+anonymously. Authenticate once with a personal access token carrying `read:packages`:
+
+```bash
+echo "$GHCR_TOKEN" | docker login ghcr.io -u KisaesDevLab --password-stdin
+```
+
+Images published per release tag:
+
+| image | tags |
+|---|---|
+| `ghcr.io/kisaesdevlab/vibe-1040` | `0.0.1`, `0.0`, `latest` |
+| `ghcr.io/kisaesdevlab/vibe-1040-sidecar` | `0.0.1`, `0.0`, `latest` |
+
+Pin a specific version in `.env` with `VIBE_1040_VERSION=0.0.1` rather than tracking
+`latest`, so an upgrade is something you decide rather than something that happens.
+
 Generate the three keys and put them in `.env`:
 
 ```bash
@@ -42,6 +61,29 @@ docker compose exec api npm run db:seed
 to `cloud_deidentified` if this deployment intends to use cloud models. Registration always
 creates them local-only; the app cannot widen itself. If you skip this, everything runs on
 local models — which is a legitimate configuration, just be aware it is the one you have.
+
+## Releasing a new version
+
+Tagging is what publishes. `.github/workflows/release.yml` runs the typecheck, the test
+suite, and the provider-leakage check *before* it pushes anything — a tag is not a reason to
+skip the gate.
+
+```bash
+git tag -a v0.0.2 -m "what changed"
+git push origin v0.0.2
+```
+
+The build needs `@kisaes/vibe-ai-client`, which is not on a public registry. CI checks the
+(public) Vibe-AI-Router repository out and builds the SDK from source, so no registry token
+is involved. To build an image locally:
+
+```bash
+mkdir -p vendor && cp -r ../Vibe-AI-Router/packages/sdk vendor/sdk
+docker build -t vibe-1040 .
+```
+
+`vendor/` is gitignored — that is BUSL code belonging to another repository and is not
+committed here.
 
 ## Upgrade
 
