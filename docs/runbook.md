@@ -15,10 +15,30 @@ cd /opt/vibe-1040
 cp .env.example .env
 ```
 
-### The repository and images are private
+### Package visibility — do this once, or the appliance will not enable the app
 
-Both GHCR packages inherit the repository's visibility, so a droplet cannot pull them
-anonymously. Authenticate once with a personal access token carrying `read:packages`:
+A GHCR package inherits its repository's visibility when it is **first created**, and this
+repository is private. That made the v0.0.1 images private too, which the Vibe Appliance
+console reports as **"image not published"** — its check asks GHCR's anonymous token
+endpoint whether the image is publicly pullable, and a private package fails that check
+exactly like a nonexistent one.
+
+Set both packages public once, in the web UI. Visibility cannot be changed through the REST
+API, and it is sticky — every later release stays public:
+
+- https://github.com/users/KisaesDevLab/packages/container/vibe-1040/settings
+- https://github.com/users/KisaesDevLab/packages/container/vibe-1040-sidecar/settings
+
+Danger Zone → Change visibility → Public.
+
+**The repository stays private.** The images carry only compiled code, the built review UI,
+and the form-schema and mapping data — no docs, no `.env`, and not the WISP amendment.
+
+The release workflow verifies this after every push and fails the release if it does not
+hold, so a silently unusable release cannot ship again.
+
+If you would rather keep the packages private, every host that pulls them needs a token
+with `read:packages`, and the appliance console will not offer to enable the app:
 
 ```bash
 echo "$GHCR_TOKEN" | docker login ghcr.io -u KisaesDevLab --password-stdin

@@ -12,7 +12,7 @@ import type { ChatMessage, RequestOptions } from '@kisaes/vibe-ai-client';
 import { env } from '../config/env.ts';
 import { APP_NAME, DECLARATIONS, TASK_CLASS, type TaskClassKey } from './task-classes.ts';
 
-export const APP_VERSION = '0.0.1';
+export const APP_VERSION = '0.0.2';
 
 export const ai = new VibeAiClient({
   baseUrl: env.VIBE_AI_ROUTER_URL,

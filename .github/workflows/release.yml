@@ -120,16 +120,64 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Summary
+      # A pushed image that nobody can pull is not a release.
+      #
+      # The Vibe Appliance decides whether an app can be enabled by asking GHCR's
+      # anonymous token endpoint whether the image is publicly pullable
+      # (console/server.js::checkGhcrPublished). A private package fails that check
+      # exactly like a nonexistent one, so v0.0.1 published successfully and was still
+      # unusable — the console showed "image not published" and the Enable button stayed
+      # disabled. Nothing in the pipeline noticed, because pushing had worked.
+      #
+      # This step performs the appliance's own check and fails the release if it does not
+      # pass, so the failure surfaces here rather than on a droplet weeks later.
+      - name: Verify the images are anonymously pullable
         run: |
+          fail=0
+          owner="${{ github.repository_owner }}"
+          for repo in "$owner/vibe-1040" "$owner/vibe-1040-sidecar"; do
+            lower=$(echo "$repo" | tr '[:upper:]' '[:lower:]')
+            body=$(curl -sf "https://ghcr.io/token?scope=repository:${lower}:pull" || echo '{}')
+            if echo "$body" | grep -q '"token"'; then
+              echo "OK   $lower is anonymously pullable"
+            else
+              echo "FAIL $lower is NOT anonymously pullable"
+              fail=1
+            fi
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            {
+              echo "### Release incomplete — images are not anonymously pullable"
+              echo
+              echo "The images pushed, but GHCR will not serve them to an anonymous puller,"
+              echo "so the Vibe Appliance console will show **image not published** and the"
+              echo "Enable button will stay disabled."
+              echo
+              echo "**Cause.** A GHCR package inherits its repository's visibility when it is"
+              echo "first created, and this repository is private."
+              echo
+              echo "**Fix — one time, in the web UI.** Package visibility cannot be changed"
+              echo "through the REST API; it is a package setting:"
+              echo
+              echo "- https://github.com/users/${{ github.repository_owner }}/packages/container/vibe-1040/settings"
+              echo "- https://github.com/users/${{ github.repository_owner }}/packages/container/vibe-1040-sidecar/settings"
+              echo
+              echo "Danger Zone → Change visibility → Public. Visibility is sticky, so every"
+              echo "later release stays public and this step passes from then on."
+              echo
+              echo "The repository itself can stay private. The images carry only compiled"
+              echo "code, the built review UI, and the form-schema and mapping data — no docs,"
+              echo "no .env, and not the WISP amendment."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
           {
-            echo "### Images published"
+            echo "### Images published and anonymously pullable"
             echo
             echo '```'
             echo "${{ steps.meta-api.outputs.tags }}"
             echo "${{ steps.meta-sidecar.outputs.tags }}"
             echo '```'
-            echo
-            echo "Packages inherit the repository's visibility. If this repo is private, the"
-            echo "images are too — a droplet pulling them needs a token with read:packages."
           } >> "$GITHUB_STEP_SUMMARY"
