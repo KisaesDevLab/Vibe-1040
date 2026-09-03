@@ -62,9 +62,9 @@ jobs:
           cp -r .router/packages/sdk vendor/sdk
           rm -rf .router
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -72,7 +72,7 @@ jobs:
 
       - name: Appliance image metadata
         id: meta-api
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}
           tags: |
@@ -86,7 +86,7 @@ jobs:
             org.opencontainers.image.vendor=Kisaes
 
       - name: Build and push the appliance
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -97,7 +97,7 @@ jobs:
 
       - name: Sidecar image metadata
         id: meta-sidecar
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}-sidecar
           tags: |
@@ -111,7 +111,7 @@ jobs:
             org.opencontainers.image.vendor=Kisaes
 
       - name: Build and push the sidecar
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./sidecar
           push: true
