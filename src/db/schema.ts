@@ -262,6 +262,9 @@ export const documents = pgTable(
     /** Payer/issuer as printed. Display and tiebreaking only. */
     payerName: text('payer_name'),
     classifierConfidence: real('classifier_confidence'),
+    /** Which model classified the first page — makes a mid-season policy swap detectable. */
+    classifierModel: text('classifier_model'),
+    classifierRequestId: text('classifier_request_id'),
     ...timestamps,
   },
   (t) => [
@@ -294,6 +297,8 @@ export const pages = pgTable(
     widthPx: integer('width_px'),
     heightPx: integer('height_px'),
     encodedBytes: integer('encoded_bytes'),
+    /** 'fraction' | 'thousandths' | 'pixel' — what scale the layout model actually returned (P7). */
+    layoutCoordConvention: text('layout_coord_convention'),
     /** Derived PII. Purges on its own earlier schedule (§11, P13). */
     rasterStorageKey: text('raster_storage_key'),
     rasterPurgedAt: timestamp('raster_purged_at', { withTimezone: true }),

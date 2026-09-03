@@ -41,9 +41,19 @@ Working rules:
 
 ## Commands
 
-None yet — P0 establishes the Docker Compose stack, migration tooling, and CI. Record the
-build, test, lint, single-test, and migration commands in this section as part of P0's
-close, so later phases do not have to rediscover them.
+```bash
+npm run typecheck                    # tsc --noEmit (strict, exactOptionalPropertyTypes)
+npm run lint                         # eslint .
+npm test                             # vitest run — test/**/*.test.ts
+npx vitest run test/layout.test.ts   # one file
+npm run build                        # tsc + copy migrations into dist/
+npm run db:migrate | db:rollback     # SQL migrations in src/db/migrations, up / one step down
+npm run dev | worker                 # API and queue worker, --experimental-strip-types
+npm run accuracy -- <bundleId>       # score a processed bundle against fixture ground truth
+npm run check:providers              # provider-leakage grep; must stay clean
+```
+
+Sidecar: `cd sidecar && pip install -r requirements.txt && python -m py_compile worker.py`.
 
 ---
 
@@ -112,12 +122,18 @@ and were never real. Nothing is inherited from T&B or any other app.
 | key | requires | phase |
 |---|---|---|
 | `v1040_page_classify` | `vision`, `json_schema` | P4 — page-level form-type classification |
-| `v1040_layout` | `vision` | P7 — spans with page-relative geometry |
+| `v1040_layout` | `vision`, `json_schema` | P7 — spans with page-relative geometry |
 | `v1040_field_extract` | `json_schema` | P8 — binds schema fields to span IDs |
 
 Two-pass extraction (§4) is **built app-side as two task classes and two round trips**. Do
 not wait on the Router's proposed preprocess stage that would fuse them; if it lands, this
 app can migrate to it later.
+
+**Current binding (decided 2026-09-02):** all three classes are served by DigitalOcean-hosted
+open-source models chosen in Router policy — `digitalocean/glm-5.3-flash` for classify and
+layout, `digitalocean/qwen3.5-397b-a17b` for field extraction. Anthropic and OpenAI models
+hosted on DigitalOcean are excluded for retention reasons. The app never names a model; the
+provisioning steps are in `docs/runbook.md`.
 
 Sensitivity: these register **`cloud_deidentified`**. Note the Router's registration
 default — a never-before-seen class is created `local_only` regardless of what the app
@@ -165,12 +181,16 @@ retention model and is not auto-purged.
 A general VLM asked to emit JSON will produce plausible field values and untrustworthy
 coordinates. Because the review UI requires bounding-box overlay, extraction is split:
 
-1. **Layout pass** (`v1040_layout`) — a document-OCR model that emits geometry natively.
-   Locally that is GLM-OCR, reached through the Router's `local_ocr` provider kind, never
-   called directly. Output is text spans with page-relative boxes. Store this verbatim; it
-   is the provenance substrate. Normalize the coordinate convention on receipt and record
-   which model produced each span set — policy decides what serves, so a provider swap must
-   be detectable rather than silent.
+1. **Layout pass** (`v1040_layout`) — a vision model asked for text spans with boxes on a
+   0–1000 scale, the native grounding convention of the GLM/Qwen-family models policy binds.
+   Output is text spans with page-relative boxes. Store this verbatim; it is the provenance
+   substrate. The app detects the convention the model actually returned — fraction,
+   thousandths, or pixel — **once per page over the whole span set**, normalizes to 0..1,
+   records the convention on the page row and the serving model on every span. Policy
+   decides what serves, so a provider swap must be detectable rather than silent.
+   **GLM-OCR cannot serve this class**: it emits text and Markdown tables without geometry,
+   so a `local_only` binding of `v1040_layout` through the `local_ocr` kind is not viable as
+   written. See QUESTIONS.md Q14.
 2. **Field-binding pass** (`v1040_field_extract`) — takes the layout output plus
    the registered schema for the classified form type and binds schema fields to spans.
    Every emitted field carries `span_ids`, so every number on the worksheet traces to
@@ -290,6 +310,10 @@ require written taxpayer consent — but only while processing stays inside the 
   policy-reporting endpoint to assert against. It is Router work that must be scheduled and
   landed before P14 exits. See QUESTIONS.md Q11. Because these classes are
   `cloud_deidentified`, this assertion is the only control keeping inference in the US.
+  **Decided 2026-09-02:** DigitalOcean serverless inference offers no region selection
+  either, so deployments bound to DigitalOcean-hosted open-source models run with
+  `ROUTER_REQUIRE_US_REGION=false` by explicit, recorded decision (STATE.md decision log,
+  QUESTIONS.md Q13). The §7216 position then rests on DigitalOcean's terms and DPA.
 - Section 9's Judgment Required behavior is not only a UX choice; it is what keeps the
   app on the data-capture side of the line. Do not add logic that decides a
   characterization question.

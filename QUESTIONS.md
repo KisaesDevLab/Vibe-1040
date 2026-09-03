@@ -46,6 +46,10 @@ this app's deployment but the moment a firm admin widens the three `v1040_*` cla
 nothing egresses. That widening step should carry a checklist item requiring this to be in
 place first.
 
+**Partial answer, 2026-09-02.** The widening happened. Q13 records the interim posture: the
+assertion is disabled by decision for the DigitalOcean binding, and DigitalOcean serverless
+inference itself offers no region control that R6 could assert against even once it lands.
+
 **A:**
 
 ---
@@ -72,6 +76,50 @@ described accurately, and confirm the DigitalOcean DPA covers it.
 ---
 
 ## Non-blocking, working assumption recorded
+
+### Q13 — Is running without region enforcement acceptable for DigitalOcean-hosted open models?
+**Working assumption:** yes, pending Router R6. **Raised:** 2026-09-02.
+
+The three classes are bound to DigitalOcean-hosted open-source models (`glm-5.3-flash`,
+`qwen3.5-397b-a17b`). DigitalOcean publishes no region selection for serverless inference
+and the Router has no region report, so `assertUsRegionPinning` cannot pass and
+`ROUTER_REQUIRE_US_REGION=false` is set for this deployment by recorded decision.
+
+What DigitalOcean's data-privacy page states for DigitalOcean-hosted models (verified
+2026-09-01): inputs and outputs are not stored on DigitalOcean infrastructure; the data is
+not used to train, retrain, or fine-tune any model and is not shared with third parties for
+that purpose; requests "run entirely within DigitalOcean's infrastructure"; input is never
+sent to the original model creator. Anthropic models on DigitalOcean carry a mandatory 30-day
+retention for Claude Fable, and OpenAI models on DigitalOcean serverless do not support zero
+data retention — both are excluded from policy for that reason.
+
+The working assumption is that those terms plus the executed DPA are sufficient for the
+§7216 auxiliary-service treatment until R6 lands. Revisit the moment it does, and revisit if
+DigitalOcean publishes a region control for serverless inference or the firm moves to
+dedicated inference in a named US region.
+
+**A:**
+
+---
+
+### Q14 — Can `v1040_layout` ever be bound `local_only`?
+**Working assumption:** not as written. **Raised:** 2026-09-02.
+
+CLAUDE.md §4 originally said the local layout model is GLM-OCR via the Router's `local_ocr`
+provider kind. GLM-OCR's documented modes (`Text Recognition:`, `Table Recognition:`) return
+text and Markdown tables with no coordinates, and the Router's OpenAI-compat adapter would
+pass the app's `json_schema` through to llama-server, which would grammar-force a 0.9B OCR
+model to invent a spans array. That is the failure §4 exists to avoid.
+
+A local path therefore needs a geometry source that measures pixels — PyMuPDF words for
+text-layer PDFs, an hOCR-style engine for scans — built in the sidecar, with any OCR model
+used for text quality only. That is a redesign, not a binding change, and it was considered
+and deferred on 2026-09-02 in favour of the DigitalOcean vision binding. Until it is built,
+the local-only configuration the runbook mentions does not produce span geometry.
+
+**A:**
+
+---
 
 ### Q5 — Retention windows
 **Working assumption:** rasterized page images purge at 90 days, source documents and

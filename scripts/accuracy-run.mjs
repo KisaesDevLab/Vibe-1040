@@ -2,10 +2,15 @@
 /**
  * Extraction accuracy harness (P4, P7, P8).
  *
- *   node --experimental-strip-types scripts/accuracy-run.mjs <bundleId>
+ *   npm run accuracy -- <bundleId> [--json]
  *
  * Scores what the pipeline actually extracted against `test/fixtures/manifest.json`, which
  * records the true value of every field on every fixture.
+ *
+ * The report opens with the models that actually served the bundle — classifier, layout
+ * (with the coordinate convention it returned), and field extraction — so two runs against
+ * different router policy bindings can be compared without guessing what produced them.
+ * `--json` prints the scores and that provenance as one line for diffing.
  *
  * The headline number is not the interesting one. Three sub-scores matter more:
  *
@@ -20,9 +25,11 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import pg from 'pg';
 
-const bundleId = process.argv[2];
+const args = process.argv.slice(2);
+const asJson = args.includes('--json');
+const bundleId = args.find((a) => !a.startsWith('--'));
 if (!bundleId) {
-  console.error('usage: node scripts/accuracy-run.mjs <bundleId>');
+  console.error('usage: npm run accuracy -- <bundleId> [--json]');
   process.exit(2);
 }
 
@@ -58,6 +65,33 @@ if (!docs.length) {
   console.error(`no classified documents for bundle ${bundleId} — has the pipeline run?`);
   process.exit(1);
 }
+
+// ── provenance: which models actually served this bundle ─────────────────────
+const distinct = (rows, key) => [...new Set(rows.map((r) => r[key]).filter((v) => v !== null))];
+
+const { rows: classifierRows } = await pool.query(
+  `SELECT DISTINCT classifier_model FROM documents WHERE bundle_id = $1`,
+  [bundleId],
+);
+const { rows: layoutRows } = await pool.query(
+  `SELECT DISTINCT ls.produced_by_model, p.layout_coord_convention
+     FROM layout_spans ls JOIN pages p ON p.id = ls.page_id
+    WHERE p.bundle_id = $1`,
+  [bundleId],
+);
+const { rows: extractRows } = await pool.query(
+  `SELECT DISTINCT ef.produced_by_model
+     FROM extracted_fields ef JOIN documents d ON d.id = ef.document_id
+    WHERE d.bundle_id = $1`,
+  [bundleId],
+);
+
+const provenance = {
+  classify: distinct(classifierRows, 'classifier_model'),
+  layout: distinct(layoutRows, 'produced_by_model'),
+  layoutConventions: distinct(layoutRows, 'layout_coord_convention'),
+  extract: distinct(extractRows, 'produced_by_model'),
+};
 
 const score = {
   classification: { correct: 0, wrong: 0, details: [] },
@@ -146,8 +180,33 @@ for (const doc of docs) {
 
 const pct = (n, d) => (d === 0 ? '—' : `${((n / d) * 100).toFixed(1)}%`);
 const line = (label, value) => console.log(`  ${label.padEnd(34)} ${value}`);
+const listOrNone = (xs) => (xs.length ? xs.join(', ') : '(none)');
+
+const failed = score.blankVsZero.wrong > 0 || score.classification.wrong > 0;
+
+if (asJson) {
+  const strip = ({ details: _details, ...rest }) => rest;
+  console.log(
+    JSON.stringify({
+      bundleId,
+      models: provenance,
+      classification: strip(score.classification),
+      fields: strip(score.fields),
+      blankVsZero: strip(score.blankVsZero),
+      spans: score.spans,
+      pass: !failed,
+    }),
+  );
+  await pool.end();
+  process.exit(failed ? 1 : 0);
+}
 
 console.log(`\nExtraction accuracy — bundle ${bundleId}\n${'='.repeat(64)}`);
+
+console.log('\nModels that served this bundle');
+line('classify', listOrNone(provenance.classify));
+line('layout', `${listOrNone(provenance.layout)}  (convention: ${listOrNone(provenance.layoutConventions)})`);
+line('extract', listOrNone(provenance.extract));
 
 const classTotal = score.classification.correct + score.classification.wrong;
 console.log('\nClassification (P4)');
@@ -184,4 +243,4 @@ await pool.end();
 
 // Blank-vs-zero is the gating metric. Anything less than perfect there is a failure
 // regardless of how good the headline number looks.
-process.exit(score.blankVsZero.wrong > 0 || score.classification.wrong > 0 ? 1 : 0);
+process.exit(failed ? 1 : 0);

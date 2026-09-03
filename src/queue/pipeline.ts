@@ -44,7 +44,10 @@ async function parkJob(
     taskClass,
     state: err.failure.kind === 'permanent' ? 'failed' : 'parked',
     lastErrorCode: err.failure.code,
-    lastErrorMessage: err.failure.message,
+    lastErrorMessage:
+      err.failure.kind === 'permanent' && err.failure.reason
+        ? `${err.failure.message} (${err.failure.reason})`
+        : err.failure.message,
     retryAfter:
       err.failure.kind === 'retry' ? new Date(Date.now() + err.failure.afterSeconds * 1000) : null,
   });
@@ -139,6 +142,8 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
         isSupplemental: group.isSupplemental,
         payerName: group.payerName,
         classifierConfidence: group.confidence,
+        classifierModel: group.classifierModel,
+        classifierRequestId: group.classifierRequestId,
         status: 'classified',
       })
       .returning({ id: documents.id });

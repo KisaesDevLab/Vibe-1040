@@ -55,7 +55,12 @@ const classifyResponse = z.object({
   tax_year: z.number().int().nullable().optional(),
 });
 
-export type PageClassification = z.infer<typeof classifyResponse> & { pageId: string };
+export type PageClassification = z.infer<typeof classifyResponse> & {
+  pageId: string;
+  /** Which model classified the page — recorded on the document so a policy swap is visible. */
+  model: string;
+  requestId: string;
+};
 
 function systemPrompt(formTypes: readonly string[]): string {
   return [
@@ -82,7 +87,7 @@ export async function classifyPage(
     ? `The previous page was classified as ${ctx.previousFormType}.`
     : 'This is the first page of the bundle.';
 
-  const { data } = await completeJson<z.infer<typeof classifyResponse>>(
+  const { data, model, requestId } = await completeJson<z.infer<typeof classifyResponse>>(
     TASK_CLASS.PAGE_CLASSIFY,
     [
       { role: 'system', content: systemPrompt(formTypes) },
@@ -98,7 +103,7 @@ export async function classifyPage(
     { bundleId: ctx.bundleId, ...(ctx.userId ? { userId: ctx.userId } : {}), temperature: 0 },
   );
 
-  return { ...classifyResponse.parse(data), pageId };
+  return { ...classifyResponse.parse(data), pageId, model, requestId };
 }
 
 // ── grouping ─────────────────────────────────────────────────────────────────
@@ -113,6 +118,9 @@ export interface DocumentGroup {
   payerName: string | null;
   taxYear: number | null;
   confidence: number;
+  /** Model that classified the group's first page. */
+  classifierModel: string;
+  classifierRequestId: string;
   /** Index into the returned array; set for sub-forms of a consolidated package. */
   parentIndex?: number;
 }
@@ -159,6 +167,8 @@ export function groupPages(classifications: readonly PageClassification[]): Docu
       payerName: page.payer_name ?? null,
       taxYear: page.tax_year ?? null,
       confidence: page.confidence,
+      classifierModel: page.model,
+      classifierRequestId: page.requestId,
     };
 
     if (page.form_type === '1099-CONSOLIDATED') {

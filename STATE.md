@@ -19,6 +19,23 @@ at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
 
+**Verified by execution on 2026-09-02** (DigitalOcean-binding change set):
+
+- 126 tests pass across 12 files (`npm test`), including new coverage for page-level
+  coordinate-convention detection (a 0–1000 span set on a 1700 px raster now maps 500 →
+  0.5, where the old rule produced 0.29), the `invalid_response` / `no_vision_provider`
+  taxonomy cases, and classifier provenance on document groups.
+- `tsc --noEmit` clean; provider-leakage check clean.
+- Migration `0003_model_provenance` ran forward, back, and forward again against the compose
+  Postgres 17: the three new columns appear, disappear, and reappear; `schema_migrations`
+  ends at 0001, 0002, 0003.
+- `npm run lint` does **not** run: the repo has no `eslint.config.*` (ESLint 9 flat config)
+  and never had one committed. Pre-existing; not addressed in this change set.
+- **Still not verified:** anything past the router boundary. No DigitalOcean request has been
+  made; the coordinate-convention detection, the truncation retry, and the overlay alignment
+  are tested against synthetic span sets only. The provisioning steps in the runbook and the
+  first harness run are the next work.
+
 **Verified by execution on 2026-08-26:**
 
 - 61 tests pass across 7 files (`npm test`).
@@ -67,6 +84,10 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-02 as v0.0.3** — the DigitalOcean-binding change set above (migration
+0003, page-level coordinate convention, router taxonomy fixes, provisioning runbook).
+Images `ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.0.3` / `0.0` / `latest`.
+
 **Released 2026-08-26 as v0.0.1.** Repository and both GHCR images are **private**;
 `docs/wisp-amendment.md` documents the firm's compliance posture and an accepted exposure,
 which is not something to publish. Images: `ghcr.io/kisaesdevlab/vibe-1040` and
@@ -99,12 +120,15 @@ needed that this build cannot supply for itself:
 1. **The router running** with provider credentials. `vibe-ai-router-postgres` is up but the
    router app is not, its Redis has been down 12 days, and no local model endpoint is
    listening (nothing on 11434 or 8090).
-2. **A vision-capable model reachable** — either a local one (Ollama, or GLM-OCR via the
-   `local_ocr` provider kind) or a cloud provider configured in the router.
-3. **An app token** minted for `vibe-1040`, and the three `v1040_*` classes widened from
-   `local_only` in the router admin UI if cloud models are intended.
+2. **A vision-capable model reachable.** Decided 2026-09-02: DigitalOcean-hosted
+   `glm-5.3-flash`, discovered and probed for vision in the router. (GLM-OCR via `local_ocr`
+   is **not** an option for the layout class — it emits no geometry; Q14.)
+3. **An app token** minted for `vibe-1040`, the three `v1040_*` classes widened from
+   `local_only`, policies bound, and `ROUTER_REQUIRE_US_REGION=false` set per the decision
+   log. The full sequence is `docs/runbook.md` → Provisioning.
 
-Then: `node scripts/accuracy-run.mjs <bundleId>`.
+Then: `npm run accuracy -- <bundleId>`. The report opens with which models served the
+bundle, so a second run against a different policy binding is a direct comparison.
 
 Treat the build as a complete, self-consistent implementation whose only unproven half is
 what a model returns.
@@ -119,10 +143,10 @@ what a model returns.
 | P1 | Ingestion and storage | implemented | ingest + content-hash dedup + encrypted blob store (local & B2) |
 | P2 | Rasterization and text-layer triage | implemented | Python sidecar: PyMuPDF triage, grayscale JPEG raster; **needs fixtures** |
 | P3 | Router SDK integration | implemented | SDK client, error taxonomy, parking, leakage check verified |
-| P4 | Page classification and bundle splitting | implemented | v1040_page_classify + grouping + consolidated containers |
+| P4 | Page classification and bundle splitting | implemented | v1040_page_classify + grouping + consolidated containers; classifier model recorded (0003) |
 | P5 | Identity resolution | implemented | salted HMAC TIN, ITIN-aware, human confirmation gate |
 | P6 | Form schema registry | implemented | **27 form schemas**; all fields nullable; validated at load |
-| P7 | Layout pass | implemented | spans normalized 0..1 on receipt, immutable, model recorded |
+| P7 | Layout pass | implemented | 0–1000 scale requested; convention detected per page and recorded; spans immutable, model recorded; values-only retry on truncation |
 | P8 | Field-binding extraction | implemented | multi-pass agreement (only signal per Q4); no-span forces review |
 | P9 | Arithmetic reconciliation gate | implemented | every §6 check; gate has one door and no bypass |
 | P10 | 1040 line mapping engine | implemented | TY2025 incl. Schedule 1-A → 13b; conditional 1099-R routing |
@@ -148,10 +172,11 @@ historical — read this table first.
 | Router R4 — body-size limits raised | P7 | **not needed** — `ROUTER_MAX_BODY_BYTES` already defaults to 10 MiB vs ~800 KB/page budget |
 | Router R6 — region pinning + policy reporting | P14 | **ticket filed 2026-08-26** — `Vibe-AI-Router/docs/ticket-R6-region-pinning.md`. Not built. Ships inert; 3–4 d router-side, 0 app-side. See Q11 |
 | Router image scrubbing (proposed preprocess stage) | — | proposed, pending operator decision D7. **Not a dependency** — exposure accepted, see decision log |
-| Firm-admin widening of the three classes to `cloud_deidentified` | P7 | not started — app cannot widen itself; must be part of provisioning |
+| Firm-admin widening of the three classes to `cloud_deidentified` | P7 | **runbook step** (docs/runbook.md → Provisioning) — app cannot widen itself |
+| DigitalOcean provider configured in the Router; `glm-5.3-flash` probed for vision; policies bound | P4, P7, P8 | **runbook step**, decided 2026-09-02 — see decision log |
 | Router OpenAPI spec published | P3 | **moot** — no spec exists; SDK is the contract (Q3) |
 | DigitalOcean DPA executed | before live client data | not started |
-| WISP amendment drafted — must name unscrubbed page-image egress | P14 | not started — see Q12 |
+| WISP amendment drafted — must name unscrubbed page-image egress | P14 | **drafted** — `docs/wisp-amendment.md` names DigitalOcean-hosted open models, their retention terms, and the region gap (Q12, Q13) |
 
 ---
 
@@ -259,6 +284,41 @@ A local_only assertion was considered and rejected as inconsistent with the
 `cloud_deidentified` tier — the app would refuse to start against its own registration.
 P14 therefore blocks on Router region pinning landing. *Affects:* P3, P14.
 
+**2026-09-02 — Task classes bound to DigitalOcean-hosted open-source models; VLM geometry kept.**
+Policy binds `v1040_page_classify` and `v1040_layout` to `digitalocean/glm-5.3-flash` and
+`v1040_field_extract` to `digitalocean/qwen3.5-397b-a17b`. Chosen for retention, not
+accuracy: DigitalOcean's terms for its hosted open models are no storage of inputs or
+outputs, no training, never forwarded to the model creator, one subprocessor under one DPA.
+Anthropic models on DigitalOcean carry a mandatory 30-day retention for Claude Fable and
+OpenAI models there have no zero-data-retention on serverless; both are excluded from
+policy. A sidecar-geometry redesign (PyMuPDF words for text-layer pages, an hOCR engine for
+scans, text-only cloud calls, no pixel egress) was considered and deferred; the existing
+design where the vision model estimates span geometry stands for v1. Kurt's call.
+Two consequences: the local-only configuration is not viable for the layout class (Q14),
+and the accuracy of a general VLM on dense 1099 pages is unproven — the harness decides.
+*Affects:* P4, P7, P8, P14, WISP.
+
+**2026-09-02 — `ROUTER_REQUIRE_US_REGION=false` is the accepted production setting for the DigitalOcean binding.**
+DigitalOcean serverless inference exposes no region selection and the Router exposes no
+region report, so `assertUsRegionPinning` cannot pass. Disabling it is a recorded decision,
+not a development shortcut. The §7216 position rests on DigitalOcean's contractual terms and
+the executed DPA rather than a technical control until Router R6 lands — and even then R6
+would have nothing to assert against for serverless; dedicated inference in a named US
+region is the only DigitalOcean product that gives a provable region. See Q13.
+*Affects:* P14, WISP.
+
+**2026-09-02 — Layout geometry requested on a 0–1000 scale; convention detected per page.**
+The per-span rule "anything above 1 is pixels" would have misread the native 0–1000
+grounding of GLM/Qwen-family models as pixels on every raster wider than 1000 px and
+misplaced every box. Detection is now over the whole span set, the result is stored in
+`pages.layout_coord_convention`, and the worker warns when a model returns anything other
+than the requested scale. One values-only retry on truncation; the layout budget is 16384.
+Also: `invalid_response` and `no_vision_provider` — router codes outside the SDK's type
+union — are now handled explicitly instead of parking forever; the binder no longer puts
+an `enum` on `field_key` because the Router enforces it and fails the whole pass on one
+invented key; the classifier's model is recorded on `documents` (migration 0003).
+*Affects:* P4, P7, P8, P11 overlay.
+
 ---
 
 ## Known risks
@@ -266,7 +326,10 @@ P14 therefore blocks on Router region pinning landing. *Affects:* P3, P14.
 | Risk | Phase | Mitigation |
 |---|---|---|
 | **Unscrubbed page images carrying SSNs egress to cloud providers** | P7, P8, P14 | Accepted 2026-08-26 — see decision log. WISP must name it (Q12); region pinning is the only remaining control (Q11) |
-| **No region enforcement exists, so nothing prevents non-US inference** | P14 | Q11 — Router work, must land before P14 exits |
+| **No region enforcement exists, so nothing prevents non-US inference** | P14 | Accepted 2026-09-02 for the DigitalOcean binding — contractual only (Q13). Q11 remains open for R6 |
+| A general VLM returns plausible but imprecise span boxes | P7, P11 | Accepted 2026-09-02 (VLM geometry kept over sidecar geometry). Convention recorded per page; overlay checked at P7 verification; sidecar geometry is the fallback design (Q14) |
+| 0–1000 vs pixel convention ambiguity on a near-empty page | P7 | Page-level detection prefers the requested scale; convention stored on the page; worker warns on any other |
+| Dense pages exceed the layout output budget | P7 | Budget 16384; one values-only retry; then `failed` with `json_truncated` in `router_jobs` for the operator |
 | Classes stay pinned `local_only` if provisioning forgets the firm-admin widening | P7 | App cannot widen itself; add to the provisioning checklist and assert the effective tier at startup |
 | Multi-pass is the only confidence signal, at ≥2× inference cost per field | P8 | Q4/Q8 — budget for it; do not promise calibrated confidence in the UI |
 | Constrained decoding may reduce accuracy on long documents vs prompt-based JSON | P8 | Validate empirically on fixtures; keep a re-prompt-and-validate fallback |

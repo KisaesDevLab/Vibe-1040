@@ -77,10 +77,69 @@ docker compose exec api npm run db:migrate
 docker compose exec api npm run db:seed
 ```
 
-**Then, in the router admin UI**, widen the three `v1040_*` task classes from `local_only`
-to `cloud_deidentified` if this deployment intends to use cloud models. Registration always
-creates them local-only; the app cannot widen itself. If you skip this, everything runs on
-local models — which is a legitimate configuration, just be aware it is the one you have.
+**Then provision the router** — the next section. Registration always creates the three
+`v1040_*` classes `local_only`; the app cannot widen itself. Note that a local-only
+configuration does **not** currently produce span geometry for the layout class (GLM-OCR via
+`local_ocr` emits text without coordinates — QUESTIONS.md Q14), so "skip the widening and run
+local" is not a working configuration for this app as built.
+
+## Provisioning: Router → DigitalOcean
+
+Decided 2026-09-02 (STATE.md decision log). All three task classes are served by
+DigitalOcean-hosted open-source models chosen in router policy; the app never names a model.
+Every step below is a router admin action (session cookie, not the app token) except 4, 7,
+and 8. Base URL below is the router's admin API.
+
+1. **Add the provider.** Providers → add "DigitalOcean (Gradient)": kind `digitalocean`, base
+   URL `https://inference.do-ai.run/v1`, auth `api_key`. Then store the DigitalOcean *model
+   access key*:
+   `POST /admin-api/providers/:id/credentials {"apiKey": "..."}`. Test the connection.
+2. **Discover models.** `POST /admin-api/providers/:id/discover-models`. Discovered rows
+   arrive with `json_schema` only, no `vision`, and a placeholder 8192 context window. In the
+   catalog editor set the real context windows: `glm-5.3-flash` 1,048,576;
+   `qwen3.5-397b-a17b` 131,072 (this one is curated and may already be right).
+3. **Probe for vision — required.** `POST /admin-api/models/:id/probe {"apply": true}` for
+   `digitalocean/glm-5.3-flash`. The result must show `vision: supported`; if it is
+   `inconclusive`, fix the credential and probe again. Without this, classify and layout fail
+   with `capability_missing` or `no_vision_provider`. Probe `qwen3.5-397b-a17b` too.
+4. **Start the app once** so the classes register. The startup log shows all three as
+   `local_only (created)`.
+5. **Widen the classes.** For each of `v1040_page_classify`, `v1040_layout`,
+   `v1040_field_extract`:
+   `PATCH /admin-api/task-classes/<key> {"sensitivity": "cloud_deidentified"}`. Audited.
+6. **Bind policies.** `PUT /admin-api/policies/<key>`:
+   - `v1040_page_classify` → `defaultModel: digitalocean/glm-5.3-flash`,
+     `allowedModels: [glm-5.3-flash, kimi-k2.6]`, `fallbackChain: []`.
+   - `v1040_layout` → same models; `maxTokensOverride` may stay unset (the class default is
+     16384) or be raised if dense pages truncate.
+   - `v1040_field_extract` → `defaultModel: digitalocean/qwen3.5-397b-a17b`,
+     `allowedModels: [qwen3.5-397b-a17b, glm-5.3]`, `fallbackChain: []`.
+   Leave `temperatureMin` unset — the app sends `temperature: 0`, and multi-pass agreement
+   depends on it. **Never add an Anthropic- or OpenAI-on-DigitalOcean model** to these
+   policies; the WISP names DigitalOcean-hosted open models only (docs/wisp-amendment.md §3).
+7. **Set the app environment.** `ROUTER_EXPECTED_SENSITIVITY=cloud_deidentified` and
+   `ROUTER_REQUIRE_US_REGION=false`. The second one is a recorded decision (STATE.md
+   2026-09-02, QUESTIONS.md Q13), not a development shortcut; do not set it without having
+   read both.
+8. **Restart and check the log.** Expect `[startup] task class …: cloud_deidentified` three
+   times and the `ROUTER_REQUIRE_US_REGION=false` warning. Anything still `local_only` means
+   step 5 was missed.
+
+### Comparing models
+
+The accuracy harness is the only arbiter of which model is better on these forms. To compare:
+
+1. Upload the fixture bundle once **per candidate binding** — spans are immutable per page and
+   the layout job short-circuits when spans exist, so a re-run on the same bundle proves
+   nothing. Content-hash dedup flags the second upload as a duplicate but does not block it.
+2. Between runs change only the router policy (step 6). Never change the app.
+3. Let classification finish, confirm identity in the UI, let extraction finish. Check
+   `router_jobs` for the bundle is empty.
+4. `npm run accuracy -- <bundleId> --json > runs/<date>-<model>.json`. The report names the
+   models that actually served the bundle and the coordinate convention the layout model
+   returned. Compare blank-vs-zero first, classification second, orphan spans third, the
+   headline number last.
+5. Record the winning binding in STATE.md's decision log.
 
 ## Releasing a new version
 
@@ -131,9 +190,29 @@ newer schema.
 
 ### "Refusing to start: the router does not expose region pinning"
 
-Expected as of router v0.0.24 — the capability does not exist yet (QUESTIONS.md Q11). For a
-development or local-only deployment, set `ROUTER_REQUIRE_US_REGION=false`. Do not set it
-for live client data on a cloud-bound task class.
+Expected as of router v0.0.24 — the capability does not exist yet (QUESTIONS.md Q11), and
+DigitalOcean serverless inference has no region control to report anyway. For the
+DigitalOcean binding this deployment runs with `ROUTER_REQUIRE_US_REGION=false` by recorded
+decision (STATE.md 2026-09-02, QUESTIONS.md Q13). Read both before setting it.
+
+### `router_jobs` shows `invalid_response` with `json_truncated`
+
+The layout model ran out of output budget on a dense page, the router retried and gave up,
+and the app's one values-only retry also overran. The job is `failed`, not parked. Raise
+`maxTokensOverride` on the `v1040_layout` policy, or accept that the page's back-page
+instruction text will not be transcribed, and re-queue the page.
+
+### `router_jobs` shows `capability_missing` or `no_vision_provider`
+
+The class is bound to a model whose vision capability was never probed and enabled
+(Provisioning step 3). Probe with `apply: true`, then re-queue. Parked, not failed.
+
+### Worker log says "returned pixel coordinates, not the requested 0–1000 scale"
+
+The layout model changed — most likely a policy edit swapped models — and the new one uses a
+different coordinate convention. The app normalized it and recorded the convention on the
+page, so nothing is wrong yet, but open one of those pages in the review UI and confirm the
+boxes sit on the text before trusting the season's overlays.
 
 ### The UI says "Router unreachable — work is parked"
 

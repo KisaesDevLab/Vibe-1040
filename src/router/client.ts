@@ -12,7 +12,7 @@ import type { ChatMessage, RequestOptions } from '@kisaes/vibe-ai-client';
 import { env } from '../config/env.ts';
 import { APP_NAME, DECLARATIONS, TASK_CLASS, type TaskClassKey } from './task-classes.ts';
 
-export const APP_VERSION = '0.0.2';
+export const APP_VERSION = '0.0.3';
 
 export const ai = new VibeAiClient({
   baseUrl: env.VIBE_AI_ROUTER_URL,
@@ -28,19 +28,39 @@ export const ai = new VibeAiClient({
 export type RouterFailure =
   | { kind: 'retry'; afterSeconds: number; code: string; message: string }
   | { kind: 'park'; code: string; message: string }
-  | { kind: 'permanent'; code: string; message: string };
+  | { kind: 'permanent'; code: string; message: string; reason?: string };
 
 /**
  * Dispatch on the taxonomy code, never on HTTP status (§3).
  *
  * `scrubber_blocked` is deliberately permanent rather than parked: retrying sends the same
  * protected data again, and the answer will not change.
+ *
+ * Two codes the SDK's type union does not enumerate but the router does send, verbatim:
+ *  - `invalid_response` — the router validated the forced-JSON body itself, already retried
+ *    the same model and walked the fallback chain, and gave up. `detail.reason` says why
+ *    (`json_truncated`, `schema_violation`, ...). Parking cannot help; it is permanent.
+ *  - `no_vision_provider` — the class is bound to a model whose vision capability was never
+ *    probed and enabled. An admin will fix that; park until they do.
  */
 export function classifyFailure(err: unknown): RouterFailure {
   if (!(err instanceof VibeAiError)) {
     return { kind: 'park', code: 'unknown', message: (err as Error).message };
   }
-  switch (err.code) {
+  // The SDK passes the wire code through untouched, so widen past its declared union.
+  const code: string = err.code;
+  switch (code) {
+    case 'invalid_response': {
+      const reason = err.detail?.['reason'];
+      return {
+        kind: 'permanent',
+        code,
+        message: err.message,
+        ...(typeof reason === 'string' ? { reason } : {}),
+      };
+    }
+    case 'no_vision_provider':
+      return { kind: 'park', code, message: err.message };
     case 'rate_limited':
     case 'provider_unavailable':
       return {

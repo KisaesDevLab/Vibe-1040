@@ -36,8 +36,10 @@ export const DECLARATIONS: TaskClassDeclaration[] = [
     description: 'Document-OCR layout pass: text spans with page-relative geometry',
     requires: { vision: true, json_schema: true },
     // A dense consolidated 1099 page carries a lot of spans. Undersizing this is how a
-    // layout pass silently truncates and takes its provenance with it.
-    defaultMaxTokens: 8192,
+    // layout pass silently truncates and takes its provenance with it. The router re-reads
+    // this value on every registration, so raising it here is sufficient; an operator can
+    // clamp it down per deployment via the policy's maxTokensOverride.
+    defaultMaxTokens: 16384,
   },
   {
     key: TASK_CLASS.FIELD_EXTRACT,
