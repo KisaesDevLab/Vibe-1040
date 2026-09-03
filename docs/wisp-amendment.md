@@ -47,10 +47,31 @@ The router routes each request according to firm policy. Depending on that polic
 providers may include:
 
 - **local models** running on firm hardware (no egress), and
-- **cloud providers** contracted through the router, currently DigitalOcean.
+- **DigitalOcean serverless inference, running open-source models** — currently GLM-5.3
+  Flash (classification and layout) and Qwen 3.5 397B (field extraction) — hosted entirely
+  within DigitalOcean's infrastructure.
 
-The WISP must name the router's configured providers as service providers, and an executed
-DPA with DigitalOcean is required before live client data.
+DigitalOcean's published terms for its hosted models, verified 2026-09-01 against
+docs.digitalocean.com/products/inference/details/data-privacy: request inputs and outputs
+are not stored on DigitalOcean infrastructure; the data is not used to train, retrain, or
+fine-tune any model and is not shared with third parties for that purpose; input is never
+sent to the original model creator; and "inference requests for DigitalOcean-hosted models
+run entirely within DigitalOcean's infrastructure."
+
+**Deliberately excluded from policy for these task classes:** models DigitalOcean hosts on
+behalf of Anthropic (Claude Fable carries a mandatory 30-day retention of prompts and
+completions for trust-and-safety review) and OpenAI (zero data retention is not available on
+DigitalOcean serverless inference). Selecting either would add a second service provider
+with its own retention window. The router's policy editor is the control that keeps them
+out; that binding is an audited firm-admin action.
+
+**Region.** DigitalOcean publishes no region selection for serverless inference. The only
+locational assurance is the "within DigitalOcean's infrastructure" statement above.
+DigitalOcean's dedicated inference product is region-addressable (US regions include NYC,
+SFO, ATL, RIC) and is the route to a provable US location if the firm ever needs one.
+
+The WISP must name DigitalOcean as a service provider on these terms, and an executed DPA
+with DigitalOcean is required before live client data.
 
 ### 3.1 What is transmitted — read this paragraph carefully
 
@@ -82,12 +103,15 @@ Treas. Reg. §301.7216-2(d), which does not require separate written taxpayer co
 asserts at startup that the router reports US-region pinning for its task classes and
 refuses to start otherwise.
 
-> **Open gap.** As of router v0.0.24 the router has no region concept and cannot report
-> pinning state. The assertion therefore cannot pass, and deployments are running with it
-> disabled. Until the router implements region pinning (QUESTIONS.md Q11), the firm has no
-> technical control guaranteeing US-only processing for cloud-routed requests, and the
-> §7216 position rests on provider contracts alone. **This should be resolved before live
-> client data is processed through a cloud-bound task class.**
+> **Open gap, accepted by decision on 2026-09-02.** As of router v0.0.24 the router has no
+> region concept and cannot report pinning state, and DigitalOcean serverless inference has
+> no region control for the router to report even once it does. The assertion therefore
+> cannot pass, and this deployment runs with it disabled (`ROUTER_REQUIRE_US_REGION=false`)
+> as a recorded decision — STATE.md decision log and QUESTIONS.md Q13 — not as an oversight.
+> The firm has no technical control guaranteeing US-only processing for cloud-routed
+> requests; the §7216 position rests on DigitalOcean's published terms (§3) and the executed
+> DPA. Revisit when Router R6 lands (QUESTIONS.md Q11) or if the firm moves to DigitalOcean
+> dedicated inference in a named US region.
 
 ## 5. Safeguards Rule controls implemented in this system
 

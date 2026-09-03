@@ -1,6 +1,6 @@
 {
   "name": "vibe-1040",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Staff-facing 1040 source-document worksheet appliance",
   "license": "BUSL-1.1",
   "author": "KisaesDevLab",
@@ -23,6 +23,7 @@
     "db:seed": "node --experimental-strip-types src/db/seed.ts",
     "worker": "node --experimental-strip-types src/queue/worker.ts",
     "retention": "node --experimental-strip-types src/retention/run.ts",
+    "accuracy": "node scripts/accuracy-run.mjs",
     "check:providers": "node scripts/check-provider-leakage.mjs"
   },
   "dependencies": {
