@@ -84,6 +84,9 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-03 as v0.0.4** — build-only: the release workflow's Docker actions moved
+to their Node 24 majors. No application change from v0.0.3.
+
 **Released 2026-09-02 as v0.0.3** — the DigitalOcean-binding change set above (migration
 0003, page-level coordinate convention, router taxonomy fixes, provisioning runbook).
 Images `ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.0.3` / `0.0` / `latest`.
