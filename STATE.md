@@ -84,6 +84,13 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.0.7** — a failed second-factor check no longer presents as an
+endless "Checking your second factor…". Any failure of `GET /api/auth/factor` left that
+screen spinning with the only explanation in a dismissible banner at the top of the page,
+which hid the common cause: a 401 because the browser will not return a `Secure` session
+cookie over plain HTTP. The screen now shows the message, names that cause, and offers a way
+back to sign-in. Images `ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.0.7` / `0.0`.
+
 **Released 2026-09-10 as v0.0.6** — first sign-in can clear the mandatory second factor. An
 unenrolled authenticator was reported as an unusable factor, so a fresh deployment's seeded
 admin was told to ask an administrator who did not exist. Email and SMS now report unusable
