@@ -84,6 +84,12 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.0.5** — the staff session cookie's `Secure` flag is now read
+from `SESSION_SECURE` instead of inferred from `NODE_ENV`. Sign-in was impossible on a Vibe
+Appliance in LAN and Tailscale modes, where this app is served over plain HTTP. Images
+`ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.0.5` / `0.0`. Deployments outside
+the appliance are unaffected: an unset `SESSION_SECURE` keeps the old behaviour.
+
 **Released 2026-09-03 as v0.0.4** — build-only: the release workflow's Docker actions moved
 to their Node 24 majors. No application change from v0.0.3.
 
