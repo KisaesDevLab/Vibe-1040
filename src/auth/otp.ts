@@ -193,9 +193,34 @@ export async function factorDestination(
   }
 
   switch (user.mfaMethod) {
-    case 'email':
-      return { channel: 'email', destination: user.email, usable: true };
-    case 'sms':
+    // A send-based factor is only usable once the firm has actually configured sending.
+    // Reporting it usable and failing at the delivery step tells the person signing in
+    // that something broke, when the truth is that nobody set up SMTP yet.
+    case 'email': {
+      const ready =
+        (await setting<boolean>('email.enabled')) &&
+        Boolean(await setting<string>('email.host')) &&
+        Boolean(await setting<string>('email.from'));
+      return ready
+        ? { channel: 'email', destination: user.email, usable: true }
+        : {
+            channel: 'email',
+            destination: user.email,
+            usable: false,
+            why: 'email delivery is not configured at this firm, so a code cannot be sent',
+          };
+    }
+    case 'sms': {
+      const ready =
+        (await setting<boolean>('sms.enabled')) && Boolean(await setting<string>('sms.from_number'));
+      if (!ready) {
+        return {
+          channel: 'sms',
+          destination: user.phone,
+          usable: false,
+          why: 'SMS delivery is not configured at this firm, so a code cannot be sent',
+        };
+      }
       return user.phone && user.phoneVerifiedAt
         ? { channel: 'sms', destination: user.phone, usable: true }
         : {
@@ -204,12 +229,13 @@ export async function factorDestination(
             usable: false,
             why: user.phone ? 'phone number is not verified' : 'no phone number on file',
           };
+    }
+    // An unenrolled authenticator is NOT an unusable factor, and calling it one stranded
+    // the first sign-in on every fresh deployment. The seeded admin has nothing enrolled,
+    // so the UI showed "second factor unavailable — ask a firm administrator", to the only
+    // firm administrator there was. Enrolment is self-service: no SMTP, no SMS gateway, no
+    // second person. Whether it still has to happen is `needsTotpEnrolment`, not `usable`.
     default:
-      return {
-        channel: 'totp',
-        destination: null,
-        usable: user.totpConfirmedAt !== null,
-        ...(user.totpConfirmedAt ? {} : { why: 'authenticator not enrolled' }),
-      };
+      return { channel: 'totp', destination: null, usable: true };
   }
 }

@@ -102,6 +102,37 @@ dedicated inference in a named US region.
 
 ---
 
+### Q15 — Should MFA be conditional on a delivery channel being configured?
+**Raised:** 2026-09-10. **Working assumption:** no. MFA stays mandatory.
+
+Asked directly: only require a second factor once an administrator has enabled a way to
+*send* one. Raising it rather than implementing it, because "MFA remains mandatory and
+cannot be switched off" is a locked decision (STATE.md, 2026-08-26) and MFA on staff
+accounts is a GLBA Safeguards obligation this repo owns (§11). Making it conditional on
+SMTP or SMS would mean a fresh deployment runs on a password alone, and a deployment that
+never configures email never gets a second factor at all.
+
+The request was prompted by a real defect, now fixed: an unenrolled authenticator was
+reported as an *unusable* factor, so the first sign-in on every fresh deployment hit
+"Second factor unavailable — ask a firm administrator", shown to the only administrator
+there was. Enrolment is self-service and needs no delivery channel, so nothing had to be
+sent for MFA to be satisfiable. The premise that a send method is a prerequisite was
+therefore wrong.
+
+What changed instead, which is believed to satisfy the underlying need:
+
+- An unenrolled authenticator is usable. It routes to enrolment, not to a dead end.
+- Email and SMS report unusable until the firm has actually configured that channel, so a
+  factor is never offered that cannot be delivered.
+- When the assigned factor cannot be delivered and the firm permits authenticators, the
+  sign-in offers authenticator enrolment instead of an error, and makes it that user's
+  factor once verified.
+
+**Answer if this is still wanted:** it needs a decision-log entry naming the GLBA position
+and an amendment to §11, not an implementation choice. A middle option exists if the
+concern is lockout rather than policy: a break-glass admin path that resets a user's factor
+from the appliance console, which the emergency-access addendum already contemplates.
+
 ### Q14 — Can `v1040_layout` ever be bound `local_only`?
 **Working assumption:** not as written. **Raised:** 2026-09-02.
 

@@ -355,6 +355,27 @@ bare IP that no public CA will certify and that DHCP can move, and it would chan
 on the appliance rather than this one.
 *Affects:* P0, P14, WISP.
 
+**2026-09-10 — First sign-in could not clear the mandatory second factor. MFA stays mandatory.**
+`factorDestination` reported an unenrolled authenticator as an *unusable* factor, and the UI
+turns an unusable factor into a terminal screen telling the user to ask a firm administrator
+to reset it. On a fresh deployment the seeded admin has nothing enrolled and is the only
+administrator, so the first sign-in was a hard lockout and the enrolment button below that
+branch was unreachable.
+
+An unenrolled authenticator is now usable, because enrolment is self-service and needs no
+SMTP, no SMS gateway, and no second person. `needsTotpEnrolment` carries whether enrolment
+still has to happen; `usable` no longer conflates the two. Email and SMS now report unusable
+until the firm has configured that channel, so a factor is never offered that cannot be
+delivered. When the assigned factor cannot be delivered and the firm permits authenticators,
+sign-in offers authenticator enrolment instead of an error and makes it that user's factor
+once verified.
+
+**The locked decision stands: MFA is mandatory and cannot be switched off.** Making it
+conditional on a delivery channel being configured was requested and declined — see Q15. It
+would leave a fresh deployment on a password alone and is a §11 GLBA obligation, so it needs
+a decision entry here rather than an implementation choice.
+*Affects:* P0, P14.
+
 ---
 
 ## Known risks
