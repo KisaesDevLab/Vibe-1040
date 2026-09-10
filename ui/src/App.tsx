@@ -91,7 +91,10 @@ function Login({
   return (
     <div className="centered card">
       <h1>Sign in</h1>
-      <p className="muted">Staff access only. A second factor is always required.</p>
+      <p className="muted">
+        Staff access only. A second factor is always required. An authenticator app needs
+        nothing set up by the firm, so you can enrol one on this sign-in.
+      </p>
       <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       <input
         placeholder="password"
@@ -137,7 +140,10 @@ function Mfa({ onDone, onError }: { onDone: () => void; onError: (m: string) => 
 
   if (!factor) return <div className="centered card">Checking your second factor…</div>;
 
-  if (!factor.usable) {
+  // A factor that cannot be delivered is not a dead end while authenticators are permitted:
+  // enrolling one needs no SMTP, no SMS gateway, and no administrator. MFA is still
+  // mandatory — this changes which factor you use, never whether you need one.
+  if (!factor.usable && !factor.totpAvailable) {
     return (
       <div className="centered card">
         <h1>Second factor unavailable</h1>
@@ -147,7 +153,8 @@ function Mfa({ onDone, onError }: { onDone: () => void; onError: (m: string) => 
     );
   }
 
-  const isTotp = factor.method === 'totp';
+  const fallingBack = !factor.usable;
+  const isTotp = factor.method === 'totp' || fallingBack;
   const submit = () => {
     setBusy(true);
     const call = isTotp ? api.verifyMfa(code) : api.verifyCode(code);
@@ -158,7 +165,15 @@ function Mfa({ onDone, onError }: { onDone: () => void; onError: (m: string) => 
     <div className="centered card">
       <h1>Second factor</h1>
 
-      {isTotp && factor.needsTotpEnrolment && !enrollment && (
+      {fallingBack && (
+        <p className="warn-note">
+          {factor.why ?? 'Your assigned second factor is not usable.'} Set up an authenticator
+          app instead — it needs nothing configured, and it becomes your second factor from
+          now on.
+        </p>
+      )}
+
+      {isTotp && !factor.totpEnrolled && !enrollment && (
         <>
           <p className="muted">You need to enrol an authenticator before you can sign in.</p>
           <button onClick={() => api.enrollMfa().then(setEnrollment).catch((e: Error) => onError(e.message))}>
@@ -174,7 +189,7 @@ function Mfa({ onDone, onError }: { onDone: () => void; onError: (m: string) => 
         </div>
       )}
 
-      {isTotp && !factor.needsTotpEnrolment && (
+      {isTotp && factor.totpEnrolled && (
         <p className="muted">Enter the current code from your authenticator app.</p>
       )}
 

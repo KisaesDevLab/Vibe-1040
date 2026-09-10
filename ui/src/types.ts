@@ -141,4 +141,8 @@ export interface FactorState {
   why: string | null;
   enrolled: boolean;
   needsTotpEnrolment: boolean;
+  /** Whether an authenticator is already enrolled, whatever the assigned method is. */
+  totpEnrolled: boolean;
+  /** The firm permits authenticators, so an undeliverable factor has a way out. */
+  totpAvailable: boolean;
 }

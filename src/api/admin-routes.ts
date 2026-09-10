@@ -18,7 +18,7 @@ import { auditLog, notificationLog, users } from '../db/schema.ts';
 import { normalizePhone, verifyEmail } from '../notify/channels.ts';
 import { retentionForecast, runRetention } from '../retention/purge.ts';
 import { readOnlyEnvironment } from '../settings/registry.ts';
-import { settingsForAdmin, updateSettings } from '../settings/store.ts';
+import { setting, settingsForAdmin, updateSettings } from '../settings/store.ts';
 import { auditAccess, requireRole, requireUser } from './middleware.ts';
 
 export function registerAdminRoutes(app: FastifyInstance): void {
@@ -462,12 +462,21 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     if (!req.user) return reply.code(401).send({ error: 'authentication required' });
     const factor = await factorDestination(req.user.id);
     const [row] = await db.select().from(users).where(eq(users.id, req.user.id)).limit(1);
+    const allowed = await setting<string[]>('auth.allowed_mfa_methods');
     return {
       method: row?.mfaMethod ?? 'totp',
       usable: factor.usable,
       why: factor.why ?? null,
       enrolled: row?.totpConfirmedAt !== null || row?.mfaEnrolledAt !== null,
       needsTotpEnrolment: row?.mfaMethod === 'totp' && row?.totpConfirmedAt === null,
+      // Whether an authenticator exists at all, regardless of which factor is assigned.
+      // `needsTotpEnrolment` is scoped to the assigned method, so it reads false for an
+      // email user who has no authenticator — exactly the person who needs to enrol one.
+      totpEnrolled: row?.totpConfirmedAt !== null,
+      // MFA stays mandatory (§11), so an undeliverable factor must not be a dead end.
+      // An authenticator needs nothing configured, so when the firm permits it, offer it
+      // as the way out instead of telling the person to go and find an administrator.
+      totpAvailable: allowed.includes('totp'),
     };
   });
 
@@ -497,6 +506,13 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     if (!row.totpConfirmedAt) {
       await db.update(users).set({ totpConfirmedAt: new Date() }).where(eq(users.id, row.id));
       await auditAccess(req, 'auth.mfa_enrolled');
+    }
+    // Someone who fell back to an authenticator because their assigned factor could not be
+    // delivered should not have to fall back again on every sign-in. Now that a working
+    // factor exists, make it theirs.
+    if (row.mfaMethod !== 'totp') {
+      await db.update(users).set({ mfaMethod: 'totp' }).where(eq(users.id, row.id));
+      await auditAccess(req, 'auth.mfa_enrolled', { detail: { switchedFrom: row.mfaMethod } });
     }
     await db.update(users).set({ mfaEnrolledAt: new Date(), lastLoginAt: new Date() }).where(eq(users.id, row.id));
     await satisfyMfa(req.user.sessionId);
