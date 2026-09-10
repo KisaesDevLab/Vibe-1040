@@ -84,6 +84,13 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.0.6** — first sign-in can clear the mandatory second factor. An
+unenrolled authenticator was reported as an unusable factor, so a fresh deployment's seeded
+admin was told to ask an administrator who did not exist. Email and SMS now report unusable
+until the firm has configured that channel, and an undeliverable factor offers authenticator
+enrolment instead of a dead end. MFA remains mandatory — see Q15. Images
+`ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.0.6` / `0.0`.
+
 **Released 2026-09-10 as v0.0.5** — the staff session cookie's `Secure` flag is now read
 from `SESSION_SECURE` instead of inferred from `NODE_ENV`. Sign-in was impossible on a Vibe
 Appliance in LAN and Tailscale modes, where this app is served over plain HTTP. Images
