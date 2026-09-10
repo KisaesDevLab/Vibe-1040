@@ -64,6 +64,7 @@ export default function App() {
             });
           }}
           onError={setError}
+          onRestart={() => setView('login')}
         />
       )}
       {view === 'bundles' && <BundleList onOpen={() => setView('review')} onError={setError} />}
@@ -113,15 +114,35 @@ function Login({
  * Second factor. MFA is mandatory, so this screen has no skip — what varies is only which
  * factor the user is enrolled on.
  */
-function Mfa({ onDone, onError }: { onDone: () => void; onError: (m: string) => void }) {
+function Mfa({
+  onDone,
+  onError,
+  onRestart,
+}: {
+  onDone: () => void;
+  onError: (m: string) => void;
+  onRestart: () => void;
+}) {
   const [factor, setFactor] = useState<FactorState | null>(null);
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [enrollment, setEnrollment] = useState<{ secret: string; uri: string } | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // A failure here used to leave the screen on "Checking your second factor…" forever,
+  // because nothing set `factor` and nothing recorded that the call had failed. The most
+  // common cause is a session cookie the browser accepted and will not send back, which
+  // makes this request 401 — so the one message that would have explained it was the one
+  // the user never saw. Show it, and offer the way back.
   useEffect(() => {
-    api.factor().then(setFactor).catch((e: Error) => onError(e.message));
+    api
+      .factor()
+      .then(setFactor)
+      .catch((e: Error) => {
+        setLoadFailed(e.message);
+        onError(e.message);
+      });
   }, [onError]);
 
   const send = useCallback(() => {
@@ -137,6 +158,21 @@ function Mfa({ onDone, onError }: { onDone: () => void; onError: (m: string) => 
   useEffect(() => {
     if (factor && factor.method !== 'totp' && factor.usable && sentTo === null) send();
   }, [factor, sentTo, send]);
+
+  if (loadFailed) {
+    return (
+      <div className="centered card">
+        <h1>Could not check your second factor</h1>
+        <p className="warn-note">{loadFailed}</p>
+        <p className="muted">
+          If that says authentication is required, your browser is not returning the session
+          cookie. Over plain HTTP that happens when the server marks the cookie Secure; see
+          SESSION_SECURE in the runbook.
+        </p>
+        <button onClick={onRestart}>Back to sign in</button>
+      </div>
+    );
+  }
 
   if (!factor) return <div className="centered card">Checking your second factor…</div>;
 
