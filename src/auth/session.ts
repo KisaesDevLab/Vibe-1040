@@ -4,11 +4,27 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
+import { env } from '../config/env.ts';
 import { db } from '../db/client.ts';
 import { sessions, users } from '../db/schema.ts';
 
 export const SESSION_COOKIE = 'v1040_session';
 const TTL_MS = 12 * 60 * 60 * 1000; // one working day
+
+/**
+ * Attributes for the staff session cookie, defined once.
+ *
+ * `Secure` tracks whether the browser really reached us over HTTPS (`SESSION_SECURE`) and
+ * is deliberately not inferred from `NODE_ENV` — a production appliance reached on its
+ * plain-HTTP LAN port is the normal case, not a misconfiguration. Set and clear must agree
+ * on these attributes or the clear silently misses.
+ */
+export const sessionCookieOptions = {
+  httpOnly: true,
+  sameSite: 'strict' as const,
+  secure: env.SESSION_SECURE,
+  path: '/',
+};
 
 export interface SessionUser {
   id: string;

@@ -40,6 +40,31 @@ const schema = z.object({
   TIN_HASH_SALT: base64Key32,
   SESSION_SECRET: base64Key32,
 
+  /**
+   * Does the operator's browser actually reach this app over HTTPS? Drives the `Secure`
+   * flag on the staff session cookie, and nothing else.
+   *
+   * This has to be told the truth rather than inferred. Marking the cookie `Secure` on a
+   * plain-HTTP origin makes the browser accept the `Set-Cookie` and then never send it
+   * back, so the password is accepted and every authenticated request 401s immediately
+   * afterwards — a sign-in loop with no error message anywhere. The appliance serves this
+   * app on a plain-HTTP emergency port in LAN mode, and because the app is `rootServedOnly`
+   * and cannot be path-mounted, in Tailscale mode too. It renders its own per-mode decision
+   * into this variable, the same one it feeds Vibe Connect, Vibe Recap, the transaction
+   * converter, and the router.
+   *
+   * Do NOT derive this from the request instead. `tailscale serve` terminates TLS and
+   * forwards to Caddy over plain HTTP, so `X-Forwarded-Proto` reports `http` on an origin
+   * the browser correctly considers secure, and the flag would silently drop where it is
+   * actually warranted.
+   *
+   * Unset falls back to the historical behaviour, `NODE_ENV === 'production'`. Setting it
+   * false is a recorded weakening, not a shortcut: the cookie's only protection is then the
+   * office LAN or the WireGuard tunnel, and §11's encryption-in-transit obligation is met
+   * by the network rather than by the app. Name it in the WISP amendment.
+   */
+  SESSION_SECURE: bool.optional(),
+
   STORAGE_DRIVER: z.enum(['local', 'b2']).default('local'),
   STORAGE_LOCAL_PATH: z.string().default('/data/blobs'),
   STORAGE_ENCRYPTION_KEY: base64Key32,
@@ -98,7 +123,11 @@ function load() {
     );
   }
 
-  return e;
+  return {
+    ...e,
+    // Unset means "behave the way this app did before the flag existed".
+    SESSION_SECURE: e.SESSION_SECURE ?? e.NODE_ENV === 'production',
+  };
 }
 
 export const env = load();

@@ -322,6 +322,33 @@ an `enum` on `field_key` because the Router enforces it and fails the whole pass
 invented key; the classifier's model is recorded on `documents` (migration 0003).
 *Affects:* P4, P7, P8, P11 overlay.
 
+**2026-09-10 — The `Secure` flag on the session cookie is deployment configuration, not a build-mode inference.**
+It was hardwired to `NODE_ENV === 'production'`, which the Vibe Appliance sets
+unconditionally. The appliance serves this app over plain HTTP on emergency port 5177 in LAN
+mode, and — because the app is `rootServedOnly` and cannot be path-mounted under
+`tailscale serve`'s :80 catch-all — in Tailscale mode as well. A `Secure` cookie on a
+plain-HTTP origin is accepted by the browser and then never sent back, so sign-in was
+impossible in both modes: the password was accepted, the second-factor request 401'd, and the
+UI looped to the login screen with no error displayed anywhere.
+
+Now read from `SESSION_SECURE`, which the appliance already renders per network mode for
+Vibe Connect, Vibe Recap, the transaction converter, and the Router. Unset falls back to the
+old `NODE_ENV` behaviour, so nothing outside the appliance changes. Deriving it per request
+from `X-Forwarded-Proto` was considered and rejected: `tailscale serve` terminates TLS and
+forwards to Caddy over plain HTTP, so the flag would silently drop on a tailnet origin that
+genuinely is secure.
+
+`SESSION_SECURE=false` is a recorded weakening of the §11 encryption-in-transit control, on
+the same footing as `ROUTER_REQUIRE_US_REGION=false` above. In LAN mode staff credentials and
+worksheets cross the office network in cleartext, protected by UFW gating the emergency ports
+to RFC1918 and the Tailscale CGNAT range rather than by TLS. In Tailscale mode the transport
+is inside WireGuard. Named in §3.1 of the WISP amendment. The app logs which way the flag
+resolved on every boot. Serving the LAN over HTTPS was considered and rejected for now: the
+emergency port is fronted by a deliberately dependency-free HAProxy, the LAN address is a
+bare IP that no public CA will certify and that DHCP can move, and it would change every app
+on the appliance rather than this one.
+*Affects:* P0, P14, WISP.
+
 ---
 
 ## Known risks

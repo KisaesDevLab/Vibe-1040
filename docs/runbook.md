@@ -62,6 +62,14 @@ openssl rand -base64 32   # SESSION_SECRET
 openssl rand -base64 32   # STORAGE_ENCRYPTION_KEY  — back this up; loses every blob if lost
 ```
 
+Set `SESSION_SECURE` to match how staff will actually reach the app. `true` if a reverse
+proxy terminates HTTPS in front of it, `false` if it is served over plain HTTP. Getting this
+wrong in the `true` direction does not degrade gracefully: the browser accepts the session
+cookie, refuses to send it back, and sign-in loops forever with the password accepted and no
+error on screen. On a Vibe Appliance this variable is rendered automatically per network
+mode and should not be edited by hand. Leaving it unset falls back to
+`NODE_ENV === 'production'`, which is only correct when production also means HTTPS.
+
 Mint an app token in the router admin UI (App tokens → new, app `vibe-1040`) and set
 `VIBE_AI_TOKEN`. Confirm the router is on the shared network:
 

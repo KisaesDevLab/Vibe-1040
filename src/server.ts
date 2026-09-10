@@ -111,6 +111,20 @@ async function main(): Promise<void> {
   // unless ROUTER_REQUIRE_US_REGION=false in development.
   await assertUsRegionPinning();
 
+  // Say out loud which way the session cookie resolved, every boot. A `Secure` cookie on a
+  // plain-HTTP origin locks every staff account out of an app that looks healthy, and the
+  // reverse is a quiet weakening of §11's in-transit control. Neither is something an
+  // operator should have to read an env file to discover.
+  if (env.SESSION_SECURE) {
+    console.log('[startup] session cookie: Secure — sign-in requires an HTTPS origin');
+  } else {
+    console.warn(
+      '[startup] WARNING session cookie: NOT Secure (SESSION_SECURE=false) — staff ' +
+        'credentials and worksheets cross this network in cleartext. Correct for a ' +
+        'plain-HTTP LAN or Tailscale origin; wrong for anything public.',
+    );
+  }
+
   const app = await buildServer();
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
   console.log(`[startup] listening on ${env.PORT}`);
