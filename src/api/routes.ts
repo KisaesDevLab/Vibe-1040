@@ -9,7 +9,13 @@ import type { FastifyInstance } from 'fastify';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { verifyPassword, generateTotpSecret, totpUri, verifyTotp } from '../auth/credentials.ts';
-import { SESSION_COOKIE, issueSession, revokeSession, satisfyMfa } from '../auth/session.ts';
+import {
+  SESSION_COOKIE,
+  issueSession,
+  revokeSession,
+  satisfyMfa,
+  sessionCookieOptions,
+} from '../auth/session.ts';
 import { db } from '../db/client.ts';
 import {
   bundleTaxpayers,
@@ -59,12 +65,7 @@ export function registerRoutes(app: FastifyInstance): void {
     }
 
     const token = await issueSession(user.id, { ip: req.ip, userAgent: req.headers['user-agent'] ?? null });
-    void reply.setCookie(SESSION_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    });
+    void reply.setCookie(SESSION_COOKIE, token, sessionCookieOptions);
 
     // MFA is mandatory (§11). A user without an enrolled factor must enroll before the
     // session becomes usable — there is no "skip for now". What varies is only WHICH
@@ -114,7 +115,7 @@ export function registerRoutes(app: FastifyInstance): void {
       await revokeSession(req.user.sessionId);
       await auditAccess(req, 'auth.logout');
     }
-    void reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    void reply.clearCookie(SESSION_COOKIE, sessionCookieOptions);
     return { ok: true };
   });
 

@@ -119,12 +119,46 @@ refuses to start otherwise.
 |---|---|
 | Access control | Staff accounts only; no client accounts; role-gated admin functions |
 | Multi-factor authentication | TOTP, mandatory — a session is unusable until the second factor is satisfied |
-| Encryption in transit | HTTPS at the reverse proxy; router reached over the internal Docker network |
+| Encryption in transit | HTTPS at the reverse proxy **in domain mode only** — plain HTTP on the LAN in the appliance's other two network modes, see §5.1; router reached over the internal Docker network |
 | Encryption at rest | AES-256-GCM on every blob, applied above the storage driver so it holds for local and B2 alike; Postgres on an encrypted volume |
 | Access logging | Every route touching taxpayer data writes an audit row: actor, action, entity, IP, timestamp |
 | Change logging | Every correction records before, after, actor, and timestamp; the model's original output is never overwritten |
 | Retention and disposal | Enforcing job with a documented schedule; derived page images purge earlier than sources; every disposal is logged |
 | Least data | TIN stored as a hash plus last four; no client master; no data collected beyond what the documents carry |
+
+### 5.1 Staff-to-appliance transport is not always encrypted
+
+The encryption-in-transit control above holds only when the appliance runs in domain mode,
+where Caddy terminates TLS and a Cloudflare Tunnel is the public ingress. It does not hold in
+the appliance's other two network modes, and the firm must know which mode its deployment
+runs in.
+
+This application is served at the root of its own subdomain and cannot be mounted under a
+path prefix. That has a consequence for transport:
+
+- **LAN mode.** The appliance serves plain HTTP only. Staff reach this app at
+  `http://<server-ip>:5177/`. Sign-in credentials, second-factor codes, session cookies,
+  page images, and worksheets all cross the office network unencrypted.
+- **Tailscale mode.** `tailscale serve` provides TLS for path-mounted apps, but this app
+  cannot be path-mounted, so its only address is the same plain-HTTP port. The traffic is
+  unencrypted at the HTTP layer and encrypted by WireGuard at the network layer.
+- **Domain mode.** HTTPS end to end. The plain-HTTP port remains available as a
+  status-check fallback and is not the normal access path.
+
+The compensating controls where TLS is absent are network controls, not application
+controls. The appliance firewall restricts the emergency ports to RFC1918 private ranges and
+the Tailscale CGNAT range, so they are unreachable from the public internet. In Tailscale
+mode the traffic additionally rides inside a WireGuard tunnel.
+
+The application is configured to match. `SESSION_SECURE` marks the staff session cookie
+`Secure` only where the transport actually is HTTPS, because a `Secure` cookie on a
+plain-HTTP origin is accepted by the browser and never returned, which makes sign-in
+impossible rather than more secure. The value is set by the appliance per network mode, and
+the application records which way it resolved in its startup log on every boot.
+
+**The firm should run domain mode for daily work if the office network is not otherwise
+trusted.** LAN mode is appropriate for a single-site office on firm-controlled network
+equipment, and is the documented recovery path when the tunnel is down.
 
 ## 6. Disposal
 

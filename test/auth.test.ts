@@ -1,5 +1,5 @@
 import { authenticator } from 'otplib';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   generateTotpSecret,
   hashPassword,
@@ -74,5 +74,65 @@ describe('TOTP', () => {
     expect(uri.startsWith('otpauth://totp/')).toBe(true);
     expect(uri).toContain('Vibe%201040');
     expect(uri).toContain('secret=');
+  });
+});
+
+/**
+ * These exist because of a real sign-in failure on a Vibe Appliance in LAN mode.
+ *
+ * The `Secure` flag used to be hardwired to `NODE_ENV === 'production'`, which the
+ * appliance always sets. LAN mode serves this app over plain HTTP on its emergency port,
+ * so the browser accepted the `Set-Cookie` and then refused to send it back: the password
+ * was accepted, the second-factor request 401'd, and the UI bounced to the login screen
+ * forever with no error anywhere. The transport, not the build mode, decides this flag.
+ */
+describe('session cookie attributes', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  /** Re-parse the config module under a patched environment. */
+  async function reload(overrides: Record<string, string>) {
+    for (const [key, value] of Object.entries(overrides)) vi.stubEnv(key, value);
+    vi.resetModules();
+    return (await import('../src/config/env.ts')).env;
+  }
+
+  it('marks the cookie Secure in production when nothing says otherwise', async () => {
+    const env = await reload({ NODE_ENV: 'production' });
+    expect(env.SESSION_SECURE).toBe(true);
+  });
+
+  it('does not mark it Secure outside production', async () => {
+    const env = await reload({ NODE_ENV: 'development' });
+    expect(env.SESSION_SECURE).toBe(false);
+  });
+
+  it('lets a plain-HTTP deployment turn Secure off in production — the LAN-mode bug', async () => {
+    const env = await reload({ NODE_ENV: 'production', SESSION_SECURE: 'false' });
+    expect(env.SESSION_SECURE).toBe(false);
+  });
+
+  it('lets a proxied deployment turn Secure on outside production', async () => {
+    const env = await reload({ NODE_ENV: 'development', SESSION_SECURE: 'true' });
+    expect(env.SESSION_SECURE).toBe(true);
+  });
+
+  it('refuses a malformed value rather than guessing which way to fail', async () => {
+    await expect(reload({ SESSION_SECURE: 'yes' })).rejects.toThrow(/SESSION_SECURE/);
+  });
+
+  it('sets httpOnly, SameSite=Strict and a root path, and mirrors the flag', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('SESSION_SECURE', 'false');
+    vi.resetModules();
+    const { sessionCookieOptions } = await import('../src/auth/session.ts');
+    expect(sessionCookieOptions).toMatchObject({
+      httpOnly: true,
+      sameSite: 'strict',
+      path: '/',
+      secure: false,
+    });
   });
 });
