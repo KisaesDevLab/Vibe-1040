@@ -84,6 +84,14 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.0.8** — authenticator enrolment shows a scannable QR code. The
+`otpauth://` URI was always returned and never used, so enrolment meant hand-typing a 32
+character key, and a scanned entry labels itself with the issuer and account where a typed
+one does not. Re-enrolment also used to mint a fresh secret on every call, silently
+invalidating a secret the user had just scanned; an unconfirmed secret is now reused, so
+rescanning is the recovery. Images `ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged
+`0.0.8` / `0.0`.
+
 **Released 2026-09-10 as v0.0.7** — a failed second-factor check no longer presents as an
 endless "Checking your second factor…". Any failure of `GET /api/auth/factor` left that
 screen spinning with the only explanation in a dismissible banner at the top of the page,
