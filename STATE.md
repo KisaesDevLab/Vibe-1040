@@ -84,6 +84,15 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-11 as v0.5.0** — optional OCR transcription for pages with no text layer.
+Adds a fourth task class, `v1040_ocr_transcribe`, requiring `vision` and deliberately not
+`json_schema`, which is the only shape the Router's `local_ocr` kind can serve. Off by default
+behind `OCR_FALLBACK_ENABLED` and registered only when on. **Sensitivity is the firm's
+decision**: the class is excluded from `SENSITIVITY_CHECKED`, so binding it to a local OCR
+server or to a cloud vision model are both legitimate and neither warns. Gives no geometry, so
+§6 still blocks transcription-derived fields (Q17). **Carries migration 0006.** Images
+`ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.5.0` / `0.5`.
+
 **Released 2026-09-10 as v0.4.0** — bundle deletion and list search. `DELETE /api/bundles/:id`
 removes the bundle and every blob it owns, admin or partner only, guarded by typing the label
 back rather than a confirm dialog; disposal is written to the same `purge_log` the retention
