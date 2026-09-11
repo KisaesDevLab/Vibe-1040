@@ -257,6 +257,8 @@ export const documents = pgTable(
     taxYear: integer('tax_year'),
     /** True when this document's year differs from the bundle majority (§7). */
     taxYearMismatch: boolean('tax_year_mismatch').notNull().default(false),
+    /** A tax document whose form type is not registered. Blocks until dispositioned (§6). */
+    unrecognisedForm: boolean('unrecognised_form').notNull().default(false),
     taxpayerId: uuid('taxpayer_id').references(() => taxpayers.id),
     status: documentStatus('status').notNull().default('pending'),
     /** First-class at classification time, not buried in extraction (P4). */

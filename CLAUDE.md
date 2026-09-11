@@ -223,6 +223,11 @@ Hard failures (block):
 - 1095-A monthly rows do not sum to the annual totals row.
 - A consolidated 1099's sub-form totals do not tie to its summary.
 - Any field with `span_ids: []`.
+- A page that reports tax amounts but whose form type is not registered. The classifier
+  separates this from a cover letter, and the two are not interchangeable: an unreadable tax
+  document must be louder than a readable one, not quieter. It blocks until a human reads the
+  page, and it is carried onto the finished worksheet as an annotation even once
+  dispositioned, because the amounts on it were never extracted.
 
 Soft failures (annotate):
 
@@ -290,6 +295,7 @@ guessed at:
 - 1099-G box 2 state refunds, which depend on prior-year itemization.
 - 1099-S, which depends on the §121 exclusion.
 - Every K-1 in v1.
+- Any page the classifier could not identify as a registered form.
 
 ## 10. Tax-year versioning
 

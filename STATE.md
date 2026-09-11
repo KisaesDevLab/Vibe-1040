@@ -435,6 +435,29 @@ indistinguishable from a cover letter, so the next unregistered tax document is 
 omission. Registering form types one at a time does not fix that.
 *Affects:* P4, P8, P10, §8, §9.
 
+**2026-09-10 — An unrecognised tax document blocks instead of disappearing.**
+`form_type: null` meant two unrelated pages — a cover letter, and a tax form not in the
+registry or unreadable — and `runChecks` skipped both (`pipeline.ts`: `if (!doc.formType ||
+doc.isSupplemental) continue`). So an unregistered form was dropped in silence with nothing on
+the worksheet to say a page had been ignored. Found in a real client packet, not in testing:
+an SSA-1042S at the front of a bundle.
+
+The classifier now emits `unrecognised_form` as a separate signal, `documents` carries it
+(migration 0005), and it raises a **hard** check. Registering SSA-1042S fixed two packets;
+this is what fixes the next unregistered document, whatever it turns out to be.
+
+Three choices worth recording. **Hard, not soft**: a soft annotation would produce a worksheet
+silently missing whatever the page reported, and rely on a reviewer noticing a note. **Carried
+onto the worksheet even after disposition** (`gate.ts` `softAnnotations` includes it): the
+human read the page, but the amounts were still never extracted, so the artifact has to say
+so. **The prompt breaks ties toward surfacing**: a page wrongly surfaced costs seconds, a tax
+document filed as a cover letter costs money with nothing on screen.
+
+Accepted consequence: classifier misfires now block. Worksheet throughput therefore depends on
+classification quality, which is still unmeasured. If misfires prove common, fix
+classification rather than softening the check.
+*Affects:* P4, P9, P10, §6, §9.
+
 ---
 
 ## Known risks

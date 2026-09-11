@@ -7,7 +7,7 @@
  * no severity override — P9's exit criterion is that the gate cannot be bypassed by any
  * code path, and an escape hatch would be exactly that path.
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 import { db } from '../db/client.ts';
 import { checkResults, dispositions } from '../db/schema.ts';
 
@@ -62,7 +62,15 @@ export async function assertWorksheetAllowed(bundleId: string): Promise<void> {
   if (blocking.length > 0) throw new WorksheetBlockedError(bundleId, blocking);
 }
 
-/** Soft failures annotate the worksheet and proceed (§6). */
+/**
+ * Soft failures annotate the worksheet and proceed (§6), plus one hard one.
+ *
+ * `unrecognised_form` is included deliberately. It blocks, so by the time a worksheet can be
+ * generated a human has read the page and dispositioned it — but the amounts on that page
+ * were still never extracted, and a worksheet that omits them without saying so is the exact
+ * silent omission the blocking check was added to prevent. Carrying it through as an
+ * annotation means the finished artifact records that a page was read and not extracted.
+ */
 export async function softAnnotations(
   bundleId: string,
 ): Promise<{ checkKey: string; message: string; documentId: string | null }[]> {
@@ -76,8 +84,8 @@ export async function softAnnotations(
     .where(
       and(
         eq(checkResults.bundleId, bundleId),
-        eq(checkResults.severity, 'soft'),
         eq(checkResults.outcome, 'fail'),
+        or(eq(checkResults.severity, 'soft'), eq(checkResults.checkKey, 'unrecognised_form')),
       ),
     );
   return rows;

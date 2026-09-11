@@ -103,14 +103,27 @@ dedicated inference in a named US region.
 ---
 
 ### Q16 — Is SSA-1042S in scope, and what happens to an unregistered form type?
-**Raised:** 2026-09-10. **Partially answered 2026-09-10.**
+**Raised:** 2026-09-10. **Answered and closed 2026-09-10.** Both parts.
 
-**A (scope), 2026-09-10:** in scope. `SSA-1042S` is registered for TY2025 as
-`allJudgmentRequired`, boxes as printed, with no line mapping — see the decision log and §8.
+**A (scope):** in scope. `SSA-1042S` is registered for TY2025 as `allJudgmentRequired`, boxes
+as printed, with no line mapping — see §8 and the decision log.
 
-**Still open:** part 2 below. A page the classifier cannot label is still indistinguishable
-from a cover sheet, and registering one more form type does not fix that for the next
-unrecognised document.
+**A (the real one):** the classifier now separates "not a form" from "a form I cannot name".
+`unrecognised_form` is its own output, its own column on `documents`, and its own **hard**
+check, so an unregistered or unreadable tax document blocks the worksheet until a human reads
+the page. It is also carried onto the finished worksheet as an annotation once dispositioned,
+because the amounts on that page were never extracted and a worksheet that omits them without
+saying so is the failure this was raised about.
+
+The prompt resolves ambiguity toward surfacing: told to guess, the classifier flags. A page
+wrongly surfaced costs a reviewer seconds; a tax document wrongly filed as a cover letter is
+money missing with nothing on screen to say so.
+
+**Consequence accepted:** classifier misfires now block rather than pass silently. That is the
+intended direction of failure for this app and matches §6's existing posture, but it does mean
+worksheet throughput depends on classification quality — which is still unmeasured (see the
+accuracy harness and the note in STATE.md). If misfires prove common in practice, the answer
+is to fix classification, not to soften this check.
 
 Two of five sample client packets (Henning, Hoffmann) open with **SSA-1042S**, the Social
 Security benefit statement issued to nonresident aliens. §8 lists SSA-1099 and RRB-1099 and
