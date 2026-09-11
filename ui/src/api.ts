@@ -37,7 +37,10 @@ export const api = {
 
   factor: () => request<FactorState>('/api/auth/factor'),
 
-  enrollMfa: () => request<{ secret: string; uri: string }>('/api/auth/totp/enroll', { method: 'POST' }),
+  enrollMfa: () =>
+    request<{ secret: string; uri: string; account: string; issuer: string }>('/api/auth/totp/enroll', {
+      method: 'POST',
+    }),
 
   verifyMfa: (token: string) =>
     request<{ ok: boolean }>('/api/auth/totp/verify', { method: 'POST', body: JSON.stringify({ token }) }),
