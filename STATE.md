@@ -84,6 +84,14 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.0.9** — bodyless POSTs no longer declare a JSON body. The API
+client set `Content-Type: application/json` on every request, and Fastify rejects that with
+"Body cannot be empty when content-type is set to 'application/json'", so six actions were
+broken from the start: enrolling an authenticator, sending an email or SMS code, signing out,
+resetting a user's second factor, running retention, and generating a worksheet. It surfaced
+only once enrolment became reachable. Images `ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`,
+tagged `0.0.9` / `0.0`.
+
 **Released 2026-09-10 as v0.0.8** — authenticator enrolment shows a scannable QR code. The
 `otpauth://` URI was always returned and never used, so enrolment meant hand-typing a 32
 character key, and a scanned entry labels itself with the issuer and account where a typed
