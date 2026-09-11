@@ -212,10 +212,19 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
     await saveProposal(bundleId, proposeIdentity(observations, documentYears));
   }
 
-  await db
-    .update(bundles)
-    .set({ taxYear: bundleYear, status: 'awaiting_identity_confirmation' })
-    .where(eq(bundles.id, bundleId));
+  await db.update(bundles).set({ taxYear: bundleYear }).where(eq(bundles.id, bundleId));
+
+  /**
+   * Straight on to extraction. The reviewer confirms identity before a **worksheet**, not
+   * before extraction runs (§7, decision 2026-09-10).
+   *
+   * Waiting here bought nothing. The confirmation was never read by anything downstream, and
+   * the page images had already gone to a cloud model during classification, so there was no
+   * exposure left to gate. What it cost was real: a bundle sat inert until someone noticed,
+   * and the reviewer was asked to identify a client from a text-layer guess instead of from
+   * the extracted forms.
+   */
+  await startExtraction(bundleId, userId);
 }
 
 // ── P7 → layout ──────────────────────────────────────────────────────────────
@@ -540,7 +549,15 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
 
   await db
     .update(bundles)
-    .set({ status: hardFailures > 0 ? 'blocked' : 'in_review', updatedAt: new Date() })
+    .set({
+      status:
+        hardFailures > 0
+          ? 'blocked'
+          : bundle?.identityConfirmedAt
+            ? 'in_review'
+            : 'awaiting_identity_confirmation',
+      updatedAt: new Date(),
+    })
     .where(eq(bundles.id, bundleId));
 
   return { hardFailures, softFailures };
@@ -548,7 +565,7 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
 
 // ── fan-out helpers ──────────────────────────────────────────────────────────
 
-/** Called after the reviewer confirms identity (§7). Nothing extracts before this. */
+/** Fan out one layout job per rasterized page. Runs straight after classification (§7). */
 export async function startExtraction(bundleId: string, userId: string): Promise<number> {
   const pageRows = await db
     .select({ id: pages.id })

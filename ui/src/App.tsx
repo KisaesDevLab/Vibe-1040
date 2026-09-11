@@ -509,8 +509,14 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         {routerDown && <span className="pill error">Router unreachable — work is parked</span>}
         <div className="spacer" />
         <button
-          disabled={blocking.length > 0}
-          title={blocking.length > 0 ? 'Disposition the hard failures first' : 'Generate the worksheet'}
+          disabled={blocking.length > 0 || !bundle?.identityConfirmedAt}
+          title={
+            blocking.length > 0
+              ? 'Disposition the hard failures first'
+              : !bundle?.identityConfirmedAt
+                ? 'Confirm which client this bundle belongs to first'
+                : 'Generate the worksheet'
+          }
           onClick={() => {
             api
               .generateWorksheet(bundleId)
@@ -539,19 +545,20 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         of empty lines. That is correct behaviour with no way to clear it until this panel
         exists, which is why it is a banner rather than something tucked in a side pane.
       */}
-      {bundle?.status === 'awaiting_identity_confirmation' && (
+      {bundle && !bundle.identityConfirmedAt && (
         <div className="banner blocking identity-gate">
-          <strong>Confirm who this bundle belongs to before anything is extracted.</strong>
+          <strong>Confirm who this bundle belongs to before generating a worksheet.</strong>
           <p className="muted">
-            Proposed from the documents. Names are a tiebreaker, never the key — the join key is
-            a salted hash of the taxpayer identification number.
+            Proposed from the documents, and refined by what extraction actually read. Names are
+            a tiebreaker, never the key — the join key is a salted hash of the taxpayer
+            identification number. Extraction has already run; this decides whose return the
+            worksheet says these numbers belong to.
           </p>
           {taxpayers.length === 0 && (
             <p className="warn-note">
               No taxpayer identification number could be read from these documents, so there is
-              nobody to propose. This is normal for scanned or photographed pages, where the
-              numbers are pixels until the layout pass runs. Confirming the tax year alone
-              starts extraction, and the client is proposed again from what it reads.
+              nobody to propose. Confirming the tax year alone lets a worksheet be produced, but
+              it will not be attributed to a client. Check the documents before you do.
             </p>
           )}
           <table className="grid">
@@ -608,11 +615,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
                 .finally(() => setConfirming(false));
             }}
           >
-            {confirming
-              ? 'Confirming…'
-              : taxpayers.length
-                ? 'Confirm and start extraction'
-                : 'Confirm tax year and start extraction'}
+            {confirming ? 'Confirming…' : 'Confirm client and tax year'}
           </button>
         </div>
       )}

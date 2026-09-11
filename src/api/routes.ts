@@ -42,7 +42,7 @@ import { blockingFailures } from '../reconcile/gate.ts';
 import { isRouterReachable } from '../router/client.ts';
 import { blobs } from '../storage/index.ts';
 import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts';
-import { WorksheetBlockedError } from '../reconcile/gate.ts';
+import { IdentityNotConfirmedError, WorksheetBlockedError } from '../reconcile/gate.ts';
 import { auditAccess, requireRole, requireUser } from './middleware.ts';
 
 /** Queue every source file of a freshly ingested bundle for rasterisation. */
@@ -564,6 +564,14 @@ export function registerRoutes(app: FastifyInstance): void {
       const result = await generateWorksheet(id, { id: user.id, displayName: user.displayName });
       return { worksheetId: result.worksheetId, lines: result.model.lines.length };
     } catch (err) {
+      if (err instanceof IdentityNotConfirmedError) {
+        return reply.code(409).send({
+          error: 'identity_not_confirmed',
+          message:
+            'Confirm which client this bundle belongs to before generating a worksheet. A ' +
+            'worksheet is a statement about a named return.',
+        });
+      }
       if (err instanceof WorksheetBlockedError) {
         return reply.code(409).send({
           error: 'blocked',
