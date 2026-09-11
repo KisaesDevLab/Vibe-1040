@@ -258,7 +258,14 @@ All registered form types ship in v1 with one exception in how K-1s are handled.
 
 W-2, W-2G, 1099-INT, 1099-OID, 1099-DIV, 1099-B and consolidated packages, 1099-R,
 1099-MISC, 1099-NEC, 1099-K, 1099-G, 1099-S, 1099-SA, 1099-Q, 1099-LTC, SSA-1099,
-RRB-1099, 1098, 1098-E, 1098-T, 1095-A, 5498, 5498-SA, and K-1 (1065, 1120-S, 1041).
+SSA-1042S, RRB-1099, 1098, 1098-E, 1098-T, 1095-A, 5498, 5498-SA, and K-1 (1065, 1120-S,
+1041).
+
+**SSA-1042S is boxes-as-printed only** (added 2026-09-10, Q16). It is the benefit statement
+issued to a nonresident alien, so the return it belongs on may not be a 1040 at all, and the
+characterization of the benefit is a determination §11 forbids this app from making. Report
+the printed boxes, land the whole form in Judgment Required, and let the preparer decide. Do
+not map it to a 1040 line.
 
 **K-1 v1 scope is boxes-as-printed only.** No line dispersion onto the worksheet. A 1065
 K-1 puts the numbers that matter in lettered sub-codes and footnote statements rather
@@ -277,6 +284,8 @@ guessed at:
 - 1099-R with taxable amount not determined, or code G rollovers.
 - 1099-K where business vs personal-item character is undetermined.
 - SSA-1099 and RRB-1099 — gross benefits are reported, taxable portion is not computed.
+- SSA-1042S — every field. Gross benefits and withholding are reported; whether they belong
+  on a 1040 or a 1040-NR, and at what rate or under which treaty, is not decided here.
 - 1098-T — payments received vs qualified expenses, scholarship netting.
 - 1099-G box 2 state refunds, which depend on prior-year itemization.
 - 1099-S, which depends on the §121 exclusion.

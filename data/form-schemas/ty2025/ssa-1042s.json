@@ -1,0 +1,81 @@
+{
+  "formType": "SSA-1042S",
+  "taxYear": 2025,
+  "version": "2025.1",
+  "description": "Social Security Benefit Statement for a nonresident alien. Boxes as printed; no line dispersion, because the return type itself is a determination this app does not make (§9, §11).",
+  "container": false,
+  "allJudgmentRequired": true,
+  "checks": [
+    "ssa_box5_equals_box3_minus_box4",
+    "ssa1042s_box9_equals_box7_minus_box8"
+  ],
+  "fields": [
+    {
+      "key": "beneficiary_name",
+      "label": "Name",
+      "type": "text",
+      "box": "1"
+    },
+    {
+      "key": "beneficiary_tin",
+      "label": "Beneficiary's social security number",
+      "type": "text",
+      "box": "2",
+      "sensitive": "tin"
+    },
+    {
+      "key": "box_3",
+      "label": "Benefits paid in 2025",
+      "type": "money",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Benefits repaid to SSA in 2025",
+      "type": "money",
+      "box": "4"
+    },
+    {
+      "key": "box_5",
+      "label": "Net benefits for 2025",
+      "type": "money",
+      "box": "5"
+    },
+    {
+      "key": "box_6",
+      "label": "Rate of tax",
+      "type": "text",
+      "box": "6"
+    },
+    {
+      "key": "box_7",
+      "label": "Amount of tax withheld",
+      "type": "money",
+      "box": "7"
+    },
+    {
+      "key": "box_8",
+      "label": "Amount of tax refunded",
+      "type": "money",
+      "box": "8"
+    },
+    {
+      "key": "box_9",
+      "label": "Net tax withheld during 2025",
+      "type": "money",
+      "box": "9"
+    },
+    {
+      "key": "box_10",
+      "label": "Address",
+      "type": "text",
+      "box": "10"
+    },
+    {
+      "key": "box_11",
+      "label": "Claim number",
+      "type": "text",
+      "box": "11"
+    }
+  ]
+}
