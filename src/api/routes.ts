@@ -515,6 +515,11 @@ export function registerRoutes(app: FastifyInstance): void {
         widthPx: p.widthPx,
         heightPx: p.heightPx,
         rasterAvailable: p.rasterStorageKey !== null,
+        // What a transcription model saw, when the optional OCR fallback ran. Shown to the
+        // reviewer beside the page image, and labelled as a model's reading rather than as
+        // text the document carried — it has no geometry and nothing traces to it.
+        ocrText: p.ocrText,
+        ocrModel: p.ocrModel,
       })),
       fields: [...resolved.fields.values()],
       spans,

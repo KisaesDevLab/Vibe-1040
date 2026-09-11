@@ -76,6 +76,20 @@ const schema = z.object({
 
   SIDECAR_CONCURRENCY: z.coerce.number().int().positive().default(2),
 
+  /**
+   * Optional OCR fallback for pages with no text layer.
+   *
+   * Off by default, and deliberately so. It registers a fourth task class, and the firm then
+   * chooses in the router console what serves it: a local OCR server, so no page image leaves
+   * the appliance, or a cloud vision model for accuracy. This app holds no opinion on which —
+   * see SENSITIVITY_CHECKED in router/task-classes.ts.
+   *
+   * What it does NOT do is supply geometry. Nothing the `local_ocr` kind can serve returns
+   * bounding boxes, so §6's rule that a field with no span blocks the worksheet applies to
+   * anything derived from a transcription, exactly as it does today.
+   */
+  OCR_FALLBACK_ENABLED: bool.default('false'),
+
   RASTER_DPI_DEFAULT: z.coerce.number().int().positive().default(300),
   RASTER_DPI_DIGITAL: z.coerce.number().int().positive().default(200),
   RASTER_DPI_DEGRADED: z.coerce.number().int().positive().default(400),

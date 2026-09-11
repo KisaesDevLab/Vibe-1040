@@ -516,6 +516,32 @@ Kurt's call, and the right one — he pushed back on the gate as unnecessary and
 agreed with him.
 *Affects:* P4, P7, P8, P10, §7.
 
+**2026-09-11 — Optional OCR fallback for pages with no text layer; sensitivity left to the firm.**
+Added `v1040_ocr_transcribe`, requiring `vision` and deliberately not `json_schema`. That is
+the only shape that can bind to the Router's `local_ocr` kind, which is pinned
+`json_schema: false` — the Router's note records why, and it is the same mistake in a different
+costume: a grammar constraint forces a 0.9B OCR model to invent a spans array rather than
+refuse, producing confident garbage. The class asks for prose; this app parses it. Registered
+only when `OCR_FALLBACK_ENABLED` is on, so a class nobody calls does not clutter the console.
+
+**The app holds no opinion on this class's sensitivity**, by request. It is excluded from
+`SENSITIVITY_CHECKED`, so no startup warning fires either way: a firm may bind it to a local
+OCR server and keep every page image on the appliance, or to a cloud vision model for accuracy.
+Both are legitimate and the trade is the firm's. The startup log reports how it resolved.
+
+Available today: `ghcr.io/kisaesdevlab/vibe-glm-ocr`, CPU and CUDA. Two operational facts
+decide whether it is usable. It was removed from the appliance on 2026-07-24 for footprint —
+it reserved 2–3 GiB and the reference droplet dropped from $48 to $24/mo without it — so
+re-adding it means an appliance change and roughly double the baseline. And the CPU image runs
+40–60 s/page against 2–3 s on CUDA, which for a 41-page bundle is half an hour versus under two
+minutes. On a GPU-less droplet this is impractical at any real volume.
+
+Scope limit, deliberate: transcription only. It gives no geometry, so §6's blocking rule stands
+and scanned documents stop for disposition. See Q17 for the three ways out. The text-layer case
+needs none of it — PyMuPDF already returns exact words and boxes, which remains the better fix
+and remains deferred.
+*Affects:* P7, P8, §3, §4, §6.
+
 ---
 
 ## Known risks

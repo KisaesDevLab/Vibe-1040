@@ -10,7 +10,14 @@
 import { VibeAiClient, VibeAiError } from '@kisaes/vibe-ai-client';
 import type { ChatMessage, RequestOptions } from '@kisaes/vibe-ai-client';
 import { env } from '../config/env.ts';
-import { APP_NAME, DECLARATIONS, TASK_CLASS, type TaskClassKey } from './task-classes.ts';
+import {
+  APP_NAME,
+  DECLARATIONS,
+  OPTIONAL_DECLARATIONS,
+  SENSITIVITY_CHECKED,
+  TASK_CLASS,
+  type TaskClassKey,
+} from './task-classes.ts';
 
 export const APP_VERSION = '0.4.0';
 
@@ -128,6 +135,40 @@ export async function completeJson<T>(
   throw new RouterCallError(lastFailure ?? { kind: 'park', code: 'unknown', message: 'exhausted' });
 }
 
+/**
+ * Prose completion. Same retry and failure classification as `completeJson`, without a
+ * schema, because the OCR transcription class deliberately does not ask for one.
+ */
+export async function completeText(
+  taskClass: TaskClassKey,
+  messages: ChatMessage[],
+  options: CallOptions = {},
+  maxAttempts = 3,
+): Promise<{ content: string; model: string; requestId: string }> {
+  let lastFailure: RouterFailure | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const { userId, bundleId, ...rest } = options;
+      const result = await ai.complete(taskClass, messages, {
+        ...rest,
+        ...(userId ? { userId } : {}),
+        ...(bundleId ? { engagementRef: bundleId } : {}),
+      });
+      return { content: result.content, model: result.model, requestId: result.requestId };
+    } catch (err) {
+      const failure = classifyFailure(err);
+      lastFailure = failure;
+      if (failure.kind === 'retry' && attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, Math.min(failure.afterSeconds, 60) * 1000));
+        continue;
+      }
+      throw new RouterCallError(failure);
+    }
+  }
+  throw new RouterCallError(lastFailure ?? { kind: 'park', code: 'unknown', message: 'exhausted' });
+}
+
 export class RouterCallError extends Error {
   readonly failure: RouterFailure;
 
@@ -189,21 +230,28 @@ export function retryRegistrationInBackground(intervalMs = 60_000): void {
  *  - the router cannot be reached at all → nothing can proceed.
  */
 export async function registerAndVerify(): Promise<StartupReport> {
+  const classes = env.OCR_FALLBACK_ENABLED
+    ? [...DECLARATIONS, ...OPTIONAL_DECLARATIONS]
+    : DECLARATIONS;
+
   const { registered } = await ai.registerTaskClasses({
     app: APP_NAME,
     version: APP_VERSION,
-    classes: DECLARATIONS,
+    classes,
   });
 
   const warnings: string[] = [];
   const expected = env.ROUTER_EXPECTED_SENSITIVITY;
 
-  for (const key of Object.values(TASK_CLASS)) {
+  for (const key of classes.map((c) => c.key)) {
     const row = registered.find((r) => r.key === key);
     if (!row) {
       warnings.push(`task class ${key} was not acknowledged by the router`);
       continue;
     }
+    // The transcription class has no expected sensitivity — the firm decides whether a page
+    // image leaves the appliance for it. Reported by the caller, never warned about here.
+    if (!SENSITIVITY_CHECKED.includes(key)) continue;
     if (row.sensitivity !== expected) {
       warnings.push(
         `task class ${key} is '${row.sensitivity}' but this deployment expects '${expected}'. ` +

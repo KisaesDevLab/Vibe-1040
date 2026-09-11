@@ -66,6 +66,9 @@ export interface PageRow {
   widthPx: number | null;
   heightPx: number | null;
   rasterAvailable: boolean;
+  /** Optional OCR fallback output. A model's reading, with no geometry behind it. */
+  ocrText: string | null;
+  ocrModel: string | null;
 }
 
 export interface WorksheetLine {
