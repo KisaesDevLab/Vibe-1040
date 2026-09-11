@@ -103,7 +103,14 @@ dedicated inference in a named US region.
 ---
 
 ### Q16 — Is SSA-1042S in scope, and what happens to an unregistered form type?
-**Raised:** 2026-09-10. **Working assumption:** out of scope, and the current behaviour is wrong.
+**Raised:** 2026-09-10. **Partially answered 2026-09-10.**
+
+**A (scope), 2026-09-10:** in scope. `SSA-1042S` is registered for TY2025 as
+`allJudgmentRequired`, boxes as printed, with no line mapping — see the decision log and §8.
+
+**Still open:** part 2 below. A page the classifier cannot label is still indistinguishable
+from a cover sheet, and registering one more form type does not fix that for the next
+unrecognised document.
 
 Two of five sample client packets (Henning, Hoffmann) open with **SSA-1042S**, the Social
 Security benefit statement issued to nonresident aliens. §8 lists SSA-1099 and RRB-1099 and

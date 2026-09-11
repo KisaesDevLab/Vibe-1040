@@ -406,6 +406,27 @@ would leave a fresh deployment on a password alone and is a §11 GLBA obligation
 a decision entry here rather than an implementation choice.
 *Affects:* P0, P14.
 
+**2026-09-10 — SSA-1042S registered; boxes as printed, no line mapping.**
+Two of five sample client packets opened with an SSA-1042S, the Social Security benefit
+statement issued to a nonresident alien. It was not a registered form type, so the classifier
+had no valid label for the page and the only outcomes were a silent drop as a supplemental
+page or a misbind against SSA-1099. The misbind is not theoretical: the two forms agree on
+boxes 3, 4 and 5 and diverge immediately after, where 1042S box 6 is a tax **rate** printed
+as a percentage and SSA-1099 box 6 is an amount withheld, so the binder would read "10%" into
+a money field.
+
+Registered `allJudgmentRequired` with **no line mapping at all**, which is the part worth
+recording. A 1042S recipient may not be filing a 1040, the benefit may be taxed at a flat or
+treaty rate rather than through the line 6a worksheet, and choosing a line would be exactly
+the characterization decision §11 forbids. Every field lands in Judgment Required instead.
+Carries its own footing check for box 9 against box 7 less box 8; the existing SSA box 5 check
+applies unchanged because the field keys match.
+
+Q16's second half stays open and matters more: a page the classifier cannot label is still
+indistinguishable from a cover letter, so the next unregistered tax document is still a silent
+omission. Registering form types one at a time does not fix that.
+*Affects:* P4, P8, P10, §8, §9.
+
 ---
 
 ## Known risks

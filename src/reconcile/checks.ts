@@ -442,6 +442,36 @@ export const everyFieldHasSpans: Check = (ctx) => {
   };
 };
 
+/**
+ * SSA-1042S box 9 must equal box 7 less box 8 (§6).
+ *
+ * The 1042S's own arithmetic, and the reason it needs its own schema rather than borrowing
+ * SSA-1099's. The two forms agree on boxes 3, 4 and 5 and diverge immediately after: box 6
+ * here is a tax *rate*, printed as a percentage, where SSA-1099 box 6 is an amount of tax
+ * withheld. Binding a 1042S against the SSA-1099 schema reads "10%" into a money field.
+ */
+export const ssa1042sBox9Foots: Check = (ctx) => {
+  const withheld = cents(ctx, 'box_7');
+  const refunded = cents(ctx, 'box_8');
+  const net = cents(ctx, 'box_9');
+  if (withheld === null || net === null) {
+    return na('ssa1042s_box9_equals_box7_minus_box8', 'hard', 'Box 7 or box 9 is blank.');
+  }
+  const expected = withheld - (refunded ?? 0);
+  const ok = withinTolerance(net, expected, ctx.toleranceCents);
+  return {
+    checkKey: 'ssa1042s_box9_equals_box7_minus_box8',
+    severity: 'hard',
+    outcome: ok ? 'pass' : 'fail',
+    message: ok
+      ? 'Net tax withheld foots to tax withheld less tax refunded.'
+      : `Box 9 (${net}) does not equal box 7 (${withheld}) less box 8 (${refunded ?? 0}).`,
+    expectedCents: expected,
+    actualCents: net,
+    toleranceCents: ctx.toleranceCents,
+  };
+};
+
 /** Document tax year differs from the bundle majority (§6, soft). */
 export const taxYearMatchesBundle: Check = (ctx) => {
   if (ctx.bundleTaxYear === null || ctx.bundleTaxYear === undefined) {
@@ -548,6 +578,7 @@ export const CHECKS: Record<string, Check> = {
   r_distribution_code_vs_age: rDistributionCodeVsAge,
   div_qualified_not_exceeding_ordinary: divQualifiedNotExceedingOrdinary,
   ssa_box5_equals_box3_minus_box4: ssaBox5Foots,
+  ssa1042s_box9_equals_box7_minus_box8: ssa1042sBox9Foots,
   a1095_monthly_rows_foot_to_annual: a1095MonthlyFootsToAnnual,
   b_section_subtotals_foot_to_summary: bSubtotalsFootToSummary,
   consolidated_subforms_tie_to_summary: consolidatedTiesToSummary,
