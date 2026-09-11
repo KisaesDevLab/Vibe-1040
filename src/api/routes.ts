@@ -34,7 +34,7 @@ import {
 } from '../db/schema.ts';
 import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
-import { ingestBundle, type IncomingFile } from '../ingest/upload.ts';
+import { ingestBundle, ingestBundlesPerFile, type IncomingFile, type IngestResult } from '../ingest/upload.ts';
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
 import { startExtraction } from '../queue/pipeline.ts';
 import { blockingFailures } from '../reconcile/gate.ts';
@@ -43,6 +43,21 @@ import { blobs } from '../storage/index.ts';
 import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts';
 import { WorksheetBlockedError } from '../reconcile/gate.ts';
 import { auditAccess, requireUser } from './middleware.ts';
+
+/** Queue every source file of a freshly ingested bundle for rasterisation. */
+async function queueRasterisation(result: IngestResult, userId: string): Promise<void> {
+  const fileRows = await db.select().from(sourceFiles).where(eq(sourceFiles.bundleId, result.bundleId));
+  for (const file of fileRows) {
+    await rasterQueue.add('raster', {
+      bundleId: result.bundleId,
+      sourceFileId: file.id,
+      storageKey: file.storageKey,
+      mediaType: file.mediaType,
+      userId,
+    });
+  }
+  await db.update(bundles).set({ status: 'triaging' }).where(eq(bundles.id, result.bundleId));
+}
 
 export function registerRoutes(app: FastifyInstance): void {
   // ── health ─────────────────────────────────────────────────────────────────
@@ -160,22 +175,68 @@ export function registerRoutes(app: FastifyInstance): void {
     });
 
     // Rasterization is the sidecar's job; the queue is the boundary (§12).
-    const fileRows = await db
-      .select()
-      .from(sourceFiles)
-      .where(eq(sourceFiles.bundleId, result.bundleId));
-    for (const file of fileRows) {
-      await rasterQueue.add('raster', {
-        bundleId: result.bundleId,
-        sourceFileId: file.id,
-        storageKey: file.storageKey,
-        mediaType: file.mediaType,
-        userId: user.id,
-      });
-    }
-    await db.update(bundles).set({ status: 'triaging' }).where(eq(bundles.id, result.bundleId));
+    await queueRasterisation(result, user.id);
 
     return reply.code(201).send(result);
+  });
+
+  /**
+   * Bulk upload: one bundle per file (P1, P5).
+   *
+   * The unit a firm drops here is a client packet, so five packets are five bundles. Each
+   * is named from its own filename and renamed to the primary taxpayer once identity is
+   * proposed, because nobody is typing forty labels.
+   *
+   * Partial success is the normal outcome and is reported as 207: a folder with one
+   * unsupported file ingests the rest and names the one it refused. Returning 400 for the
+   * whole batch would make the caller work out which file was the problem by bisection.
+   */
+  app.post('/api/bundles/bulk', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+
+    const files: IncomingFile[] = [];
+    for await (const part of req.parts()) {
+      if (part.type === 'file') {
+        files.push({ filename: part.filename, mediaType: part.mimetype, bytes: await part.toBuffer() });
+      }
+    }
+    if (!files.length) return reply.code(400).send({ error: 'no files uploaded' });
+
+    const { ingested, rejected } = await ingestBundlesPerFile(files, user.id);
+
+    for (const result of ingested) {
+      await auditAccess(req, 'bundle.upload', {
+        bundleId: result.bundleId,
+        entityType: 'bundle',
+        entityId: result.bundleId,
+        detail: { fileCount: result.fileCount, duplicateOf: result.duplicateOfBundleId, bulk: true },
+      });
+      await queueRasterisation(result, user.id);
+    }
+
+    if (!ingested.length) return reply.code(400).send({ error: 'no files could be ingested', rejected });
+    return reply.code(rejected.length ? 207 : 201).send({ bundles: ingested, rejected });
+  });
+
+  /**
+   * Rename a bundle. Clears `labelAuto`, so identity resolution stops proposing a name for
+   * it — the reviewer has said what it is called.
+   */
+  app.patch('/api/bundles/:id/label', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = req.params as { id: string };
+    const { label } = z.object({ label: z.string().trim().min(1).max(200) }).parse(req.body);
+
+    await db.update(bundles).set({ label, labelAuto: false, updatedAt: new Date() }).where(eq(bundles.id, id));
+    await auditAccess(req, 'bundle.upload', {
+      bundleId: id,
+      entityType: 'bundle',
+      entityId: id,
+      detail: { renamedTo: label },
+    });
+    return { ok: true, label };
   });
 
   app.get('/api/bundles', async (req, reply) => {

@@ -178,6 +178,29 @@ export const api = {
     if (!res.ok) throw new Error(`upload failed: ${res.status}`);
     return res.json() as Promise<{ bundleId: string }>;
   },
+
+  /** One bundle per file. 207 means some ingested and some did not, which is not an error. */
+  uploadBulk: async (
+    files: FileList,
+  ): Promise<{ bundles: { bundleId: string; label: string }[]; rejected: { filename: string; reason: string }[] }> => {
+    const form = new FormData();
+    for (const file of Array.from(files)) form.append('files', file);
+    const res = await fetch('/api/bundles/bulk', { method: 'POST', body: form, credentials: 'same-origin' });
+    if (!res.ok && res.status !== 207) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `bulk upload failed: ${res.status}`);
+    }
+    return res.json() as Promise<{
+      bundles: { bundleId: string; label: string }[];
+      rejected: { filename: string; reason: string }[];
+    }>;
+  },
+
+  renameBundle: (id: string, label: string) =>
+    request<{ ok: boolean; label: string }>(`/api/bundles/${id}/label`, {
+      method: 'PATCH',
+      body: JSON.stringify({ label }),
+    }),
 };
 
 export function formatCents(cents: number | null): string {

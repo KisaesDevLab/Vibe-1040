@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseMoney } from '../src/lib/money.ts';
 import { FormRegistry } from '../src/schemas/registry.ts';
+import { labelFromFilename } from '../src/ingest/upload.ts';
 
 /**
  * The fixture set and its ground truth (`test/fixtures/manifest.json`).
@@ -202,5 +203,33 @@ describe('fixture set', () => {
     const raw = JSON.stringify(m);
     // The manifest records last-four only; full TINs live in the PDFs, never here.
     expect(/\b\d{3}-\d{2}-\d{4}\b/.test(raw)).toBe(false);
+  });
+});
+
+/**
+ * Bulk upload names a bundle from its filename until identity resolution proposes the
+ * taxpayer (§7). The label only has to be readable and distinct — parsing a client name out
+ * of a filename is deliberately not attempted, because a confidently wrong name is worse
+ * than an obviously mechanical one.
+ */
+describe('labelFromFilename', () => {
+  it('drops the extension and turns separators into spaces', () => {
+    expect(labelFromFilename('Holloway_Darren_2025_Tax_Packet.pdf')).toBe('Holloway Darren 2025 Tax Packet');
+    expect(labelFromFilename('Henning-TaxPacket-2025.PDF')).toBe('Henning TaxPacket 2025');
+  });
+
+  it('strips an upload-side hash prefix', () => {
+    expect(labelFromFilename('a185b616-ElaraSmith_2025_CompleteTaxPacket.pdf')).toBe(
+      'ElaraSmith 2025 CompleteTaxPacket',
+    );
+  });
+
+  it('keeps a name that is already clean', () => {
+    expect(labelFromFilename('Marisol Fuentes 2025.pdf')).toBe('Marisol Fuentes 2025');
+  });
+
+  it('never returns an empty label', () => {
+    expect(labelFromFilename('.pdf')).toBe('.pdf');
+    expect(labelFromFilename('___.pdf')).toBe('___.pdf');
   });
 });

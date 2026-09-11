@@ -24,6 +24,12 @@ export interface IngestResult {
   bundleId: string;
   fileCount: number;
   duplicateOfBundleId: string | null;
+  label: string;
+}
+
+export interface IngestOptions {
+  /** The label is the app's guess and identity resolution may replace it (§7). */
+  labelAuto?: boolean;
 }
 
 const ACCEPTED = new Set([
@@ -48,10 +54,30 @@ export function bundleContentHash(files: readonly IncomingFile[]): string {
   return createHash('sha256').update(digests.join('\n')).digest('hex');
 }
 
+/**
+ * A readable provisional label from a filename.
+ *
+ * Deliberately not an attempt to parse a client name out of it. Firms name files every way
+ * imaginable, and a wrong name is worse than an obviously mechanical one because it looks
+ * authoritative. This only has to hold until identity resolution proposes the real name
+ * (§7); it exists so a bulk upload of forty packets is not forty rows called "Bundle".
+ *
+ * Strips the extension and any upload-side hash prefix, turns separators into spaces, and
+ * collapses whitespace. Everything else in the filename is kept, because the parts a firm
+ * chose to put there are the parts that let a reviewer tell two rows apart.
+ */
+export function labelFromFilename(filename: string): string {
+  const base = filename.replace(/\.[A-Za-z0-9]{1,5}$/, '');
+  const withoutUploadPrefix = base.replace(/^[0-9a-f]{8,}-/i, '');
+  const spaced = withoutUploadPrefix.replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return spaced || filename;
+}
+
 export async function ingestBundle(
   label: string,
   files: readonly IncomingFile[],
   uploadedBy: string,
+  options: IngestOptions = {},
 ): Promise<IngestResult> {
   if (!files.length) throw new Error('a bundle needs at least one file');
 
@@ -72,6 +98,7 @@ export async function ingestBundle(
     .insert(bundles)
     .values({
       label,
+      labelAuto: options.labelAuto ?? false,
       uploadedBy,
       contentHash,
       // Recorded, not rejected: the reviewer decides whether a duplicate is a mistake or a
@@ -98,5 +125,39 @@ export async function ingestBundle(
     });
   }
 
-  return { bundleId, fileCount: files.length, duplicateOfBundleId: existing?.id ?? null };
+  return { bundleId, fileCount: files.length, duplicateOfBundleId: existing?.id ?? null, label };
+}
+
+/**
+ * Bulk upload: one bundle per file, each named from its own filename.
+ *
+ * One file per bundle rather than one bundle per upload, because the unit a firm actually
+ * drops on this screen is a client packet — five clients is five bundles, not one with five
+ * PDFs in it. A packet that genuinely spans several files still goes through the single
+ * upload path, where the reviewer says so explicitly.
+ *
+ * One failure does not sink the batch. A folder of forty packets that contains one
+ * unsupported file should ingest thirty-nine and name the one it refused, not reject the
+ * lot — which is what a single throwing loop would do.
+ */
+export async function ingestBundlesPerFile(
+  files: readonly IncomingFile[],
+  uploadedBy: string,
+): Promise<{ ingested: IngestResult[]; rejected: { filename: string; reason: string }[] }> {
+  if (!files.length) throw new Error('a bulk upload needs at least one file');
+
+  const ingested: IngestResult[] = [];
+  const rejected: { filename: string; reason: string }[] = [];
+
+  for (const file of files) {
+    try {
+      ingested.push(
+        await ingestBundle(labelFromFilename(file.filename), [file], uploadedBy, { labelAuto: true }),
+      );
+    } catch (err) {
+      rejected.push({ filename: file.filename, reason: (err as Error).message });
+    }
+  }
+
+  return { ingested, rejected };
 }
