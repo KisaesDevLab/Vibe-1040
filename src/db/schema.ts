@@ -176,6 +176,12 @@ export const bundles = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     label: text('label').notNull(),
+    /**
+     * True while the label is the app's own guess and may still be replaced by the primary
+     * taxpayer's name (§7). Cleared the moment a person renames the bundle, and never set
+     * again — an app that re-overwrites a human's label has not understood the point.
+     */
+    labelAuto: boolean('label_auto').notNull().default(false),
     status: bundleStatus('status').notNull().default('uploaded'),
     /** Majority tax year across documents; per-document mismatches are flagged (§7). */
     taxYear: integer('tax_year'),

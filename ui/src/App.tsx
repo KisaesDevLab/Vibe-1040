@@ -340,6 +340,8 @@ let selectedBundleId: string | null = null;
 function BundleList({ onOpen, onError }: { onOpen: () => void; onError: (m: string) => void }) {
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [label, setLabel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [rejected, setRejected] = useState<{ filename: string; reason: string }[]>([]);
 
   const refresh = useCallback(() => {
     api.bundles().then(setBundles).catch((e: Error) => onError(e.message));
@@ -351,19 +353,63 @@ function BundleList({ onOpen, onError }: { onOpen: () => void; onError: (m: stri
     <div className="page">
       <div className="card">
         <h2>New bundle</h2>
+        <p className="muted">One client, one bundle. Use this when a packet spans several files.</p>
         <input placeholder="Client / bundle label" value={label} onChange={(e) => setLabel(e.target.value)} />
         <input
           type="file"
           multiple
           accept="application/pdf,image/*"
+          disabled={busy}
           onChange={(e) => {
             if (!e.target.files?.length) return;
+            setBusy(true);
             api
               .upload(label || 'Untitled bundle', e.target.files)
               .then(refresh)
-              .catch((err: Error) => onError(err.message));
+              .catch((err: Error) => onError(err.message))
+              .finally(() => setBusy(false));
           }}
         />
+      </div>
+
+      <div className="card">
+        <h2>Bulk upload</h2>
+        <p className="muted">
+          One bundle per file, for a folder of client packets. Each is named from its filename
+          and renamed to the taxpayer once identity is proposed, so there is nothing to type.
+        </p>
+        <input
+          type="file"
+          multiple
+          accept="application/pdf,image/*"
+          disabled={busy}
+          onChange={(e) => {
+            if (!e.target.files?.length) return;
+            setBusy(true);
+            setRejected([]);
+            api
+              .uploadBulk(e.target.files)
+              .then((r) => {
+                setRejected(r.rejected);
+                refresh();
+              })
+              .catch((err: Error) => onError(err.message))
+              .finally(() => setBusy(false));
+          }}
+        />
+        {busy && <p className="muted">Uploading…</p>}
+        {rejected.length > 0 && (
+          <div className="warn-note">
+            <strong>{rejected.length} file(s) were not ingested.</strong> The rest went through.
+            <ul>
+              {rejected.map((r) => (
+                <li key={r.filename}>
+                  {r.filename}: {r.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <div className="card">

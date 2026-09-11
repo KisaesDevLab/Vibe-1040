@@ -168,6 +168,39 @@ export async function saveProposal(bundleId: string, proposal: IdentityProposal)
     .update(bundles)
     .set({ taxYear: proposal.taxYear, status: 'awaiting_identity_confirmation', updatedAt: new Date() })
     .where(eq(bundles.id, bundleId));
+
+  await renameBundleFromPrimaryTaxpayer(bundleId, proposal);
+}
+
+/**
+ * Give a bulk-uploaded bundle the primary taxpayer's name.
+ *
+ * Only ever replaces a label the app wrote itself (`labelAuto`). A reviewer who renamed a
+ * bundle has said what it is called, and a later identity pass must not argue.
+ *
+ * The name is still a proposal at this point, and deliberately so: a reviewer scanning a
+ * list of forty bundles needs to see whose is whose *before* confirming each one, and the
+ * name is what they recognise. It is a label, never a key — §7's join key is the salted TIN
+ * hash and nothing here changes that.
+ */
+async function renameBundleFromPrimaryTaxpayer(
+  bundleId: string,
+  proposal: IdentityProposal,
+): Promise<void> {
+  const primaryName = proposal.taxpayers[0]?.displayName?.trim();
+  if (!primaryName) return;
+
+  const [bundle] = await db
+    .select({ labelAuto: bundles.labelAuto })
+    .from(bundles)
+    .where(eq(bundles.id, bundleId))
+    .limit(1);
+  if (!bundle?.labelAuto) return;
+
+  await db
+    .update(bundles)
+    .set({ label: primaryName, updatedAt: new Date() })
+    .where(eq(bundles.id, bundleId));
 }
 
 /** The human gate. Until this runs, the bundle does not proceed to extraction (§7). */

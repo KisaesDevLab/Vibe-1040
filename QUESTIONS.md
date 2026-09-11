@@ -102,6 +102,35 @@ dedicated inference in a named US region.
 
 ---
 
+### Q16 — Is SSA-1042S in scope, and what happens to an unregistered form type?
+**Raised:** 2026-09-10. **Working assumption:** out of scope, and the current behaviour is wrong.
+
+Two of five sample client packets (Henning, Hoffmann) open with **SSA-1042S**, the Social
+Security benefit statement issued to nonresident aliens. §8 lists SSA-1099 and RRB-1099 and
+not SSA-1042S; there is no `ssa-1042s.json` in `data/form-schemas/ty2025/`, so the classifier
+has no valid label for the page.
+
+Neither outcome available today is acceptable:
+
+- Classified `form_type: null, is_supplemental: true` — the page is treated as a cover sheet
+  and its benefit amounts never reach the worksheet. A **silent omission**, which is the one
+  failure this product exists to prevent.
+- Classified as SSA-1099 — the wrong schema binds. 1042S reports gross benefits and tax
+  withheld under a different box structure, so fields bind to the wrong boxes or come back
+  with no spans, which is a blocking hard failure (§6).
+
+Two separable questions:
+
+1. **Scope.** Add SSA-1042S as a registered form type? It is a real form for a real client
+   population, and like SSA-1099 its taxable portion is a Judgment Required item (§9), not a
+   computation. Adding it is a §8 scope change and needs a decision entry.
+2. **Safety, regardless of 1.** A page the classifier cannot label is currently
+   indistinguishable from a genuine cover sheet. There should be a third outcome — an
+   *unrecognised form* that lands in Judgment Required with its page attached — so an
+   unknown tax document is surfaced rather than dropped. That is arguably a bug in the
+   current design rather than a scope change, since §5's refusal to treat blank as zero
+   rests on the same principle.
+
 ### Q15 — Should MFA be conditional on a delivery channel being configured?
 **Raised:** 2026-09-10. **Working assumption:** no. MFA stays mandatory.
 
