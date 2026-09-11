@@ -84,6 +84,13 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.3.0** — the identity gate moved from before extraction to before
+the worksheet, so ingestion runs classify → layout → extract → reconcile without stopping and
+the reviewer confirms against forms the app has actually read. `identityConfirmedAt` was
+previously written and read by nothing; it is now a real precondition enforced beside the
+arithmetic gate. A minor, because the pipeline's sequencing and §7's meaning both changed.
+Images `ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.3.0` / `0.3`.
+
 **Released 2026-09-10 as v0.2.1** — the identity proposal was built inside `extractDocument`,
 and extraction does not start until identity is confirmed: a deadlock, with every bundle
 parked at `awaiting_identity_confirmation` showing an empty taxpayer table. Identity is now
