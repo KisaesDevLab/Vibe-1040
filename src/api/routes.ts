@@ -84,9 +84,13 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!user) return reply.code(401).send({ error: 'authentication required' });
     if (user.totpConfirmedAt) return reply.code(409).send({ error: 'already enrolled' });
 
-    const secret = generateTotpSecret();
-    await db.update(users).set({ totpSecret: secret, updatedAt: new Date() }).where(eq(users.id, user.id));
-    return { secret, uri: totpUri(secret, user.email) };
+    // See the twin in admin-routes.ts: re-enrolment reuses an unconfirmed secret so a
+    // second click cannot invalidate the one the user has already scanned.
+    const secret = user.totpSecret ?? generateTotpSecret();
+    if (secret !== user.totpSecret) {
+      await db.update(users).set({ totpSecret: secret, updatedAt: new Date() }).where(eq(users.id, user.id));
+    }
+    return { secret, uri: totpUri(secret, user.email), account: user.email, issuer: 'Vibe 1040' };
   });
 
   app.post('/api/auth/mfa/verify', async (req, reply) => {

@@ -150,3 +150,12 @@ h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 .forecast { display: flex; gap: 24px; padding: 10px 0; }
 .result { background: #f7f9fc; padding: 10px; border-radius: 6px; font-size: 12px; overflow-x: auto; }
+
+/* Second-factor enrolment. The QR sits on white regardless of theme, because a scanner
+   needs the quiet zone and the contrast more than the page needs consistency. */
+.enrollment { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.enrollment .qr { background: #fff; padding: 10px; border: 1px solid var(--line); border-radius: 8px; line-height: 0; }
+.enrollment__account { margin: 0; font-size: 12px; color: var(--muted); }
+.enrollment__manual { align-self: stretch; font-size: 12px; }
+.enrollment__manual summary { cursor: pointer; color: var(--accent); }
+.enrollment__manual code { display: block; margin: 8px 0 4px; padding: 8px; background: #f2f4f7; border-radius: 6px; font-family: ui-monospace, monospace; word-break: break-all; letter-spacing: 0.04em; }

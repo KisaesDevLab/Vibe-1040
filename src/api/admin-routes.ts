@@ -487,9 +487,15 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     if (!row) return reply.code(401).send({ error: 'authentication required' });
     if (row.totpConfirmedAt) return reply.code(409).send({ error: 'already enrolled' });
 
-    const secret = generateTotpSecret();
-    await db.update(users).set({ totpSecret: secret, updatedAt: new Date() }).where(eq(users.id, row.id));
-    return { secret, uri: totpUri(secret, row.email) };
+    // Reuse an unconfirmed secret rather than minting a new one. Generating on every call
+    // meant a second click — a refresh, a back button, an accidental double-tap — silently
+    // invalidated the secret the user had just scanned, and the only symptom was "invalid
+    // code" against an authenticator that was working correctly.
+    const secret = row.totpSecret ?? generateTotpSecret();
+    if (secret !== row.totpSecret) {
+      await db.update(users).set({ totpSecret: secret, updatedAt: new Date() }).where(eq(users.id, row.id));
+    }
+    return { secret, uri: totpUri(secret, row.email), account: row.email, issuer: 'Vibe 1040' };
   });
 
   app.post('/api/auth/totp/verify', async (req, reply) => {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { api, formatCents } from './api';
 import { FieldEditor } from './components/FieldEditor';
 import { PageOverlay } from './components/PageOverlay';
@@ -126,7 +127,12 @@ function Mfa({
   const [factor, setFactor] = useState<FactorState | null>(null);
   const [loadFailed, setLoadFailed] = useState<string | null>(null);
   const [code, setCode] = useState('');
-  const [enrollment, setEnrollment] = useState<{ secret: string; uri: string } | null>(null);
+  const [enrollment, setEnrollment] = useState<{
+    secret: string;
+    uri: string;
+    account: string;
+    issuer: string;
+  } | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -220,8 +226,26 @@ function Mfa({
 
       {enrollment && (
         <div className="enrollment">
-          <p className="muted">Add this secret to your authenticator app, then enter the code it shows.</p>
-          <code>{enrollment.secret}</code>
+          <p className="muted">
+            Scan this with your authenticator app, then enter the six-digit code it shows.
+          </p>
+          <div className="qr">
+            {/* The otpauth URI carries the issuer and the account, so the app labels the
+                entry itself. Typing the key by hand loses that, which is why the QR is the
+                primary path and the key is the fallback. */}
+            <QRCodeSVG value={enrollment.uri} size={168} level="M" marginSize={2} />
+          </div>
+          <p className="enrollment__account">
+            {enrollment.issuer} · {enrollment.account}
+          </p>
+          <details className="enrollment__manual">
+            <summary>Can't scan? Enter the key by hand</summary>
+            <code>{enrollment.secret}</code>
+            <p className="muted">
+              Choose "enter a setup key" in your authenticator, and name it
+              {' '}{enrollment.issuer}.
+            </p>
+          </details>
         </div>
       )}
 
