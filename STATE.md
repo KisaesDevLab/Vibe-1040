@@ -84,6 +84,14 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.1.0** — bulk upload and a new registered form type, so a minor
+rather than a patch. One bundle per file with `POST /api/bundles/bulk`, labelled from the
+filename and renamed to the primary taxpayer once identity is proposed; `bundles.label_auto`
+keeps the app from ever overwriting a name a reviewer chose. SSA-1042S is registered as
+`allJudgmentRequired` with no line mapping (Q16, §8). **Carries migration 0004** — the
+appliance runs it through the migrate one-shot on update. Images
+`ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.1.0` / `0.1`.
+
 **Released 2026-09-10 as v0.0.9** — bodyless POSTs no longer declare a JSON body. The API
 client set `Content-Type: application/json` on every request, and Fastify rejects that with
 "Body cannot be empty when content-type is set to 'application/json'", so six actions were
