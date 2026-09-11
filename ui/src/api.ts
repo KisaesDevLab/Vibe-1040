@@ -14,9 +14,18 @@ import type {
 } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Only declare a JSON body when there is one. Sending `Content-Type: application/json`
+  // on a bodyless POST makes Fastify reject the request outright with "Body cannot be
+  // empty when content-type is set to 'application/json'", which is what every POST that
+  // carries no payload was doing: enrolling an authenticator, sending a code, signing out,
+  // resetting a factor, running retention, generating a worksheet.
+  const hasBody = init?.body !== undefined && init.body !== null;
   const res = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    headers: {
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+      ...(init?.headers ?? {}),
+    },
     credentials: 'same-origin',
   });
   if (!res.ok) {
