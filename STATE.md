@@ -84,6 +84,15 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.4.0** — bundle deletion and list search. `DELETE /api/bundles/:id`
+removes the bundle and every blob it owns, admin or partner only, guarded by typing the label
+back rather than a confirm dialog; disposal is written to the same `purge_log` the retention
+job uses, so an ad-hoc delete leaves the same evidence a policy purge does (§11).
+`GET /api/bundles` gains `q`, `status`, `taxYear`, `limit` and `offset`, where `q` matches the
+label, a taxpayer's name, or the last four digits only — plaintext identification numbers are
+never stored, and a box accepting a full one would invite staff to type it. Images
+`ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.4.0` / `0.4`.
+
 **Released 2026-09-10 as v0.3.0** — the identity gate moved from before extraction to before
 the worksheet, so ingestion runs classify → layout → extract → reconcile without stopping and
 the reviewer confirms against forms the app has actually read. `identityConfirmedAt` was
