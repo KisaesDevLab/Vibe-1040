@@ -21,6 +21,7 @@ import { runLayoutPass } from '../layout/pass.ts';
 import {
   excessSocialSecurityWithheld,
   runChecks,
+  unrecognisedFormResult,
   type BundleCheckContext,
   type CheckContext,
   type FieldValue,
@@ -140,6 +141,7 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
         void: group.void,
         isSummary: group.isSummary,
         isSupplemental: group.isSupplemental,
+        unrecognisedForm: group.unrecognisedForm ?? false,
         payerName: group.payerName,
         classifierConfidence: group.confidence,
         classifierModel: group.classifierModel,
@@ -297,6 +299,23 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
   const resolvedByDoc = new Map<string, Map<string, FieldValue>>();
   for (const doc of docs) {
     resolvedByDoc.set(doc.id, (await resolveDocumentFields(doc.id)).fields);
+  }
+
+  // A tax document nobody could name never reaches the loop below, because it has no schema
+  // to check against. It still has to be said out loud (§6, §9) — the whole point is that a
+  // page the app could not read is louder than one it could, not quieter.
+  for (const doc of docs.filter((d) => d.unrecognisedForm)) {
+    const result = unrecognisedFormResult();
+    hardFailures += 1;
+    await db.insert(checkResults).values({
+      bundleId,
+      documentId: doc.id,
+      checkKey: result.checkKey,
+      severity: result.severity,
+      outcome: result.outcome,
+      message: result.message,
+      detail: result.detail ?? {},
+    });
   }
 
   for (const doc of docs) {

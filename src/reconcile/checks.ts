@@ -472,6 +472,29 @@ export const ssa1042sBox9Foots: Check = (ctx) => {
   };
 };
 
+/**
+ * A tax document whose form type is not registered (§6, §9).
+ *
+ * Not a `Check`, because it runs for a document that has no schema and therefore no fields
+ * and no check list — which is exactly why it exists. It is stated here rather than inline in
+ * the pipeline so that every hard failure this app can raise is visible in one file.
+ *
+ * Hard rather than soft, deliberately. A soft annotation would let a worksheet be produced
+ * that silently omits whatever the page reported, and the reviewer would have to notice a
+ * note to catch it. Blocking costs a disposition click and cannot be missed.
+ */
+export function unrecognisedFormResult(): CheckResult {
+  return {
+    checkKey: 'unrecognised_form',
+    severity: 'hard',
+    outcome: 'fail',
+    message:
+      'This page reports tax amounts but its form type is not registered, so nothing on it ' +
+      'was extracted. Read the page and disposition it, or register the form type.',
+    detail: { requiresHumanRead: true },
+  };
+}
+
 /** Document tax year differs from the bundle majority (§6, soft). */
 export const taxYearMatchesBundle: Check = (ctx) => {
   if (ctx.bundleTaxYear === null || ctx.bundleTaxYear === undefined) {

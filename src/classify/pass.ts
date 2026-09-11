@@ -19,7 +19,16 @@ export const CLASSIFY_RESPONSE_SCHEMA = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['form_type', 'confidence', 'continues_previous', 'corrected', 'void', 'is_summary', 'is_supplemental'],
+    required: [
+      'form_type',
+      'confidence',
+      'continues_previous',
+      'corrected',
+      'void',
+      'is_summary',
+      'is_supplemental',
+      'unrecognised_form',
+    ],
     properties: {
       form_type: {
         type: ['string', 'null'],
@@ -37,6 +46,12 @@ export const CLASSIFY_RESPONSE_SCHEMA = {
         type: 'boolean',
         description: 'A non-form page: cover letter, instructions, supplemental detail.',
       },
+      unrecognised_form: {
+        type: 'boolean',
+        description:
+          'This page IS a tax document reporting amounts, but it matches none of the valid ' +
+          'form types. Never true for a cover letter, instructions, or a detail page.',
+      },
       payer_name: { type: ['string', 'null'] },
       tax_year: { type: ['integer', 'null'] },
     },
@@ -51,6 +66,9 @@ const classifyResponse = z.object({
   void: z.boolean(),
   is_summary: z.boolean(),
   is_supplemental: z.boolean(),
+  // Older bindings predate this field; absent means "not flagged" rather than a parse error,
+  // because a model that omits it must not park the page.
+  unrecognised_form: z.boolean().optional().default(false),
   payer_name: z.string().nullable().optional(),
   tax_year: z.number().int().nullable().optional(),
 });
@@ -71,8 +89,17 @@ function systemPrompt(formTypes: readonly string[]): string {
     'Sub-forms inside such a package (1099-INT, 1099-DIV, 1099-B sections) get their own type.',
     '',
     'Report what is printed. Do not infer a form type from context you cannot see on this page.',
-    'If the page is not a recognizable tax form, return null for form_type and set',
-    'is_supplemental true.',
+    '',
+    'When form_type is null, say WHICH kind of null it is. These are different pages and the',
+    'app treats them differently:',
+    '  - a cover letter, instruction sheet, blank page, or a detail/continuation page that',
+    '    belongs to a form above it: set is_supplemental true, unrecognised_form false.',
+    '  - a page that IS a tax document reporting amounts, but whose form is not in the valid',
+    '    list above or cannot be read: set unrecognised_form true.',
+    'A page a preparer would need to look at is never merely supplemental. If you are unsure',
+    'which of the two it is, set unrecognised_form true — a page wrongly surfaced costs a',
+    'reviewer seconds, and a tax document wrongly filed as a cover letter is money missing',
+    'from the worksheet with nothing on screen to say so.',
   ].join('\n');
 }
 
@@ -109,6 +136,8 @@ export async function classifyPage(
 // ── grouping ─────────────────────────────────────────────────────────────────
 
 export interface DocumentGroup {
+  /** A tax document whose form type is not registered — surfaced, never dropped (§6, §9). */
+  unrecognisedForm?: boolean;
   formType: string | null;
   pageIds: string[];
   corrected: boolean;
@@ -151,6 +180,7 @@ export function groupPages(classifications: readonly PageClassification[]): Docu
       previous.corrected ||= page.corrected;
       previous.void ||= page.void;
       previous.isSummary ||= page.is_summary;
+      previous.unrecognisedForm ||= page.unrecognised_form;
       previous.payerName ??= page.payer_name ?? null;
       previous.taxYear ??= page.tax_year ?? null;
       previous.confidence = Math.min(previous.confidence, page.confidence);
@@ -164,6 +194,7 @@ export function groupPages(classifications: readonly PageClassification[]): Docu
       void: page.void,
       isSummary: page.is_summary,
       isSupplemental: page.is_supplemental,
+      unrecognisedForm: page.unrecognised_form,
       payerName: page.payer_name ?? null,
       taxYear: page.tax_year ?? null,
       confidence: page.confidence,
