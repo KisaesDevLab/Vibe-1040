@@ -84,6 +84,16 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.2.1** — the identity proposal was built inside `extractDocument`,
+and extraction does not start until identity is confirmed: a deadlock, with every bundle
+parked at `awaiting_identity_confirmation` showing an empty taxpayer table. Identity is now
+proposed at classification time from the page text layer the sidecar already stores, so the
+gate is answerable with no inference. Only SSN/ITIN-shaped tokens are read, so a payer EIN can
+never be proposed as the client; names come from recipient labels or are left null. Verified
+against five real client packets. The confirm button no longer requires a proposed taxpayer,
+which was a second way to trap a bundle. Images `ghcr.io/kisaesdevlab/vibe-1040` and
+`-sidecar`, tagged `0.2.1` / `0.2`.
+
 **Released 2026-09-10 as v0.2.0** — **the §7 identity gate had no control in the UI**, so no
 bundle ever reached extraction. It parked at `awaiting_identity_confirmation`, the fields pane
 stayed empty, and the worksheet preview rendered every line with all contributing boxes blank.
