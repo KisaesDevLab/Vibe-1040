@@ -159,3 +159,10 @@ h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .enrollment__manual { align-self: stretch; font-size: 12px; }
 .enrollment__manual summary { cursor: pointer; color: var(--accent); }
 .enrollment__manual code { display: block; margin: 8px 0 4px; padding: 8px; background: #f2f4f7; border-radius: 6px; font-family: ui-monospace, monospace; word-break: break-all; letter-spacing: 0.04em; }
+
+/* The §7 identity gate. A banner, not a side panel: until it is answered the bundle has no
+   field values at all, so it is the only thing on screen worth doing. */
+.identity-gate { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.identity-gate p { margin: 0; }
+.identity-gate .grid { background: #fff; border-radius: 6px; }
+.identity-gate select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; }

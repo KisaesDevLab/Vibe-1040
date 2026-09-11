@@ -459,6 +459,10 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
   const [detail, setDetail] = useState<{ pages: PageRow[]; fields: FieldRow[]; spans: SpanRow[] } | null>(null);
   const [selectedField, setSelectedField] = useState<FieldRow | null>(null);
   const [lines, setLines] = useState<WorksheetLine[]>([]);
+  const [taxpayers, setTaxpayers] = useState<
+    { taxpayerId: string; displayName: string | null; tinLast4: string; role: string; proposed: boolean }[]
+  >([]);
+  const [confirming, setConfirming] = useState(false);
 
   const refreshBundle = useCallback(() => {
     api
@@ -469,6 +473,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         setChecks(data.checks);
         setBlocking(data.blocking);
         setRouterDown(data.routerDown);
+        setTaxpayers(data.taxpayers);
       })
       .catch((e: Error) => onError(e.message));
     api
@@ -515,7 +520,84 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         >
           Generate worksheet
         </button>
+        <button
+          title="Re-run the pipeline over the page images already stored. Costs inference."
+          onClick={() => {
+            api
+              .reprocess(bundleId, 'classify')
+              .then(refreshBundle)
+              .catch((e: Error) => onError(e.message));
+          }}
+        >
+          Reprocess
+        </button>
       </div>
+
+      {/*
+        The §7 gate. Nothing extracts until a human confirms who this bundle belongs to, so a
+        bundle sitting at awaiting_identity_confirmation has no field values and a worksheet
+        of empty lines. That is correct behaviour with no way to clear it until this panel
+        exists, which is why it is a banner rather than something tucked in a side pane.
+      */}
+      {bundle?.status === 'awaiting_identity_confirmation' && (
+        <div className="banner blocking identity-gate">
+          <strong>Confirm who this bundle belongs to before anything is extracted.</strong>
+          <p className="muted">
+            Proposed from the documents. Names are a tiebreaker, never the key — the join key is
+            a salted hash of the taxpayer identification number.
+          </p>
+          <table className="grid">
+            <thead>
+              <tr><th>Name</th><th>TIN</th><th>Role</th></tr>
+            </thead>
+            <tbody>
+              {taxpayers.map((t) => (
+                <tr key={t.taxpayerId}>
+                  <td>{t.displayName ?? <em className="muted">no name on the documents</em>}</td>
+                  <td>•••-••-{t.tinLast4}</td>
+                  <td>
+                    <select
+                      value={t.role}
+                      onChange={(e) =>
+                        setTaxpayers((prev) =>
+                          prev.map((p) =>
+                            p.taxpayerId === t.taxpayerId ? { ...p, role: e.target.value } : p,
+                          ),
+                        )
+                      }
+                    >
+                      <option value="primary">Primary</option>
+                      <option value="spouse">Spouse</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted">
+            Tax year <strong>{bundle.taxYear ?? 'not detected'}</strong>, the majority across these
+            documents. Any document with a different year is flagged.
+          </p>
+          <button
+            disabled={confirming || !taxpayers.length || bundle.taxYear === null}
+            onClick={() => {
+              setConfirming(true);
+              api
+                .confirmIdentity(
+                  bundleId,
+                  bundle.taxYear!,
+                  taxpayers.map((t) => ({ taxpayerId: t.taxpayerId, role: t.role })),
+                )
+                .then(refreshBundle)
+                .catch((e: Error) => onError(e.message))
+                .finally(() => setConfirming(false));
+            }}
+          >
+            {confirming ? 'Confirming…' : 'Confirm and start extraction'}
+          </button>
+        </div>
+      )}
 
       {blocking.length > 0 && (
         <div className="banner blocking">

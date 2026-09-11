@@ -10,7 +10,16 @@
  */
 import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm';
 import { db } from '../db/client.ts';
-import { bundles, checkResults, documents, layoutSpans, pages, routerJobs, sourceFiles } from '../db/schema.ts';
+import {
+  bundles,
+  checkResults,
+  dispositions,
+  documents,
+  layoutSpans,
+  pages,
+  routerJobs,
+  sourceFiles,
+} from '../db/schema.ts';
 import { classifyPage, groupPages, majorityTaxYear, type PageClassification } from '../classify/pass.ts';
 import { env } from '../config/env.ts';
 import { bindFields, type StoredSpan } from '../extract/binder.ts';
@@ -283,12 +292,76 @@ export async function extractDocument(
 
 // ── P9 → reconcile ───────────────────────────────────────────────────────────
 
+/**
+ * Re-attach a carried-forward disposition to its recomputed check result.
+ *
+ * `createdAt` is copied from the original so the record still says when the decision was
+ * actually made, not when the bundle was last reprocessed. The row id changes, which is why
+ * the audit log rather than this table is the authority on who decided what and when.
+ */
+async function carryDisposition(
+  carryable: Map<
+    string,
+    {
+      kind: (typeof dispositions.kind.enumValues)[number];
+      note: string;
+      dispositionedBy: string;
+      createdAt: Date;
+    }
+  >,
+  key: string,
+  checkResultId: string,
+): Promise<void> {
+  const prior = carryable.get(key);
+  if (!prior) return;
+  await db.insert(dispositions).values({
+    checkResultId,
+    kind: prior.kind,
+    note: prior.note,
+    dispositionedBy: prior.dispositionedBy,
+    createdAt: prior.createdAt,
+  });
+}
+
 export async function reconcileBundle(bundleId: string): Promise<{ hardFailures: number; softFailures: number }> {
   await db.update(bundles).set({ status: 'reconciling' }).where(eq(bundles.id, bundleId));
 
   const [bundle] = await db.select().from(bundles).where(eq(bundles.id, bundleId)).limit(1);
   const forms = await registry();
   const docs = await db.select().from(documents).where(eq(documents.bundleId, bundleId));
+
+  /**
+   * Carry human dispositions across a re-run.
+   *
+   * Check results are recomputed from scratch every time, and `dispositions.check_result_id`
+   * cascades, so clearing them used to delete every disposition on the bundle. A reviewer who
+   * had worked through ten hard failures found the bundle blocked again with no record of the
+   * decisions. That made reprocessing unusable and lost decisions §11 requires be logged.
+   *
+   * A disposition is carried forward only when the finding is materially the same: same
+   * document, same check, same actual amount. A reviewer approved *those numbers*, not that
+   * check key forever — if a correction changed the amount, the approval no longer applies and
+   * the bundle blocks again, which is the right way for this to fail.
+   */
+  const priorDispositions = await db
+    .select({
+      documentId: checkResults.documentId,
+      checkKey: checkResults.checkKey,
+      actualCents: checkResults.actualCents,
+      kind: dispositions.kind,
+      note: dispositions.note,
+      dispositionedBy: dispositions.dispositionedBy,
+      createdAt: dispositions.createdAt,
+    })
+    .from(dispositions)
+    .innerJoin(checkResults, eq(checkResults.id, dispositions.checkResultId))
+    .where(eq(checkResults.bundleId, bundleId));
+
+  const carryKey = (documentId: string | null, checkKey: string, actualCents: number | null): string =>
+    `${documentId ?? '-'}|${checkKey}|${actualCents ?? '-'}`;
+  const carryable = new Map(
+    priorDispositions.map((d) => [carryKey(d.documentId, d.checkKey, d.actualCents), d]),
+  );
 
   // Clear prior results so a re-run after corrections does not accumulate stale failures.
   await db.delete(checkResults).where(eq(checkResults.bundleId, bundleId));
@@ -307,15 +380,19 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
   for (const doc of docs.filter((d) => d.unrecognisedForm)) {
     const result = unrecognisedFormResult();
     hardFailures += 1;
-    await db.insert(checkResults).values({
-      bundleId,
-      documentId: doc.id,
-      checkKey: result.checkKey,
-      severity: result.severity,
-      outcome: result.outcome,
-      message: result.message,
-      detail: result.detail ?? {},
-    });
+    const [row] = await db
+      .insert(checkResults)
+      .values({
+        bundleId,
+        documentId: doc.id,
+        checkKey: result.checkKey,
+        severity: result.severity,
+        outcome: result.outcome,
+        message: result.message,
+        detail: result.detail ?? {},
+      })
+      .returning({ id: checkResults.id });
+    await carryDisposition(carryable, carryKey(doc.id, result.checkKey, null), row!.id);
   }
 
   for (const doc of docs) {
@@ -344,18 +421,28 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
         if (result.severity === 'hard') hardFailures += 1;
         else softFailures += 1;
       }
-      await db.insert(checkResults).values({
-        bundleId,
-        documentId: doc.id,
-        checkKey: result.checkKey,
-        severity: result.severity,
-        outcome: result.outcome,
-        message: result.message,
-        expectedCents: result.expectedCents ?? null,
-        actualCents: result.actualCents ?? null,
-        toleranceCents: result.toleranceCents ?? null,
-        detail: result.detail ?? {},
-      });
+      const [row] = await db
+        .insert(checkResults)
+        .values({
+          bundleId,
+          documentId: doc.id,
+          checkKey: result.checkKey,
+          severity: result.severity,
+          outcome: result.outcome,
+          message: result.message,
+          expectedCents: result.expectedCents ?? null,
+          actualCents: result.actualCents ?? null,
+          toleranceCents: result.toleranceCents ?? null,
+          detail: result.detail ?? {},
+        })
+        .returning({ id: checkResults.id });
+      if (result.outcome === 'fail' && result.severity === 'hard') {
+        await carryDisposition(
+          carryable,
+          carryKey(doc.id, result.checkKey, result.actualCents ?? null),
+          row!.id,
+        );
+      }
     }
   }
 

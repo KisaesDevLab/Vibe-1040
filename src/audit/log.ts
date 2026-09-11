@@ -20,6 +20,7 @@ export type AuditAction =
   | 'bundle.view'
   | 'bundle.download_source'
   | 'bundle.identity_confirmed'
+  | 'bundle.reprocess'
   | 'bundle.delete'
   | 'document.view'
   | 'page.raster_view'
