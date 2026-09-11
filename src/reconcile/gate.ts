@@ -9,7 +9,7 @@
  */
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { db } from '../db/client.ts';
-import { checkResults, dispositions } from '../db/schema.ts';
+import { bundles, checkResults, dispositions } from '../db/schema.ts';
 
 export class WorksheetBlockedError extends Error {
   readonly bundleId: string;
@@ -60,6 +60,37 @@ export async function blockingFailures(
 export async function assertWorksheetAllowed(bundleId: string): Promise<void> {
   const blocking = await blockingFailures(bundleId);
   if (blocking.length > 0) throw new WorksheetBlockedError(bundleId, blocking);
+  await assertIdentityConfirmed(bundleId);
+}
+
+export class IdentityNotConfirmedError extends Error {
+  readonly bundleId: string;
+  constructor(bundleId: string) {
+    super(`bundle ${bundleId} has no confirmed client; a worksheet cannot be attributed to one`);
+    this.name = 'IdentityNotConfirmedError';
+    this.bundleId = bundleId;
+  }
+}
+
+/**
+ * The §7 gate, as of the 2026-09-10 decision.
+ *
+ * It used to sit before extraction, where it stopped a bundle from being processed at all and
+ * was read by nothing afterwards — a sequencing step wearing the costume of a control. Here it
+ * is a real precondition: a worksheet is a statement about a named client's return, so it does
+ * not get produced until a human has said which client that is.
+ *
+ * Extraction runs without it on purpose. Reading a document does not attribute it to anyone,
+ * and the reviewer confirms far better against forms the app has read than against a guess it
+ * made beforehand.
+ */
+export async function assertIdentityConfirmed(bundleId: string): Promise<void> {
+  const [bundle] = await db
+    .select({ identityConfirmedAt: bundles.identityConfirmedAt })
+    .from(bundles)
+    .where(eq(bundles.id, bundleId))
+    .limit(1);
+  if (!bundle?.identityConfirmedAt) throw new IdentityNotConfirmedError(bundleId);
 }
 
 /**

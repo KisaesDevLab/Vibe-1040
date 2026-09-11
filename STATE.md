@@ -477,6 +477,29 @@ classification quality, which is still unmeasured. If misfires prove common, fix
 classification rather than softening the check.
 *Affects:* P4, P9, P10, §6, §9.
 
+**2026-09-10 — The identity gate moved from before extraction to before the worksheet.**
+§7 says the client is confirmed before extraction results are *committed*. The build read that
+as before extraction *runs*, which was stricter than the rule and worse in every direction.
+
+Three findings decided it. `identityConfirmedAt` was written and then **read by nothing** — a
+sequencing step wearing the costume of a control. Page classification is a vision class, so the
+rasterized pages had already left the appliance before the reviewer ever saw the gate, leaving
+no exposure to gate. And the best evidence of who a bundle belongs to comes out of extraction,
+which is exactly why the original code deferred the proposal until afterwards and deadlocked.
+
+Ingestion now runs classify → layout → extract → reconcile without stopping, and
+`assertIdentityConfirmed` is a precondition of the worksheet alongside the arithmetic gate. The
+reviewer confirms against forms the app has read, and a worksheet is not produced until someone
+has said whose return it describes.
+
+Accepted cost: inference is spent before a human looks at the bundle, so a misuploaded file now
+costs a full pass rather than classification alone. Acceptable for a staff-only tool where
+uploads come from inside the firm, and reprocessing exists if a bundle needs redoing.
+
+Kurt's call, and the right one — he pushed back on the gate as unnecessary and the evidence
+agreed with him.
+*Affects:* P4, P7, P8, P10, §7.
+
 ---
 
 ## Known risks

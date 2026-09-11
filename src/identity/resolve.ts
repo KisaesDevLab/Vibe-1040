@@ -12,6 +12,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.ts';
 import { bundleTaxpayers, bundles, documents, taxpayers } from '../db/schema.ts';
+import { blockingFailures } from '../reconcile/gate.ts';
 import { hashTin, isPlausibleTin, last4, normalizeTin } from './tin.ts';
 
 export interface TinObservation {
@@ -217,13 +218,21 @@ export async function confirmIdentity(
       .where(eq(bundleTaxpayers.taxpayerId, entry.taxpayerId));
   }
 
+  /**
+   * Confirmation no longer starts anything. Extraction has already run, which is the point:
+   * the reviewer confirms against the forms the app actually read rather than against a guess
+   * made before it read anything. What confirmation now buys is the worksheet — see
+   * `assertIdentityConfirmed` (§7, decision 2026-09-10).
+   */
+  const blocking = await blockingFailures(bundleId);
+
   await db
     .update(bundles)
     .set({
       identityConfirmedAt: new Date(),
       identityConfirmedBy: userId,
       taxYear,
-      status: 'extracting',
+      status: blocking.length > 0 ? 'blocked' : 'in_review',
       updatedAt: new Date(),
     })
     .where(eq(bundles.id, bundleId));

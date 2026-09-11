@@ -243,7 +243,16 @@ it.
 ## 7. Identity resolution
 
 There is no client master. Client and tax year are **proposed from the bundle and
-confirmed by the reviewer** before extraction results are committed.
+confirmed by the reviewer** before extraction results are committed to a client — which
+means **before a worksheet is produced, not before extraction runs** (decided 2026-09-10).
+
+Ingestion runs straight through: classify, layout, extract, reconcile. The reviewer then
+confirms against the forms the app actually read. Gating extraction on the confirmation was
+tried and removed: nothing downstream read the confirmation, the page images had already
+gone to a cloud model during classification so there was no exposure left to gate, and it
+asked the reviewer to identify a client from a guess made before anything had been read.
+`assertIdentityConfirmed` is now a real precondition of the worksheet, enforced in the same
+place as the arithmetic gate.
 
 - Join key is a **salted hash of the TIN**, per-deployment salt held in the app's secret
   store. Plaintext SSNs are never written to the database.
