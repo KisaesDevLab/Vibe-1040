@@ -84,6 +84,15 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-10 as v0.2.0** — **the §7 identity gate had no control in the UI**, so no
+bundle ever reached extraction. It parked at `awaiting_identity_confirmation`, the fields pane
+stayed empty, and the worksheet preview rendered every line with all contributing boxes blank.
+The pipeline was behaving as specified with no way for a human to clear the gate. Found from a
+screenshot of a real bundle, not by a test. Adds the confirmation panel, plus bundle
+reprocessing at three depths (`reconcile`, `extract`, `classify`) and a fix for dispositions
+being silently deleted on every reconcile re-run. **Carries migration 0005.** Images
+`ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged `0.2.0` / `0.2`.
+
 **Released 2026-09-10 as v0.1.0** — bulk upload and a new registered form type, so a minor
 rather than a patch. One bundle per file with `POST /api/bundles/bulk`, labelled from the
 filename and renamed to the primary taxpayer once identity is proposed; `bundles.label_auto`
