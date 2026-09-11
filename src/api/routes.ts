@@ -6,7 +6,7 @@
  * leave the appliance toward a browser.
  */
 import type { FastifyInstance } from 'fastify';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { verifyPassword, generateTotpSecret, totpUri, verifyTotp } from '../auth/credentials.ts';
 import {
@@ -24,6 +24,7 @@ import {
   dispositions,
   documents,
   extractedFields,
+  fieldCorrections,
   layoutSpans,
   pages,
   routerJobs,
@@ -36,13 +37,13 @@ import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
 import { ingestBundle, ingestBundlesPerFile, type IncomingFile, type IngestResult } from '../ingest/upload.ts';
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
-import { startExtraction } from '../queue/pipeline.ts';
+import { queueExtractionForDocuments, startExtraction } from '../queue/pipeline.ts';
 import { blockingFailures } from '../reconcile/gate.ts';
 import { isRouterReachable } from '../router/client.ts';
 import { blobs } from '../storage/index.ts';
 import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts';
 import { WorksheetBlockedError } from '../reconcile/gate.ts';
-import { auditAccess, requireUser } from './middleware.ts';
+import { auditAccess, requireRole, requireUser } from './middleware.ts';
 
 /** Queue every source file of a freshly ingested bundle for rasterisation. */
 async function queueRasterisation(result: IngestResult, userId: string): Promise<void> {
@@ -237,6 +238,89 @@ export function registerRoutes(app: FastifyInstance): void {
       detail: { renamedTo: label },
     });
     return { ok: true, label };
+  });
+
+  /**
+   * Reprocess a bundle (P5, P9).
+   *
+   * Three depths, because they cost very differently and destroy very differently:
+   *
+   *   reconcile — re-run the arithmetic gate only. No inference at all. This is what you
+   *               want after changing the firm's tolerance, or to pick up corrections.
+   *   extract   — re-bind fields from the layout spans already stored. No vision calls, so
+   *               cheap. This is what you want after a form schema changes.
+   *   classify  — start again from the stored page images: reclassify, re-run layout, re-bind.
+   *               This is what you want after registering a form type that a bundle's pages
+   *               were rejected for, and it is the only one that costs a full inference pass.
+   *
+   * What survives, and what does not:
+   *
+   *   - Source files and page images are never touched. Reprocessing re-reads them.
+   *   - Field corrections survive `reconcile` and `extract`, because extraction upserts on
+   *     (document, field key) and a correction hangs off the field row. They do NOT survive
+   *     `classify`, which regroups pages into new documents.
+   *   - Dispositions carry forward wherever the finding is materially unchanged.
+   *   - Identity confirmation is left alone. Re-confirming a client whose documents did not
+   *     change is busywork, and §7's gate is about the human having looked once.
+   *
+   * `classify` therefore asks for an explicit acknowledgement rather than trusting a button
+   * press, because it is the one that can discard a reviewer's typing.
+   */
+  app.post('/api/bundles/:id/reprocess', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin', 'partner']);
+    if (!user) return;
+    const { id } = req.params as { id: string };
+    const body = z
+      .object({
+        from: z.enum(['reconcile', 'extract', 'classify']),
+        acknowledgeDiscardsCorrections: z.boolean().optional(),
+      })
+      .parse(req.body ?? {});
+
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    if (body.from === 'classify' && !body.acknowledgeDiscardsCorrections) {
+      const [{ count } = { count: 0 }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(fieldCorrections)
+        .innerJoin(extractedFields, eq(extractedFields.id, fieldCorrections.fieldId))
+        .innerJoin(documents, eq(documents.id, extractedFields.documentId))
+        .where(and(eq(documents.bundleId, id), isNull(fieldCorrections.supersededAt)));
+      if (count > 0) {
+        return reply.code(409).send({
+          error: 'would_discard_corrections',
+          message:
+            `Reclassifying regroups pages into new documents, which discards ${count} ` +
+            'correction(s) made by a reviewer. Re-send with acknowledgeDiscardsCorrections ' +
+            'to proceed, or reprocess from extract instead.',
+          corrections: count,
+        });
+      }
+    }
+
+    await auditAccess(req, 'bundle.reprocess', {
+      bundleId: id,
+      entityType: 'bundle',
+      entityId: id,
+      detail: { from: body.from, acknowledged: body.acknowledgeDiscardsCorrections ?? false },
+    });
+
+    if (body.from === 'reconcile') {
+      await pipelineQueue.add('reconcile_bundle', { kind: 'reconcile_bundle', bundleId: id, userId: user.id });
+      await db.update(bundles).set({ status: 'reconciling', updatedAt: new Date() }).where(eq(bundles.id, id));
+      return { ok: true, from: body.from, queued: 1 };
+    }
+
+    if (body.from === 'extract') {
+      const queued = await queueExtractionForDocuments(id, user.id);
+      await db.update(bundles).set({ status: 'extracting', updatedAt: new Date() }).where(eq(bundles.id, id));
+      return { ok: true, from: body.from, queued };
+    }
+
+    await pipelineQueue.add('classify_bundle', { kind: 'classify_bundle', bundleId: id, userId: user.id });
+    await db.update(bundles).set({ status: 'classifying', updatedAt: new Date() }).where(eq(bundles.id, id));
+    return { ok: true, from: body.from, queued: 1 };
   });
 
   app.get('/api/bundles', async (req, reply) => {

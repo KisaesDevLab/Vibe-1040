@@ -153,6 +153,38 @@ export const api = {
       body: JSON.stringify({ kind, note }),
     }),
 
+  /**
+   * Re-run the pipeline. 'reconcile' costs nothing, 'extract' re-binds from stored spans,
+   * 'classify' starts again from the page images and is the only one that pays for vision.
+   * A 409 means reclassifying would discard reviewer corrections; re-send acknowledged.
+   */
+  reprocess: async (
+    bundleId: string,
+    from: 'reconcile' | 'extract' | 'classify',
+    acknowledgeDiscardsCorrections = false,
+  ): Promise<{ ok: boolean }> => {
+    const body = JSON.stringify({ from, acknowledgeDiscardsCorrections });
+    const res = await fetch(`/api/bundles/${bundleId}/reprocess`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      credentials: 'same-origin',
+    });
+    const parsed = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      message?: string;
+      corrections?: number;
+    };
+    if (res.status === 409 && parsed.error === 'would_discard_corrections') {
+      if (!window.confirm(`${parsed.message}
+
+Proceed and discard them?`)) return { ok: false };
+      return api.reprocess(bundleId, from, true);
+    }
+    if (!res.ok) throw new Error(parsed.message ?? parsed.error ?? `reprocess failed: ${res.status}`);
+    return parsed as { ok: boolean };
+  },
+
   confirmIdentity: (bundleId: string, taxYear: number, taxpayers: { taxpayerId: string; role: string }[]) =>
     request<{ ok: boolean; pagesQueued: number }>(`/api/bundles/${bundleId}/identity/confirm`, {
       method: 'POST',
