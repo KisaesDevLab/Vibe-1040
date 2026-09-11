@@ -6,7 +6,7 @@
  * leave the appliance toward a browser.
  */
 import type { FastifyInstance } from 'fastify';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { verifyPassword, generateTotpSecret, totpUri, verifyTotp } from '../auth/credentials.ts';
 import {
@@ -39,6 +39,7 @@ import { ingestBundle, ingestBundlesPerFile, type IncomingFile, type IngestResul
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
 import { queueExtractionForDocuments, startExtraction } from '../queue/pipeline.ts';
 import { blockingFailures } from '../reconcile/gate.ts';
+import { deleteBundle } from '../retention/delete-bundle.ts';
 import { isRouterReachable } from '../router/client.ts';
 import { blobs } from '../storage/index.ts';
 import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts';
@@ -323,10 +324,91 @@ export function registerRoutes(app: FastifyInstance): void {
     return { ok: true, from: body.from, queued: 1 };
   });
 
+  /**
+   * List bundles, with search and filters.
+   *
+   * `q` matches the bundle label, a taxpayer's name, or the last four digits of a taxpayer
+   * identification number. Last four only, deliberately: plaintext numbers are never stored
+   * (§7), so there is nothing longer to match against, and a search box that accepted a full
+   * number would invite staff to type one into a field this app has gone out of its way not
+   * to keep.
+   */
   app.get('/api/bundles', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
-    return db.select().from(bundles).orderBy(desc(bundles.createdAt)).limit(200);
+
+    const query = z
+      .object({
+        q: z.string().trim().max(120).optional(),
+        status: z.string().trim().max(40).optional(),
+        taxYear: z.coerce.number().int().optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(200),
+        offset: z.coerce.number().int().min(0).default(0),
+      })
+      .parse(req.query ?? {});
+
+    const filters = [];
+    if (query.status) filters.push(eq(bundles.status, query.status as (typeof bundles.status.enumValues)[number]));
+    if (query.taxYear !== undefined) filters.push(eq(bundles.taxYear, query.taxYear));
+
+    if (query.q) {
+      const pattern = `%${query.q}%`;
+      // Taxpayer matches come through a subquery rather than a join, so a bundle with two
+      // taxpayers does not appear twice.
+      const byTaxpayer = db
+        .select({ bundleId: bundleTaxpayers.bundleId })
+        .from(bundleTaxpayers)
+        .innerJoin(taxpayers, eq(taxpayers.id, bundleTaxpayers.taxpayerId))
+        .where(or(ilike(taxpayers.displayName, pattern), eq(taxpayers.tinLast4, query.q)));
+
+      filters.push(or(ilike(bundles.label, pattern), inArray(bundles.id, byTaxpayer))!);
+    }
+
+    return db
+      .select()
+      .from(bundles)
+      .where(filters.length ? and(...filters) : undefined)
+      .orderBy(desc(bundles.createdAt))
+      .limit(query.limit)
+      .offset(query.offset);
+  });
+
+  /**
+   * Delete a bundle and every file it owns (§11).
+   *
+   * Guarded by having to type the label back, the way a repository host guards deleting a
+   * repository. A bundle is a client's tax documents and there is no undo: the blobs are gone
+   * from object storage, not flagged. An `are you sure` dialog is not proportionate to that.
+   *
+   * Disposal goes through the same `purge_log` the retention job writes, so a deletion a
+   * person asked for and one a policy caused leave the same evidence.
+   */
+  app.delete('/api/bundles/:id', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin', 'partner']);
+    if (!user) return;
+    const { id } = req.params as { id: string };
+    const body = z.object({ confirmLabel: z.string() }).parse(req.body ?? {});
+
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    if (body.confirmLabel !== bundle.label) {
+      return reply.code(400).send({
+        error: 'label_mismatch',
+        message: `Type the bundle's label exactly to confirm deletion: ${bundle.label}`,
+      });
+    }
+
+    // Audited before the delete, because afterwards there is no bundle row to reference.
+    await auditAccess(req, 'bundle.delete', {
+      bundleId: id,
+      entityType: 'bundle',
+      entityId: id,
+      detail: { label: bundle.label, status: bundle.status },
+    });
+
+    const summary = await deleteBundle(id);
+    return { ok: true, ...summary };
   });
 
   app.get('/api/bundles/:id', async (req, reply) => {

@@ -166,3 +166,13 @@ h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .identity-gate p { margin: 0; }
 .identity-gate .grid { background: #fff; border-radius: 6px; }
 .identity-gate select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; }
+
+/* Bundle search and filters. */
+.filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.filters input { flex: 1 1 260px; min-width: 200px; }
+.filters input.year { flex: 0 0 90px; min-width: 0; }
+.filters select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+
+/* Irreversible actions read as irreversible. */
+button.danger { color: var(--hard); border-color: #f3c0bb; }
+button.danger:hover:not(:disabled) { background: #fee4e2; }

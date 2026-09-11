@@ -342,10 +342,20 @@ function BundleList({ onOpen, onError }: { onOpen: () => void; onError: (m: stri
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [rejected, setRejected] = useState<{ filename: string; reason: string }[]>([]);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('');
+  const [year, setYear] = useState('');
 
   const refresh = useCallback(() => {
-    api.bundles().then(setBundles).catch((e: Error) => onError(e.message));
-  }, [onError]);
+    api
+      .bundles({
+        q: query || undefined,
+        status: status || undefined,
+        taxYear: year ? Number(year) : undefined,
+      })
+      .then(setBundles)
+      .catch((e: Error) => onError(e.message));
+  }, [onError, query, status, year]);
 
   useEffect(refresh, [refresh]);
 
@@ -414,6 +424,50 @@ function BundleList({ onOpen, onError }: { onOpen: () => void; onError: (m: stri
 
       <div className="card">
         <h2>Bundles</h2>
+        <div className="filters">
+          <input
+            placeholder="Search label, client name, or last four digits"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Any status</option>
+            {[
+              'uploaded',
+              'triaging',
+              'classifying',
+              'extracting',
+              'reconciling',
+              'awaiting_identity_confirmation',
+              'blocked',
+              'in_review',
+              'ready',
+              'failed',
+            ].map((s) => (
+              <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+            ))}
+          </select>
+          <input
+            className="year"
+            placeholder="Tax year"
+            inputMode="numeric"
+            value={year}
+            onChange={(e) => setYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          />
+          {(query || status || year) && (
+            <button
+              className="link"
+              onClick={() => {
+                setQuery('');
+                setStatus('');
+                setYear('');
+              }}
+            >
+              Clear
+            </button>
+          )}
+          <span className="muted">{bundles.length} shown</span>
+        </div>
         <table className="grid">
           <thead>
             <tr><th>Label</th><th>Status</th><th>Tax year</th><th></th></tr>
@@ -435,6 +489,26 @@ function BundleList({ onOpen, onError }: { onOpen: () => void; onError: (m: stri
                     }}
                   >
                     Open
+                  </button>
+                  {/*
+                    Typing the label back is the guard, not a confirm dialog. There is no undo:
+                    the client's documents leave object storage rather than being flagged.
+                  */}
+                  <button
+                    className="danger"
+                    onClick={() => {
+                      const typed = window.prompt(
+                        `Deleting "${b.label}" removes its documents, page images and worksheets ` +
+                          'permanently. There is no undo.\n\nType the label to confirm:',
+                      );
+                      if (typed === null) return;
+                      api
+                        .deleteBundle(b.id, typed)
+                        .then(refresh)
+                        .catch((e: Error) => onError(e.message));
+                    }}
+                  >
+                    Delete
                   </button>
                 </td>
               </tr>
