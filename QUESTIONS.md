@@ -102,6 +102,31 @@ dedicated inference in a named US region.
 
 ---
 
+### Q17 — Where does geometry come from for a scanned page?
+**Raised:** 2026-09-11. **Working assumption:** it does not, and those documents block.
+
+The optional OCR fallback (`OCR_FALLBACK_ENABLED`) makes a page with no text layer *readable*
+— `v1040_ocr_transcribe` returns prose — but not *provable*. Nothing the Router's `local_ocr`
+kind can serve returns bounding boxes, so a field derived from a transcription carries
+`span_ids: []`, which §6 makes a hard blocking failure. Every scanned document therefore stops
+for disposition.
+
+That is the honest behaviour and it needs no rule change, but it is not a finished answer for a
+firm whose clients send phone photos. Three ways forward:
+
+1. **A local engine that emits word boxes.** Pair a geometry source (an hOCR engine such as
+   Tesseract) with the transcription model, using boxes from the first and text from the
+   second. Keeps the provenance guarantee intact and keeps pixels on the appliance. Most work.
+2. **Distinct provenance, soft failure.** Mark transcription-derived fields and make their
+   missing spans annotate and force review rather than block, leaving §6 hard everywhere else.
+   Ships soonest; needs a §6 decision entry and is a real weakening.
+3. **Leave it.** Scanned pages block and a reviewer dispositions them. Correct today, and
+   tolerable only while scans are rare.
+
+Note the text-layer case needs none of this. PyMuPDF returns exact words *and* exact boxes for
+a native digital PDF, which is the deferred sidecar-geometry work (decision log 2026-09-02) and
+strictly better than any model for those pages.
+
 ### Q16 — Is SSA-1042S in scope, and what happens to an unregistered form type?
 **Raised:** 2026-09-10. **Answered and closed 2026-09-10.** Both parts.
 

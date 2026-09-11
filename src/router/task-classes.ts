@@ -20,9 +20,39 @@ export const TASK_CLASS = {
   LAYOUT: 'v1040_layout',
   /** P8 — binds registered schema fields to span ids. */
   FIELD_EXTRACT: 'v1040_field_extract',
+  /**
+   * Optional. Transcribes a page image that has no text layer.
+   *
+   * Requires `vision` and deliberately **not** `json_schema`. That is the whole reason this
+   * class exists separately: the router pins the `local_ocr` kind to `json_schema: false`,
+   * so a class demanding a schema can never bind to a local OCR server. The router's own
+   * note explains why the ceiling is there — a grammar constraint forces a small OCR model
+   * to invent a spans array rather than refuse, which produced confident garbage. So this
+   * class asks for prose and the app parses it.
+   *
+   * Registered only when `OCR_FALLBACK_ENABLED` is on, because a class nobody calls is
+   * clutter in the router console.
+   */
+  OCR_TRANSCRIBE: 'v1040_ocr_transcribe',
 } as const;
 
 export type TaskClassKey = (typeof TASK_CLASS)[keyof typeof TASK_CLASS];
+
+/**
+ * Classes this app has an opinion about the sensitivity of.
+ *
+ * `OCR_TRANSCRIBE` is deliberately absent. The other three are vision or text classes the
+ * firm runs in the cloud, so `ROUTER_EXPECTED_SENSITIVITY` is a meaningful expectation and a
+ * mismatch is worth a warning. For transcription there is no right answer for this app to
+ * hold: a firm may bind it to a local OCR server so no page image ever leaves the appliance,
+ * or to a cloud vision model for accuracy. Both are legitimate, the trade is the firm's to
+ * make, and the startup log reports which way it resolved rather than complaining about it.
+ */
+export const SENSITIVITY_CHECKED: readonly string[] = [
+  TASK_CLASS.PAGE_CLASSIFY,
+  TASK_CLASS.LAYOUT,
+  TASK_CLASS.FIELD_EXTRACT,
+];
 
 export const DECLARATIONS: TaskClassDeclaration[] = [
   {
@@ -46,5 +76,17 @@ export const DECLARATIONS: TaskClassDeclaration[] = [
     description: 'Bind tax-form schema fields to layout span ids',
     requires: { json_schema: true },
     defaultMaxTokens: 4096,
+  },
+];
+
+/** Appended to `DECLARATIONS` only when the OCR fallback is enabled. */
+export const OPTIONAL_DECLARATIONS: TaskClassDeclaration[] = [
+  {
+    key: TASK_CLASS.OCR_TRANSCRIBE,
+    description: 'Transcribe a page image that carries no text layer. Prose out, no schema',
+    requires: { vision: true },
+    // A dense scanned page of prose. Smaller than the layout budget because there is no
+    // span structure to emit, larger than classification because this returns the page.
+    defaultMaxTokens: 8192,
   },
 ];

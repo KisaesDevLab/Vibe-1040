@@ -124,6 +124,25 @@ and were never real. Nothing is inherited from T&B or any other app.
 | `v1040_page_classify` | `vision`, `json_schema` | P4 — page-level form-type classification |
 | `v1040_layout` | `vision`, `json_schema` | P7 — spans with page-relative geometry |
 | `v1040_field_extract` | `json_schema` | P8 — binds schema fields to span IDs |
+| `v1040_ocr_transcribe` | `vision` | **Optional**, off by default — transcribes a page with no text layer |
+
+**`v1040_ocr_transcribe` is opt-in via `OCR_FALLBACK_ENABLED` and registered only when on.**
+It requires `vision` and deliberately **not** `json_schema`, which is the only reason it can
+bind to the Router's `local_ocr` kind at all: that kind is pinned to `json_schema: false`,
+because a grammar constraint forces a small OCR model to invent a spans array rather than
+refuse, which produced confident garbage. The class asks for prose and this app parses it.
+
+**Its sensitivity is the firm's decision, not this app's.** It is absent from
+`SENSITIVITY_CHECKED`, so no startup warning is raised either way. A firm may bind it to a
+local OCR server, in which case no page image leaves the appliance, or to a cloud vision model
+for accuracy. The startup log reports which way it resolved.
+
+**It supplies no geometry.** Nothing the `local_ocr` kind can serve returns bounding boxes, so
+a value read out of a transcription has no span to point at and §6's blocking rule applies in
+full. Enabling this makes a scanned page readable, not provable. Transcriptions are stored on
+`pages.ocr_text` and never merged into `pages.text_layer` — one is exact and came from no
+model, the other is an estimate, and a footing check must not mistake the second for the
+first.
 
 Two-pass extraction (§4) is **built app-side as two task classes and two round trips**. Do
 not wait on the Router's proposed preprocess stage that would fuse them; if it lands, this

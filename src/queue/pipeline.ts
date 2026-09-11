@@ -37,7 +37,9 @@ import {
   type FieldValue,
 } from '../reconcile/checks.ts';
 import { taxTableFor } from '../reconcile/tax-tables.ts';
+import { shouldTranscribe, transcribePage } from '../ocr/transcribe.ts';
 import { RouterCallError } from '../router/client.ts';
+import { TASK_CLASS } from '../router/task-classes.ts';
 import { registry } from '../schemas/registry.ts';
 import { blobs } from '../storage/index.ts';
 import { pipelineQueue, type PageMetadata } from './queues.ts';
@@ -240,6 +242,30 @@ export async function layoutPage(bundleId: string, pageId: string, userId: strin
     .limit(1);
   // Spans are immutable once written (§4); re-running must not duplicate them.
   if (existing.length) return;
+
+  /**
+   * Optional OCR transcription first, for a page with no text layer.
+   *
+   * Runs before layout so a reviewer can read what a transcription model saw next to the
+   * page image, whether or not the layout pass then produces usable spans.
+   *
+   * Failure here is never fatal. The class may be registered and unbound, in which case the
+   * router answers `capability_missing` and there is nothing to do about it from here. The
+   * job is recorded so the operator can see it, and layout proceeds exactly as it would have
+   * without the fallback enabled. An optional step that can take the required one down with
+   * it is not optional.
+   */
+  if (shouldTranscribe(page)) {
+    try {
+      await transcribePage(bundleId, pageId, userId);
+    } catch (err) {
+      if (err instanceof RouterCallError) {
+        await parkJob(TASK_CLASS.OCR_TRANSCRIBE, { bundleId, pageId }, err);
+      } else {
+        throw err;
+      }
+    }
+  }
 
   try {
     const image = await blobs.get(page.rasterStorageKey);

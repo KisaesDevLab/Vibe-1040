@@ -115,6 +115,14 @@ async function main(): Promise<void> {
   // plain-HTTP origin locks every staff account out of an app that looks healthy, and the
   // reverse is a quiet weakening of §11's in-transit control. Neither is something an
   // operator should have to read an env file to discover.
+  if (env.OCR_FALLBACK_ENABLED) {
+    console.log(
+      '[startup] OCR fallback: ENABLED — pages with no text layer are transcribed through ' +
+        'v1040_ocr_transcribe. Whether that stays on the appliance depends on what a firm ' +
+        'admin bound the class to; the task-class line above reports how it resolved.',
+    );
+  }
+
   if (env.SESSION_SECURE) {
     console.log('[startup] session cookie: Secure — sign-in requires an HTTPS origin');
   } else {

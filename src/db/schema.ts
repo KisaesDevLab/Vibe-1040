@@ -298,8 +298,17 @@ export const pages = pgTable(
     route: pageRoute('route'),
     hasTextLayer: boolean('has_text_layer'),
     textLayerGarbled: boolean('text_layer_garbled'),
-    /** Kept for footing checks alongside the raster (P2). */
+    /** Kept for footing checks alongside the raster (P2). Text the PDF itself carried. */
     textLayer: text('text_layer'),
+    /**
+     * Text a model believed it saw, from the optional OCR fallback. Never merged into
+     * `textLayer`: one is exact and came from no model, the other is an estimate, and a
+     * footing check must not mistake the second for the first.
+     */
+    ocrText: text('ocr_text'),
+    ocrModel: text('ocr_model'),
+    ocrRequestId: text('ocr_request_id'),
+    ocrAt: timestamp('ocr_at', { withTimezone: true }),
     dpi: integer('dpi'),
     encoding: text('encoding'),
     widthPx: integer('width_px'),
