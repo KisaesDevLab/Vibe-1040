@@ -546,6 +546,14 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
             Proposed from the documents. Names are a tiebreaker, never the key — the join key is
             a salted hash of the taxpayer identification number.
           </p>
+          {taxpayers.length === 0 && (
+            <p className="warn-note">
+              No taxpayer identification number could be read from these documents, so there is
+              nobody to propose. This is normal for scanned or photographed pages, where the
+              numbers are pixels until the layout pass runs. Confirming the tax year alone
+              starts extraction, and the client is proposed again from what it reads.
+            </p>
+          )}
           <table className="grid">
             <thead>
               <tr><th>Name</th><th>TIN</th><th>Role</th></tr>
@@ -580,7 +588,13 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
             documents. Any document with a different year is flagged.
           </p>
           <button
-            disabled={confirming || !taxpayers.length || bundle.taxYear === null}
+            /*
+             * Deliberately NOT disabled on an empty taxpayer list. Requiring a proposed
+             * taxpayer is what turned a missing proposal into a bundle nobody could move,
+             * and §7's gate is that a human looked — the client can be confirmed on the
+             * refined proposal after extraction.
+             */
+            disabled={confirming || bundle.taxYear === null}
             onClick={() => {
               setConfirming(true);
               api
@@ -594,7 +608,11 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
                 .finally(() => setConfirming(false));
             }}
           >
-            {confirming ? 'Confirming…' : 'Confirm and start extraction'}
+            {confirming
+              ? 'Confirming…'
+              : taxpayers.length
+                ? 'Confirm and start extraction'
+                : 'Confirm tax year and start extraction'}
           </button>
         </div>
       )}
