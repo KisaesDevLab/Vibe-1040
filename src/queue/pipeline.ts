@@ -25,6 +25,7 @@ import { env } from '../config/env.ts';
 import { bindFields, type StoredSpan } from '../extract/binder.ts';
 import { persistBoundFields } from '../extract/persist.ts';
 import { resolveDocumentFields } from '../extract/resolve.ts';
+import { harvestIdentityFromText } from '../identity/harvest.ts';
 import { proposeIdentity, saveProposal, type TinObservation } from '../identity/resolve.ts';
 import { runLayoutPass } from '../layout/pass.ts';
 import {
@@ -165,9 +166,52 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
     }
   }
 
-  // Identity is proposed from whatever the layout pass later confirms; at this stage we
-  // only have page-level hints, so the proposal is refined after extraction. Tax year is
-  // available now and is what the reviewer confirms against.
+  /**
+   * Propose identity NOW, from the page text layer.
+   *
+   * This used to be deferred to `extractDocument` on the grounds that only the layout pass
+   * could see a taxpayer identification number. Extraction does not start until identity is
+   * confirmed, so that was a deadlock: the bundle parked here with an empty taxpayer list and
+   * the gate could never be answered. The numbers are printed on the text layer the sidecar
+   * already stored, so no inference is needed to make the gate real (see identity/harvest.ts).
+   *
+   * The post-extraction proposal still runs and still refines this. A raster-only bundle
+   * harvests nothing here and relies on it, which is why the gate accepts a tax year with no
+   * proposed taxpayer rather than trapping the bundle a second way.
+   */
+  const identityPages = await db
+    .select({ documentId: pages.documentId, textLayer: pages.textLayer })
+    .from(pages)
+    .where(eq(pages.bundleId, bundleId));
+
+  const docFormTypes = new Map<string, { formType: string | null; taxYear: number | null }>();
+  for (const [index, group] of groups.entries()) {
+    const id = createdIds[index];
+    if (id) docFormTypes.set(id, { formType: group.formType, taxYear: group.taxYear });
+  }
+
+  const observations: TinObservation[] = [];
+  for (const page of identityPages) {
+    if (!page.documentId) continue;
+    const { tins, name } = harvestIdentityFromText(page.textLayer);
+    for (const rawTin of tins) {
+      observations.push({
+        documentId: page.documentId,
+        rawTin,
+        name,
+        formType: docFormTypes.get(page.documentId)?.formType ?? null,
+      });
+    }
+  }
+
+  if (observations.length) {
+    const documentYears = [...docFormTypes.entries()].map(([documentId, meta]) => ({
+      documentId,
+      taxYear: meta.taxYear,
+    }));
+    await saveProposal(bundleId, proposeIdentity(observations, documentYears));
+  }
+
   await db
     .update(bundles)
     .set({ taxYear: bundleYear, status: 'awaiting_identity_confirmation' })
