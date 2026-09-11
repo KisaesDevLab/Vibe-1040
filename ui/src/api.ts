@@ -124,7 +124,21 @@ export const api = {
 
   logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
 
-  bundles: () => request<Bundle[]>('/api/bundles'),
+  bundles: (filter: { q?: string; status?: string; taxYear?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (filter.q) params.set('q', filter.q);
+    if (filter.status) params.set('status', filter.status);
+    if (filter.taxYear) params.set('taxYear', String(filter.taxYear));
+    const qs = params.toString();
+    return request<Bundle[]>(`/api/bundles${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Irreversible. `confirmLabel` must equal the bundle's label exactly. */
+  deleteBundle: (id: string, confirmLabel: string) =>
+    request<{ ok: boolean; blobsDeleted: number; errors: { key: string; message: string }[] }>(
+      `/api/bundles/${id}`,
+      { method: 'DELETE', body: JSON.stringify({ confirmLabel }) },
+    ),
 
   bundle: (id: string) =>
     request<{
