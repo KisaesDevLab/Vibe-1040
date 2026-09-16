@@ -174,9 +174,12 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
     expect(p3!.spanCount).toBe(0);
     expect(p3!.layoutSource).toBe('model');
 
-    expect(await pipeline.advanceAfterLayout(bundleId, userId)).toBe(true);
+    expect(await pipeline.advanceAfterLayout(bundleId, userId)).toBe('fanned_out');
     const extractJobs = queued.mock.calls.filter((c) => c[0] === 'extract_document');
     expect(extractJobs).toHaveLength(4);
+    // A second job observing completion must not fan out again (0008).
+    expect(await pipeline.advanceAfterLayout(bundleId, userId)).toBe('already');
+    expect(queued.mock.calls.filter((c) => c[0] === 'extract_document')).toHaveLength(4);
   });
 
   it('every document records an outcome, including the ones that extract nothing', async () => {
@@ -190,6 +193,12 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
             { field_key: 'box_2', value: '9,999.00', span_indices: [3] },
             { field_key: 'employer_name', value: 'ACME MANUFACTURING INC', span_indices: [4] },
             { field_key: 'box_3', value: null, span_indices: [] },
+            // The model's three spellings of "empty": a bare "$", a zero it cannot cite, and
+            // an unchecked box. None is a review item and none is an orphan (§5).
+            { field_key: 'box_7', value: '$', span_indices: [] },
+            { field_key: 'box_8', value: '0', span_indices: [] },
+            { field_key: 'box_13_retirement', value: 'false', span_indices: [] },
+            { field_key: 'box_13_statutory', value: 'true', span_indices: [] },
             { field_key: 'made_up_key', value: '1', span_indices: [0] },
           ],
         },
@@ -201,10 +210,11 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
 
     const docs = await db.select().from(schema.documents).where(eq(schema.documents.bundleId, bundleId));
     for (const doc of docs) {
-      expect(await pipeline.advanceAfterExtraction(bundleId, userId), 'must not advance early').toBe(false);
+      expect(await pipeline.advanceAfterExtraction(bundleId, userId), 'must not advance early').toBe('waiting');
       await pipeline.extractDocument(bundleId, doc.id, userId);
     }
-    expect(await pipeline.advanceAfterExtraction(bundleId, userId)).toBe(true);
+    expect(await pipeline.advanceAfterExtraction(bundleId, userId)).toBe('fanned_out');
+    expect(await pipeline.advanceAfterExtraction(bundleId, userId)).toBe('already');
     expect(queued.mock.calls.filter((c) => c[0] === 'reconcile_bundle')).toHaveLength(1);
 
     const after = await db.select().from(schema.documents).where(eq(schema.documents.bundleId, bundleId));
@@ -219,6 +229,11 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
     expect(byKey.get('box_1')).toMatchObject({ valueCents: 8_500_000, needsReview: false });
     expect(byKey.get('box_2')).toMatchObject({ valueCents: 999_900, needsReview: true, reviewReason: 'span_mismatch' });
     expect(byKey.get('box_3')).toMatchObject({ valueCents: null, needsReview: false });
+    expect(byKey.get('box_7')).toMatchObject({ valueCents: null, valueText: null, needsReview: false });
+    expect(byKey.get('box_8')).toMatchObject({ valueCents: null, needsReview: false });
+    expect(byKey.get('box_13_retirement')).toMatchObject({ valueBool: false, needsReview: false });
+    // A checked box with nothing cited is a real orphan.
+    expect(byKey.get('box_13_statutory')).toMatchObject({ valueBool: true, needsReview: true, reviewReason: 'no_span' });
     expect(byKey.has('made_up_key')).toBe(false);
   });
 
@@ -231,6 +246,11 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
     expect(keys).toContain('no_registered_schema');
     expect(keys).toContain('schema_year_substituted');
     expect(keys, 'a blank page is supplemental, not a form with no spans').not.toContain('no_layout_spans');
+    const orphans = checks.find((c) => c.checkKey === 'every_field_has_spans')!;
+    expect(orphans.outcome).toBe('fail');
+    expect((orphans.detail as { fields: string[] }).fields, 'only the checked box, never the unchecked ones').toEqual([
+      'box_13_statutory',
+    ]);
 
     const [bundle] = await db.select().from(schema.bundles).where(eq(schema.bundles.id, bundleId));
     expect(bundle!.status).toBe('blocked');

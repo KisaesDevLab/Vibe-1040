@@ -101,6 +101,14 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-16 as v0.7.0** — fixes from the first real packets through v0.6.0 and the
+review workbook (decision log, same date). Stage fan-out claimed once per run; empty boxes
+(`$`, uncited `0`, unchecked checkboxes) stored blank without prompting; tax year read from the
+exact text layer and correctable in the UI; soft annotations acknowledgeable; the Excel
+workbook gains a document index, one recap sheet per form type, review items, checks and
+provenance. **Carries migration 0008.** Images `ghcr.io/kisaesdevlab/vibe-1040` and
+`-sidecar`, tagged `0.7.0` / `0.7`.
+
 **Released 2026-09-16 as v0.6.0** — the pipeline review change set (decision log 2026-09-16).
 Stage completion recorded instead of inferred, so a cover letter or a blank page no longer
 strands a bundle; silent drops (`no_registered_schema`, off-year documents, unnormalized form
@@ -552,6 +560,44 @@ uploads come from inside the firm, and reprocessing exists if a bundle needs red
 Kurt's call, and the right one — he pushed back on the gate as unnecessary and the evidence
 agreed with him.
 *Affects:* P4, P7, P8, P10, §7.
+
+**2026-09-16 — First real packets through v0.6.0: fan-out claimed once, empty boxes stop prompting, the year comes from the text layer, soft annotations can be acknowledged, and the workbook becomes a review instrument.** (v0.7.0, migration 0008)
+
+Kurt ran real packets through v0.6.0 and sent a screenshot. Three things were wrong and one
+was missing.
+
+1. **Every document showed "extracting…" beneath a finished reconcile.** Under worker
+   concurrency several layout jobs finish together; each observed "layout complete" and each
+   fanned extraction out again, re-extracting every document at full inference cost and
+   nulling outcomes a reconcile had already read. `bundles.extraction_fanout_at` /
+   `reconcile_fanout_at` are claimed with one conditional UPDATE, so exactly one job advances
+   a stage per run. A page laid out after the claim (a requeue) re-binds only its own document.
+2. **Hard failures on every empty box.** `every_field_has_spans` fired on unchecked
+   checkboxes (box 13, CORRECTED) and on money boxes the model rendered as `0` or `$` with
+   nothing to cite. §5 now names three readings of "empty" that are stored blank and never
+   prompt; the CHECK constraint admits `value_bool = false` without a span. The read was
+   correct; the app was arguing about its spelling.
+3. **The wrong year, with no way to fix it.** A continuous-use 1099-INT prints "(Rev. January
+   2024)" twice and "2025" once; the classifier and the text-layer heuristic both chose 2024.
+   The prompt now says what tax_year is and is not, `dominantYear` strips revision dates and
+   prefers "For calendar year", and the exact text layer overrides the model's year. A
+   reviewer can also set a document's year in place (`PATCH /api/documents/:id`), which
+   re-runs reconcile. Soft annotations can be acknowledged (a disposition without a required
+   note), acknowledgements are carried across re-runs like hard dispositions, and the bundle
+   view shows what has been decided rather than listing it forever.
+4. **The Excel file was a total sheet, not a review tool.** A tax manager has to answer "was
+   every document captured" and "was every box read right" before "do the totals tie". The
+   workbook now carries: `Documents` (one row per page-group with issuer, taxpayer, year,
+   pages, and how the read went), **one recap sheet per form type** laid out like the form —
+   rows are the boxes in printed order, columns are each document, cells are the amounts as
+   read, coloured and annotated where flagged or corrected, a blank cell for an empty box and
+   0.00 for a printed zero, each column ending with its arithmetic checks — `Review Items`
+   (everything waiting on a human), `Checks` (every check with its disposition), and
+   `Provenance` (which model, which geometry source, per document). The `Worksheet` sheet's
+   contributions hyperlink to their recap cells. `src/worksheet/review.ts` builds the model;
+   the renderer is pure over it and unit-tested without a database.
+
+*Affects:* P8, P9, P11, P12, §5, §6.
 
 **2026-09-16 — Pipeline review: stage completion recorded, exact geometry for native pages, the binder given position, verification as the confidence signal, 1099-B per section, IRS-layout fixtures.**
 An exhaustive review of the recognition path found the app could not finish a real client

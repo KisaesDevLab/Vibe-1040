@@ -187,6 +187,14 @@ export const bundles = pgTable(
     status: bundleStatus('status').notNull().default('uploaded'),
     /** Majority tax year across documents; per-document mismatches are flagged (§7). */
     taxYear: integer('tax_year'),
+    /**
+     * Stage fan-out claims (0008). Several layout jobs finish at once under worker
+     * concurrency and each used to observe "layout complete" and fan extraction out again,
+     * re-extracting every document and nulling outcomes a reconcile had already read. The
+     * hand-off is claimed with one conditional UPDATE; only the claimant fans out.
+     */
+    extractionFanoutAt: timestamp('extraction_fanout_at', { withTimezone: true }),
+    reconcileFanoutAt: timestamp('reconcile_fanout_at', { withTimezone: true }),
     /** Confirmed by a human before extraction results commit. Null until then. */
     identityConfirmedAt: timestamp('identity_confirmed_at', { withTimezone: true }),
     identityConfirmedBy: uuid('identity_confirmed_by').references(() => users.id),

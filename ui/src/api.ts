@@ -164,6 +164,12 @@ export const api = {
     body: { cents?: number | null; text?: string | null; bool?: boolean | null; setToNull?: boolean; note?: string },
   ) => request<{ ok: boolean }>(`/api/fields/${fieldId}/correct`, { method: 'POST', body: JSON.stringify(body) }),
 
+  correctDocumentYear: (documentId: string, taxYear: number | null) =>
+    request<{ ok: boolean; taxYear: number | null }>(`/api/documents/${documentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ taxYear }),
+    }),
+
   disposition: (checkId: string, kind: string, note: string) =>
     request<{ ok: boolean; remainingBlocking: number }>(`/api/checks/${checkId}/disposition`, {
       method: 'POST',

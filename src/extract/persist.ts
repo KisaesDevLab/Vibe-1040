@@ -26,8 +26,8 @@ export interface PersistResult {
 
 function toBool(raw: string): boolean | null {
   const s = raw.trim().toLowerCase();
-  if (['x', 'yes', 'true', 'checked', '✓', '1'].includes(s)) return true;
-  if (['', 'no', 'false', 'unchecked', '0'].includes(s)) return false;
+  if (['x', 'yes', 'true', 'checked', '✓', '✔', '☑', '☒', 'on', '1'].includes(s)) return true;
+  if (['', 'no', 'false', 'unchecked', 'off', '☐', 'n/a', '0'].includes(s)) return false;
   return null;
 }
 
@@ -63,7 +63,21 @@ export async function persistBoundFields(
     if (!isBlank) {
       if (field.type === 'money') {
         const parsed = parseMoney(bound.raw);
-        if (parsed.kind === 'amount') valueCents = parsed.cents;
+        if (!/\d/.test(bound.raw!)) {
+          /**
+           * "$", "-", "—": the pre-printed currency sign or a dash the model copied out of an
+           * empty box. No digit means no amount; the box is blank (§5). Not a review item —
+           * the read is correct, only its spelling was not.
+           */
+        } else if (parsed.kind === 'amount' && parsed.cents === 0 && !hasSpans) {
+          /**
+           * A zero with nothing to cite is the model's rendering of an empty box (IRS forms
+           * pre-print a "$" in every money box). A *printed* zero has a span — "0.00" or
+           * "-0-" — and the binder is told to cite it; without one there is no evidence of
+           * a zero, and §5's rule is that blank is the default and zero must be shown. Stored
+           * blank, not flagged: a reviewer prompted on every empty box stops reading prompts.
+           */
+        } else if (parsed.kind === 'amount') valueCents = parsed.cents;
         else if (parsed.kind === 'unparseable') {
           parseFailed = true;
           valueText = bound.raw;
@@ -80,7 +94,13 @@ export async function persistBoundFields(
       }
     }
 
-    const populated = valueCents !== null || valueText !== null || valueBool !== null;
+    /**
+     * An unchecked checkbox is `false` and has nothing on the page to cite — the absence of
+     * a mark is not a span. It is stored, it is not a review item, and it is not an orphan
+     * under §4. A checked box must still cite the mark or its label.
+     */
+    const uncheckedBox = field.type === 'bool' && valueBool === false;
+    const populated = (valueCents !== null || valueText !== null || valueBool !== null) && !uncheckedBox;
 
     // §4: no span means review, regardless of confidence. A value the cited spans do not
     // contain is a misread and is flagged before anything softer. Also flag a value we

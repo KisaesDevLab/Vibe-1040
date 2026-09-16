@@ -47,6 +47,8 @@ export interface CheckRow {
   message: string;
   expectedCents: number | null;
   actualCents: number | null;
+  /** What a reviewer decided about this failure, if anything. */
+  disposition: { kind: string; note: string; createdAt: string } | null;
 }
 
 export interface FieldRow {

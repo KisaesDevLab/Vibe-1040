@@ -222,7 +222,17 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
             `[classify] page ${page.id}: model said ${result.form_type}, text layer says ${hint.formType} ("${hint.evidence}")`,
           );
         }
-        if (result.tax_year == null && hint.taxYear !== null) result.tax_year = hint.taxYear;
+        // The exact text wins on the year. Models read "(Rev. January 2024)" as the tax
+        // year on a continuous-use 1099 whose big printed year says 2025; the text-layer
+        // reader ignores revision dates and prefers "For calendar year".
+        if (hint.taxYear !== null && result.tax_year !== hint.taxYear) {
+          if (result.tax_year != null) {
+            console.warn(
+              `[classify] page ${page.id}: model said tax year ${result.tax_year}, text layer says ${hint.taxYear}; using the text layer`,
+            );
+          }
+          result.tax_year = hint.taxYear;
+        }
       }
 
       classifications.push(result);
@@ -548,7 +558,7 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
         detail: result.detail ?? {},
       })
       .returning({ id: checkResults.id });
-    if (result.outcome === 'fail' && result.severity === 'hard') {
+    if (result.outcome === 'fail') {
       await carryDisposition(carryable, carryKey(documentId, result.checkKey, result.actualCents ?? null), row!.id);
     }
   };
@@ -690,7 +700,10 @@ export async function extractionComplete(bundleId: string): Promise<boolean> {
 
 /** Fan out one layout job per page that still needs one. Runs straight after classification. */
 export async function startExtraction(bundleId: string, userId: string): Promise<number> {
-  await db.update(bundles).set({ status: 'extracting' }).where(eq(bundles.id, bundleId));
+  await db
+    .update(bundles)
+    .set({ status: 'extracting', extractionFanoutAt: null, reconcileFanoutAt: null })
+    .where(eq(bundles.id, bundleId));
 
   const pending = await db
     .select({ id: pages.id })
@@ -706,17 +719,52 @@ export async function startExtraction(bundleId: string, userId: string): Promise
   return pending.length;
 }
 
-/** Called after each layout job. The last page to finish fans out the binding stage. */
-export async function advanceAfterLayout(bundleId: string, userId: string): Promise<boolean> {
-  if (!(await layoutComplete(bundleId))) return false;
+export type Advance = 'waiting' | 'fanned_out' | 'already';
+
+/**
+ * Called after each layout job. The last page to finish fans out the binding stage —
+ * exactly once. The claim is one conditional UPDATE, so concurrent layout jobs that all see
+ * "complete" cannot each fan out (0008).
+ */
+export async function advanceAfterLayout(bundleId: string, userId: string): Promise<Advance> {
+  if (!(await layoutComplete(bundleId))) return 'waiting';
+  const claimed = await db
+    .update(bundles)
+    .set({ extractionFanoutAt: new Date() })
+    .where(and(eq(bundles.id, bundleId), isNull(bundles.extractionFanoutAt)))
+    .returning({ id: bundles.id });
+  if (!claimed.length) return 'already';
   await queueExtractionForDocuments(bundleId, userId);
-  return true;
+  return 'fanned_out';
 }
 
-/** Called after each extraction job. The last document to finish queues reconcile. */
-export async function advanceAfterExtraction(bundleId: string, userId: string): Promise<boolean> {
-  if (!(await extractionComplete(bundleId))) return false;
+/** Called after each extraction job. The last document to finish queues reconcile, once. */
+export async function advanceAfterExtraction(bundleId: string, userId: string): Promise<Advance> {
+  if (!(await extractionComplete(bundleId))) return 'waiting';
+  const claimed = await db
+    .update(bundles)
+    .set({ reconcileFanoutAt: new Date() })
+    .where(and(eq(bundles.id, bundleId), isNull(bundles.reconcileFanoutAt)))
+    .returning({ id: bundles.id });
+  if (!claimed.length) return 'already';
   await pipelineQueue.add('reconcile_bundle', { kind: 'reconcile_bundle', bundleId, userId });
+  return 'fanned_out';
+}
+
+/**
+ * Re-extract only the document a page belongs to. Used when a page is laid out *after* the
+ * bundle already fanned extraction out — a requeued layout page — so the one affected
+ * document is re-bound rather than the whole bundle.
+ */
+export async function queueExtractionForPage(bundleId: string, pageId: string, userId: string): Promise<boolean> {
+  const [page] = await db.select({ documentId: pages.documentId }).from(pages).where(eq(pages.id, pageId)).limit(1);
+  if (!page?.documentId) return false;
+  await db
+    .update(documents)
+    .set({ extractionOutcome: null, extractionCompletedAt: null })
+    .where(eq(documents.id, page.documentId));
+  await db.update(bundles).set({ reconcileFanoutAt: null }).where(eq(bundles.id, bundleId));
+  await pipelineQueue.add('extract_document', { kind: 'extract_document', bundleId, documentId: page.documentId, userId });
   return true;
 }
 
@@ -726,6 +774,7 @@ export async function queueExtractionForDocuments(bundleId: string, userId: stri
     .update(documents)
     .set({ extractionOutcome: null, extractionCompletedAt: null })
     .where(eq(documents.bundleId, bundleId));
+  await db.update(bundles).set({ reconcileFanoutAt: null }).where(eq(bundles.id, bundleId));
 
   const all = await db.select({ id: documents.id }).from(documents).where(eq(documents.bundleId, bundleId));
 
@@ -786,7 +835,16 @@ export async function requeueRouterJobs(
     return { requeued: rows.length, classify, pages: 0, documents: 0 };
   }
 
-  await db.update(bundles).set({ status: 'extracting', updatedAt: new Date() }).where(eq(bundles.id, bundleId));
+  await db
+    .update(bundles)
+    .set({ status: 'extracting', reconcileFanoutAt: null, updatedAt: new Date() })
+    .where(eq(bundles.id, bundleId));
+  for (const documentId of documentIds) {
+    await db
+      .update(documents)
+      .set({ extractionOutcome: null, extractionCompletedAt: null })
+      .where(eq(documents.id, documentId));
+  }
   for (const pageId of pageIds) {
     await pipelineQueue.add('layout_page', { kind: 'layout_page', bundleId, pageId, userId });
   }

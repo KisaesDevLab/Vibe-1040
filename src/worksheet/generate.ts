@@ -16,6 +16,7 @@ import { registry } from '../schemas/registry.ts';
 import { blobs, keys } from '../storage/index.ts';
 import type { WorksheetContext } from './model.ts';
 import { buildPdf } from './pdf.ts';
+import { loadReviewModel } from './review.ts';
 import { buildXlsx } from './xlsx.ts';
 
 export interface GenerateResult {
@@ -150,7 +151,10 @@ export async function generateWorksheet(
     }
   }
 
-  const [xlsx, pdf] = await Promise.all([buildXlsx(model, fullCtx), buildPdf(model, fullCtx)]);
+  // The Excel workbook carries the per-form recap, document index, review items, checks and
+  // provenance alongside the 1040 lines; the PDF stays the line worksheet (P12).
+  const review = await loadReviewModel(bundleId, model.taxYear);
+  const [xlsx, pdf] = await Promise.all([buildXlsx(model, fullCtx, review), buildPdf(model, fullCtx)]);
   const xlsxKey = keys.worksheetXlsx(bundleId, worksheetId);
   const pdfKey = keys.worksheetPdf(bundleId, worksheetId);
   await blobs.put(xlsxKey, xlsx);

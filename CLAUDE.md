@@ -242,6 +242,12 @@ destroys the tool's main value. Every schema field is nullable. No default-to-ze
 anywhere in the pipeline, including in the aggregation layer — a line total sums the
 non-null values and separately reports how many contributing documents were null.
 
+Three readings of "empty" the binder produces are all stored as blank and are **not review
+items** (decided 2026-09-16, after the first real packets prompted on every empty box): a
+money value with no digit in it (the pre-printed `$`), a zero that cites no span (a printed
+zero has a span, and the binder must cite it), and an unchecked checkbox, which is `false`
+and has nothing on the page to cite. A *checked* box with no span is still an orphan.
+
 ## 6. The arithmetic gate is blocking
 
 Reconciliation checks are not advisory. A bundle with a hard failure does not produce a

@@ -14,6 +14,7 @@ import {
   classifyBundle,
   extractDocument,
   layoutPage,
+  queueExtractionForPage,
   reconcileBundle,
   recordRasterOutput,
 } from './pipeline.ts';
@@ -64,17 +65,20 @@ const worker = new Worker<PipelineJob>(
 
       case 'layout_page': {
         await layoutPage(data.bundleId, data.pageId, data.userId);
-        // The last page to record a layout outcome fans out the binding stage (0007).
-        if (await advanceAfterLayout(data.bundleId, data.userId)) {
-          log('layout.complete', { bundleId: data.bundleId });
+        // The last page to record a layout outcome fans out the binding stage, once (0007,
+        // 0008). A page laid out after that — a requeue — re-binds only its own document.
+        const advance = await advanceAfterLayout(data.bundleId, data.userId);
+        if (advance === 'fanned_out') log('layout.complete', { bundleId: data.bundleId });
+        if (advance === 'already' && (await queueExtractionForPage(data.bundleId, data.pageId, data.userId))) {
+          log('layout.requeued_page', { bundleId: data.bundleId, pageId: data.pageId });
         }
         return;
       }
 
       case 'extract_document': {
         await extractDocument(data.bundleId, data.documentId, data.userId);
-        // The last document to record an outcome queues reconcile (0007).
-        if (await advanceAfterExtraction(data.bundleId, data.userId)) {
+        // The last document to record an outcome queues reconcile, once (0007, 0008).
+        if ((await advanceAfterExtraction(data.bundleId, data.userId)) === 'fanned_out') {
           log('extraction.complete', { bundleId: data.bundleId });
         }
         return;

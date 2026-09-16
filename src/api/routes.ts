@@ -422,7 +422,20 @@ export function registerRoutes(app: FastifyInstance): void {
     await auditAccess(req, 'bundle.view', { bundleId: id, entityType: 'bundle', entityId: id });
 
     const docs = await db.select().from(documents).where(eq(documents.bundleId, id));
-    const checks = await db.select().from(checkResults).where(eq(checkResults.bundleId, id));
+    const checkRows = await db.select().from(checkResults).where(eq(checkResults.bundleId, id));
+    const decided = checkRows.length
+      ? await db
+          .select({
+            checkResultId: dispositions.checkResultId,
+            kind: dispositions.kind,
+            note: dispositions.note,
+            createdAt: dispositions.createdAt,
+          })
+          .from(dispositions)
+          .where(inArray(dispositions.checkResultId, checkRows.map((c) => c.id)))
+      : [];
+    const decidedById = new Map(decided.map((d) => [d.checkResultId, d]));
+    const checks = checkRows.map((c) => ({ ...c, disposition: decidedById.get(c.id) ?? null }));
     // Parked AND failed. A permanently failed job (invalid_response, output_truncated) used
     // to be invisible here, so a bundle stuck at `extracting` looked merely slow.
     const jobs = await db
@@ -521,6 +534,47 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   // ── documents, fields, spans ───────────────────────────────────────────────
+
+  /**
+   * Correct a document's tax year. The classifier reads the form's revision date as the
+   * year often enough that a reviewer needs a one-click fix; the mismatch flag is recomputed
+   * against the bundle year and reconcile re-runs so the annotations follow.
+   */
+  app.patch('/api/documents/:id', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = z.object({ taxYear: z.number().int().min(2000).max(2100).nullable() }).parse(req.body);
+
+    const [doc] = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
+    if (!doc) return reply.code(404).send({ error: 'not found' });
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, doc.bundleId)).limit(1);
+
+    await db
+      .update(documents)
+      .set({
+        taxYear: body.taxYear,
+        taxYearMismatch:
+          body.taxYear !== null && bundle?.taxYear != null && body.taxYear !== bundle.taxYear,
+        updatedAt: new Date(),
+      })
+      .where(eq(documents.id, id));
+
+    await auditAccess(req, 'document.correct', {
+      bundleId: doc.bundleId,
+      entityType: 'document',
+      entityId: id,
+      detail: { field: 'taxYear', before: doc.taxYear, after: body.taxYear },
+    });
+
+    await db
+      .update(bundles)
+      .set({ status: 'reconciling', reconcileFanoutAt: new Date(), updatedAt: new Date() })
+      .where(eq(bundles.id, doc.bundleId));
+    await pipelineQueue.add('reconcile_bundle', { kind: 'reconcile_bundle', bundleId: doc.bundleId, userId: user.id });
+    return { ok: true, taxYear: body.taxYear };
+  });
+
   app.get('/api/documents/:id', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
@@ -633,12 +687,16 @@ export function registerRoutes(app: FastifyInstance): void {
     const body = z
       .object({
         kind: z.enum(['accepted_as_is', 'corrected', 'document_excluded']),
-        note: z.string().min(1, 'a disposition must say why'),
+        // A soft annotation is acknowledged rather than justified; a note is optional there.
+        note: z.string().optional().default(''),
       })
       .parse(req.body);
 
     const [check] = await db.select().from(checkResults).where(eq(checkResults.id, id)).limit(1);
     if (!check) return reply.code(404).send({ error: 'not found' });
+    if (check.severity === 'hard' && !body.note.trim()) {
+      return reply.code(400).send({ error: 'note_required', message: 'a disposition of a hard failure must say why' });
+    }
 
     await db
       .insert(dispositions)

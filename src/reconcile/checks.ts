@@ -436,8 +436,9 @@ export const kMonthlyFootsToGross: Check = (ctx) => {
  * that makes the provenance guarantee enforceable rather than aspirational.
  */
 export const everyFieldHasSpans: Check = (ctx) => {
+  // An unchecked checkbox has nothing to cite: the absence of a mark is not a span.
   const orphans = [...ctx.fields.entries()]
-    .filter(([, v]) => v.present && v.spanIds.length === 0)
+    .filter(([, v]) => v.present && v.spanIds.length === 0 && v.bool !== false)
     .map(([k]) => k);
   if (!orphans.length) {
     return { checkKey: 'every_field_has_spans', severity: 'hard', outcome: 'pass', message: 'Every populated field traces to at least one layout span.' };

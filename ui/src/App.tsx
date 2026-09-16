@@ -762,9 +762,23 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
           ))}
 
           <h3>Checks</h3>
-          {checks.filter((c) => c.outcome === 'fail').map((c) => (
+          {checks.filter((c) => c.outcome === 'fail' && !c.disposition).map((c) => (
             <DispositionRow key={c.id} check={c} onDone={refreshBundle} onError={onError} />
           ))}
+          {checks.some((c) => c.outcome === 'fail' && c.disposition) && (
+            <details className="decided">
+              <summary>{checks.filter((c) => c.outcome === 'fail' && c.disposition).length} decided</summary>
+              {checks.filter((c) => c.outcome === 'fail' && c.disposition).map((c) => (
+                <div key={c.id} className="check decided">
+                  <div className="check-key">{c.checkKey}</div>
+                  <div className="check-message muted">
+                    {c.disposition!.kind.replace(/_/g, ' ')}
+                    {c.disposition!.note ? ` — ${c.disposition!.note}` : ''}
+                  </div>
+                </div>
+              ))}
+            </details>
+          )}
         </aside>
 
         <main className="doc-detail">
@@ -780,6 +794,14 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         </main>
 
         <aside className="field-pane">
+          {activeDoc && (
+            <DocumentYearEditor
+              document={documents.find((d) => d.id === activeDoc) ?? null}
+              bundleYear={bundle?.taxYear ?? null}
+              onChanged={refreshDoc}
+              onError={onError}
+            />
+          )}
           <h3>Fields</h3>
           {detail?.fields.map((f) => (
             <FieldEditor
@@ -834,8 +856,8 @@ function DispositionRow({
     <div className={check.severity === 'hard' ? 'check hard' : 'check soft'}>
       <div className="check-key">{check.checkKey}</div>
       <div className="check-message">{check.message}</div>
-      {check.severity === 'hard' &&
-        (open ? (
+      {check.severity === 'hard' ? (
+        open ? (
           <div className="check-actions">
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="why is this acceptable?" />
             {(['accepted_as_is', 'corrected', 'document_excluded'] as const).map((kind) => (
@@ -855,7 +877,77 @@ function DispositionRow({
           </div>
         ) : (
           <button onClick={() => setOpen(true)}>Disposition</button>
-        ))}
+        )
+      ) : (
+        /* A soft failure annotates the worksheet either way; acknowledging it just clears it
+           from this list, and the acknowledgement is carried across re-runs. */
+        <div className="check-actions">
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
+          <button
+            title="Mark this annotation as seen. It stays on the worksheet."
+            onClick={() =>
+              api
+                .disposition(check.id, 'accepted_as_is', note)
+                .then(onDone)
+                .catch((e: Error) => onError(e.message))
+            }
+          >
+            Acknowledge
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The classifier reads a form's revision date ("Rev. January 2024") as its tax year often
+ * enough that the reviewer needs to fix it in place. Saving re-runs reconcile so the
+ * year-mismatch and schema-substitution annotations follow the correction.
+ */
+function DocumentYearEditor({
+  document,
+  bundleYear,
+  onChanged,
+  onError,
+}: {
+  document: DocumentRow | null;
+  bundleYear: number | null;
+  onChanged: () => void;
+  onError: (m: string) => void;
+}) {
+  const [value, setValue] = useState<string>(document?.taxYear?.toString() ?? '');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setValue(document?.taxYear?.toString() ?? ''), [document?.id, document?.taxYear]);
+  if (!document) return null;
+  const changed = value !== (document.taxYear?.toString() ?? '');
+  return (
+    <div className="doc-year">
+      <label>
+        Tax year{' '}
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+          placeholder={bundleYear?.toString() ?? '20xx'}
+          size={5}
+        />
+      </label>
+      {document.taxYearMismatch && (
+        <span className="pill warn" title="Differs from the bundle's majority year">mismatch</span>
+      )}
+      <button
+        disabled={!changed || saving || (value !== '' && value.length !== 4)}
+        onClick={() => {
+          setSaving(true);
+          api
+            .correctDocumentYear(document.id, value === '' ? null : Number(value))
+            .then(onChanged)
+            .catch((e: Error) => onError(e.message))
+            .finally(() => setSaving(false));
+        }}
+      >
+        {saving ? 'Saving…' : 'Save year'}
+      </button>
     </div>
   );
 }

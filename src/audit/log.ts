@@ -26,6 +26,7 @@ export type AuditAction =
   | 'document.view'
   | 'page.raster_view'
   | 'field.correct'
+  | 'document.correct'
   | 'check.disposition'
   | 'worksheet.generate'
   | 'worksheet.download'

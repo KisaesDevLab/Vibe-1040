@@ -105,6 +105,11 @@ function systemPrompt(formTypes: readonly string[]): string {
     'When the exact text layer of the page is supplied, it came from the PDF itself and is',
     'more reliable than your reading of the image for names, years, and form numbers.',
     '',
+    'tax_year is the calendar year the form REPORTS: the large printed year, or the year after',
+    '"For calendar year". It is never the form revision date such as "(Rev. January 2024)" or',
+    '"Rev. 1-2024", and never an OMB or catalog number. A 2025 form may carry a 2024 revision',
+    'date; its tax_year is 2025.',
+    '',
     'Report what is printed. Do not infer a form type from context you cannot see on this page.',
     '',
     'When form_type is null, say WHICH kind of null it is. These are different pages and the',
@@ -278,10 +283,21 @@ export function preclassifyFromText(text: string | null, known: readonly string[
   return null;
 }
 
-/** Most frequent plausible tax year printed on the page, or null. */
-function dominantYear(upper: string): number | null {
+/**
+ * The tax year printed on the page, or null.
+ *
+ * "For calendar year 2025" wins outright. Otherwise the most frequent year, after removing
+ * form revision dates — "(Rev. January 2024)", "Rev. 1-2024" — which a continuous-use 1099
+ * prints twice and which is not the tax year.
+ */
+export function dominantYear(upper: string): number | null {
+  const calendar = upper.match(/(?:FOR\s+)?CALENDAR\s+YEAR\s*[:\-]?\s*(20[0-9]{2})\b/);
+  if (calendar) return Number(calendar[1]);
+  const stripped = upper
+    .replace(/\(?\bREV\.?\s*[A-Z]*\.?\s*\d{0,2}\s*[-/]?\s*(20[0-9]{2})\)?/g, ' ')
+    .replace(/\bOMB\s+NO\.?\s*\d{4}-\d{4}/g, ' ');
   const counts = new Map<number, number>();
-  for (const m of upper.matchAll(/\b(20[0-9]{2})\b/g)) {
+  for (const m of stripped.matchAll(/\b(20[0-9]{2})\b/g)) {
     const year = Number(m[1]);
     if (year < 2015 || year > 2035) continue;
     counts.set(year, (counts.get(year) ?? 0) + 1);

@@ -84,6 +84,17 @@ describe('preclassifyFromText', () => {
     expect(hint).toMatchObject({ formType: 'W-2', taxYear: 2025 });
   });
 
+  it('does not mistake a form revision date for the tax year', () => {
+    // A continuous-use 1099-INT prints "(Rev. January 2024)" twice and "2025" once.
+    const hint = preclassifyFromText(
+      'OMB No. 1545-0112 Form 1099-INT (Rev. January 2024) 2025 Interest Income Copy B\nForm 1099-INT (Rev. 1-2024)',
+      KNOWN,
+    );
+    expect(hint).toMatchObject({ formType: '1099-INT', taxYear: 2025 });
+    expect(preclassifyFromText('Form 1099-NEC (Rev. April 2025) For calendar year 2025', KNOWN)?.taxYear).toBe(2025);
+    expect(preclassifyFromText('Form 1099-MISC (Rev. April 2025)', KNOWN)?.taxYear).toBeNull();
+  });
+
   it('handles 1099 variants, 1098, and K-1s', () => {
     expect(preclassifyFromText('Form 1099-INT Interest Income', KNOWN)?.formType).toBe('1099-INT');
     expect(preclassifyFromText('Form 1098 Mortgage Interest Statement', KNOWN)?.formType).toBe('1098');
