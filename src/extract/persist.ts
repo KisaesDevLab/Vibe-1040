@@ -51,6 +51,7 @@ export async function persistBoundFields(
     }
 
     const disagreed = result.disagreements.has(field.key);
+    const mismatched = result.mismatches.has(field.key);
     const hasSpans = bound.spanIds.length > 0;
     const isBlank = bound.raw === null || bound.raw.trim() === '';
 
@@ -81,16 +82,19 @@ export async function persistBoundFields(
 
     const populated = valueCents !== null || valueText !== null || valueBool !== null;
 
-    // §4: no span means review, regardless of confidence. Also flag a value we could not
-    // parse, and anything the passes disagreed on.
-    const needsReview = (populated && !hasSpans) || disagreed || parseFailed;
+    // §4: no span means review, regardless of confidence. A value the cited spans do not
+    // contain is a misread and is flagged before anything softer. Also flag a value we
+    // could not parse, and anything the passes disagreed on.
+    const needsReview = (populated && !hasSpans) || (populated && mismatched) || disagreed || parseFailed;
     const reviewReason = !hasSpans && populated
       ? ('no_span' as const)
-      : disagreed
-        ? ('pass_disagreement' as const)
-        : parseFailed
-          ? ('unmapped' as const)
-          : null;
+      : populated && mismatched
+        ? ('span_mismatch' as const)
+        : disagreed
+          ? ('pass_disagreement' as const)
+          : parseFailed
+            ? ('unmapped' as const)
+            : null;
 
     rows.push({
       documentId,

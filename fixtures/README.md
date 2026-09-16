@@ -41,6 +41,21 @@ Some fixtures are wrong on purpose, because the gate has to catch them:
   checked. Judgment Required.
 - Noncovered 1099-B lots print no cost basis at all. Judgment Required.
 
+## Official IRS layouts
+
+`irs_forms.py` fills the IRS's own fillable PDFs — public US government works kept under
+`fixtures/irs/` — with invented data, flattens the fields into page content, and keeps only
+the recipient copy (Copy B). Those are the layouts a client actually hands over; the drawn
+forms above are not. The `irs-official-forms-2025` bundle also carries a cover letter, a
+blank duplex back side, a three-copies-on-one-page W-2 as payroll vendors print them, and a
+scanned W-2, because every real packet has those and no synthetic bundle did.
+
+Field maps are keyed by the AcroForm leaf name (`f2_09[0]`) read off each PDF. `_fill`
+refuses a name that does not exist on the page and `_assert_printed` checks every filled
+value is in the flattened text layer, so a revised IRS form fails loudly here rather than
+producing a fixture whose ground truth is wrong. To refresh a form, download the new PDF
+from irs.gov into `fixtures/irs/` and re-read the field names with PyMuPDF.
+
 ## Adding a form
 
 Add a function to `forms.py` returning `(pymupdf.Document, ground_truth)`, call it from

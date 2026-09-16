@@ -128,3 +128,74 @@ def rasterize_image_file(
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=jpeg_quality, optimize=True, progressive=False)
     return buffer.getvalue(), image.width, image.height
+
+
+# ── exact geometry from the text layer (P7, decision 2026-09-16) ─────────────
+
+def extract_layout_spans(page: pymupdf.Page, *, gap_factor: float = 0.6) -> list[dict]:
+    """Measure text spans with exact boxes from a page's own text layer.
+
+    For a native digital PDF this is strictly better than any model's estimate: the words
+    and their positions are what the PDF itself says, they cost no inference, and no pixel
+    has to leave the appliance to obtain them. The vision layout pass is reserved for pages
+    that carry no usable text layer.
+
+    Words are grouped by the line PyMuPDF assigns them and merged while the horizontal gap
+    between neighbours is small relative to the line height, so a box label such as
+    "1 Wages, tips, other compensation" comes out as one span and the value in the next
+    column as another. Coordinates are page-relative fractions (0..1) in the rotated page
+    space, which is the same space the raster is rendered in, so overlays line up.
+    """
+    words = page.get_text("words")  # (x0, y0, x1, y1, text, block, line, word)
+    if not words:
+        return []
+
+    matrix = page.rotation_matrix
+    bounds = page.rect
+    width = bounds.width or 1.0
+    height = bounds.height or 1.0
+
+    lines: dict[tuple[int, int], list[tuple[pymupdf.Rect, str]]] = {}
+    for x0, y0, x1, y1, text, block, line, _ in words:
+        text = text.strip()
+        if not text:
+            continue
+        rect = pymupdf.Rect(x0, y0, x1, y1) * matrix
+        rect.normalize()
+        lines.setdefault((block, line), []).append((rect, text))
+
+    spans: list[dict] = []
+    for key in sorted(lines, key=lambda k: (min(r.y0 for r, _ in lines[k]), min(r.x0 for r, _ in lines[k]))):
+        parts = sorted(lines[key], key=lambda item: item[0].x0)
+        current_rect: pymupdf.Rect | None = None
+        current_text: list[str] = []
+        for rect, text in parts:
+            if current_rect is not None:
+                line_height = max(current_rect.height, rect.height, 1.0)
+                gap = rect.x0 - current_rect.x1
+                if gap <= line_height * gap_factor:
+                    current_rect |= rect
+                    current_text.append(text)
+                    continue
+                spans.append(_span(current_rect, " ".join(current_text), width, height))
+            current_rect = pymupdf.Rect(rect)
+            current_text = [text]
+        if current_rect is not None:
+            spans.append(_span(current_rect, " ".join(current_text), width, height))
+
+    spans.sort(key=lambda s: (round(s["y0"], 3), s["x0"]))
+    return spans
+
+
+def _clamp(v: float) -> float:
+    return min(1.0, max(0.0, v))
+
+
+def _span(rect: pymupdf.Rect, text: str, width: float, height: float) -> dict:
+    return {
+        "text": text,
+        "x0": _clamp(rect.x0 / width),
+        "y0": _clamp(rect.y0 / height),
+        "x1": _clamp(rect.x1 / width),
+        "y1": _clamp(rect.y1 / height),
+    }

@@ -115,6 +115,8 @@ describe('form schema registry', () => {
       fields: [{ key: 'box_1', label: 'Wages', type: 'money', nullable: true, repeating: false, judgmentRequired: false }],
     });
     expect(registry.resolve('W-2', 2026)?.resolvedYear).toBe(2025);
-    expect(registry.resolve('W-2', 2024)).toBeUndefined();
+    // Nearest registered year in either direction: a prior-year document is still read.
+    expect(registry.resolve('W-2', 2024)?.resolvedYear).toBe(2025);
+    expect(registry.resolve('1099-XX', 2024)).toBeUndefined();
   });
 });

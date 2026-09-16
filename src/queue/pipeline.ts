@@ -5,10 +5,16 @@
  * a page rather than failing a bundle (§3), and so a bundle can resume from where it
  * stopped after the router comes back.
  *
- * Order: rasterize → classify + split → propose identity → **human confirmation gate** →
- * layout → bind fields → reconcile.
+ * Order: rasterize → classify + split → propose identity → layout → bind fields → reconcile.
+ * The reviewer confirms identity before a **worksheet**, not before extraction (§7).
+ *
+ * Stage completion is **recorded, never inferred** (0007). "Layout is done when every page
+ * has a span row" stalled on any blank page, and "extraction is done when no document is
+ * still `classified`" stalled on any cover letter. Every stage now writes a completion
+ * fact on the row it worked on, including the paths that produce nothing, and the
+ * `advanceAfter*` functions are the only place a bundle moves from one stage to the next.
  */
-import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.ts';
 import {
   bundles,
@@ -20,9 +26,15 @@ import {
   routerJobs,
   sourceFiles,
 } from '../db/schema.ts';
-import { classifyPage, groupPages, majorityTaxYear, type PageClassification } from '../classify/pass.ts';
+import {
+  classifyPage,
+  groupPages,
+  majorityTaxYear,
+  preclassifyFromText,
+  type PageClassification,
+} from '../classify/pass.ts';
 import { env } from '../config/env.ts';
-import { bindFields, type StoredSpan } from '../extract/binder.ts';
+import { bindFields, type PageImage, type StoredSpan } from '../extract/binder.ts';
 import { persistBoundFields } from '../extract/persist.ts';
 import { resolveDocumentFields } from '../extract/resolve.ts';
 import { harvestIdentityFromText } from '../identity/harvest.ts';
@@ -30,10 +42,14 @@ import { proposeIdentity, saveProposal, type TinObservation } from '../identity/
 import { runLayoutPass } from '../layout/pass.ts';
 import {
   excessSocialSecurityWithheld,
+  noLayoutSpansResult,
+  noRegisteredSchemaResult,
   runChecks,
+  schemaYearSubstitutedResult,
   unrecognisedFormResult,
   type BundleCheckContext,
   type CheckContext,
+  type CheckResult,
   type FieldValue,
 } from '../reconcile/checks.ts';
 import { taxTableFor } from '../reconcile/tax-tables.ts';
@@ -43,6 +59,17 @@ import { TASK_CLASS } from '../router/task-classes.ts';
 import { registry } from '../schemas/registry.ts';
 import { blobs } from '../storage/index.ts';
 import { pipelineQueue, type PageMetadata } from './queues.ts';
+
+/** Producer recorded on spans the sidecar measured from the PDF text layer. */
+export const TEXT_LAYER_SPAN_PRODUCER = 'pymupdf';
+
+/** Every exit from extraction writes one of these on the document (0007). */
+export type ExtractionOutcome =
+  | 'extracted'
+  | 'skipped_supplemental'
+  | 'skipped_unclassified'
+  | 'no_schema'
+  | 'no_spans';
 
 /** Record a router-facing unit of work so the UI can say "the router is down" (§3). */
 async function parkJob(
@@ -74,23 +101,66 @@ export async function recordRasterOutput(
   metadata: readonly PageMetadata[],
 ): Promise<void> {
   if (!metadata.length) return;
-  await db.insert(pages).values(
-    metadata.map((p) => ({
-      bundleId,
-      sourceFileId,
-      pageNumber: p.pageNumber,
-      route: p.route,
-      hasTextLayer: p.hasTextLayer,
-      textLayerGarbled: p.textLayerGarbled,
-      textLayer: p.textLayer,
-      dpi: p.dpi,
-      encoding: p.encoding,
-      widthPx: p.widthPx,
-      heightPx: p.heightPx,
-      encodedBytes: p.encodedBytes,
-      rasterStorageKey: p.rasterStorageKey,
-    })),
-  );
+  const inserted = await db
+    .insert(pages)
+    .values(
+      metadata.map((p) => ({
+        bundleId,
+        sourceFileId,
+        pageNumber: p.pageNumber,
+        route: p.route,
+        hasTextLayer: p.hasTextLayer,
+        textLayerGarbled: p.textLayerGarbled,
+        textLayer: p.textLayer,
+        dpi: p.dpi,
+        encoding: p.encoding,
+        widthPx: p.widthPx,
+        heightPx: p.heightPx,
+        encodedBytes: p.encodedBytes,
+        rasterStorageKey: p.rasterStorageKey,
+      })),
+    )
+    .returning({ id: pages.id, pageNumber: pages.pageNumber });
+
+  /**
+   * Exact geometry from the text layer (§4, decision 2026-09-16).
+   *
+   * A native digital page arrives with word boxes the sidecar measured from the PDF itself.
+   * They are stored as this page's layout spans, produced by `pymupdf`, and the page is
+   * marked laid out. No vision model estimates a box for a page whose PDF already knows
+   * where every word is, and no pixel leaves the appliance to find out.
+   */
+  const idByNumber = new Map(inserted.map((row) => [row.pageNumber, row.id]));
+  for (const p of metadata) {
+    if (!p.layoutSpans) continue;
+    const pageId = idByNumber.get(p.pageNumber);
+    if (!pageId) continue;
+    if (p.layoutSpans.length) {
+      await db.insert(layoutSpans).values(
+        p.layoutSpans.map((s, i) => ({
+          pageId,
+          spanIndex: i,
+          text: s.text,
+          x0: s.x0,
+          y0: s.y0,
+          x1: s.x1,
+          y1: s.y1,
+          producedByModel: TEXT_LAYER_SPAN_PRODUCER,
+          routerRequestId: null,
+        })),
+      );
+    }
+    await db
+      .update(pages)
+      .set({
+        layoutCoordConvention: 'fraction',
+        layoutCompletedAt: new Date(),
+        spanCount: p.layoutSpans.length,
+        layoutSource: 'text_layer',
+      })
+      .where(eq(pages.id, pageId));
+  }
+
   await db
     .update(sourceFiles)
     .set({ pageCount: metadata.length })
@@ -106,8 +176,16 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
   const bundleRow = (await db.select().from(bundles).where(eq(bundles.id, bundleId)).limit(1))[0];
   const knownTypes = forms.formTypes(bundleRow?.taxYear ?? 2025);
 
+  /**
+   * A re-run regroups pages into new documents. The old documents (and, by cascade, their
+   * extracted fields and corrections) go first, otherwise every reprocess doubled the
+   * document list. The reprocess route warns before discarding corrections.
+   */
+  await db.update(pages).set({ documentId: null }).where(eq(pages.bundleId, bundleId));
+  await db.delete(documents).where(eq(documents.bundleId, bundleId));
+
   const pageRows = await db
-    .select({ id: pages.id, key: pages.rasterStorageKey })
+    .select({ id: pages.id, key: pages.rasterStorageKey, textLayer: pages.textLayer, route: pages.route })
     .from(pages)
     .where(and(eq(pages.bundleId, bundleId), isNotNull(pages.rasterStorageKey)))
     .orderBy(asc(pages.sourceFileId), asc(pages.pageNumber));
@@ -118,16 +196,40 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
   for (const page of pageRows) {
     try {
       const image = await blobs.get(page.key!);
+      const textLayer = page.route === 'text_layer' ? page.textLayer : null;
       const result = await classifyPage(page.id, image, knownTypes, {
         bundleId,
         userId,
         previousFormType,
+        textLayer,
       });
+
+      /**
+       * Cross-check against the exact text. The text layer is not a classifier on its own
+       * (instruction sheets name forms too), but a disagreement is worth a log line, and a
+       * page the model could not name that plainly says "Form 1099-INT" is a tax document
+       * that must surface rather than file as a cover letter (§6).
+       */
+      const hint = preclassifyFromText(textLayer, knownTypes);
+      if (hint) {
+        if (result.form_type === null && !result.is_supplemental && !result.unrecognised_form) {
+          console.warn(
+            `[classify] page ${page.id}: model returned no form type but the text layer says "${hint.evidence}"; surfacing as unrecognised`,
+          );
+          result.unrecognised_form = true;
+        } else if (result.form_type !== null && result.form_type !== hint.formType) {
+          console.warn(
+            `[classify] page ${page.id}: model said ${result.form_type}, text layer says ${hint.formType} ("${hint.evidence}")`,
+          );
+        }
+        if (result.tax_year == null && hint.taxYear !== null) result.tax_year = hint.taxYear;
+      }
+
       classifications.push(result);
       previousFormType = result.form_type;
     } catch (err) {
       if (err instanceof RouterCallError) {
-        await parkJob('v1040_page_classify', { bundleId, pageId: page.id }, err);
+        await parkJob(TASK_CLASS.PAGE_CLASSIFY, { bundleId, pageId: page.id }, err);
         await db.update(bundles).set({ status: 'blocked' }).where(eq(bundles.id, bundleId));
         return;
       }
@@ -154,6 +256,7 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
         isSummary: group.isSummary,
         isSupplemental: group.isSupplemental,
         unrecognisedForm: group.unrecognisedForm ?? false,
+        sectionCode: group.sectionCode,
         payerName: group.payerName,
         classifierConfidence: group.confidence,
         classifierModel: group.classifierModel,
@@ -169,17 +272,8 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
   }
 
   /**
-   * Propose identity NOW, from the page text layer.
-   *
-   * This used to be deferred to `extractDocument` on the grounds that only the layout pass
-   * could see a taxpayer identification number. Extraction does not start until identity is
-   * confirmed, so that was a deadlock: the bundle parked here with an empty taxpayer list and
-   * the gate could never be answered. The numbers are printed on the text layer the sidecar
-   * already stored, so no inference is needed to make the gate real (see identity/harvest.ts).
-   *
-   * The post-extraction proposal still runs and still refines this. A raster-only bundle
-   * harvests nothing here and relies on it, which is why the gate accepts a tax year with no
-   * proposed taxpayer rather than trapping the bundle a second way.
+   * Propose identity now, from the page text layer, so the §7 gate has something to show
+   * before extraction finishes. The post-extraction proposal refines it.
    */
   const identityPages = await db
     .select({ documentId: pages.documentId, textLayer: pages.textLayer })
@@ -216,16 +310,6 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
 
   await db.update(bundles).set({ taxYear: bundleYear }).where(eq(bundles.id, bundleId));
 
-  /**
-   * Straight on to extraction. The reviewer confirms identity before a **worksheet**, not
-   * before extraction runs (§7, decision 2026-09-10).
-   *
-   * Waiting here bought nothing. The confirmation was never read by anything downstream, and
-   * the page images had already gone to a cloud model during classification, so there was no
-   * exposure left to gate. What it cost was real: a bundle sat inert until someone noticed,
-   * and the reviewer was asked to identify a client from a text-layer guess instead of from
-   * the extracted forms.
-   */
   await startExtraction(bundleId, userId);
 }
 
@@ -235,25 +319,13 @@ export async function layoutPage(bundleId: string, pageId: string, userId: strin
   const [page] = await db.select().from(pages).where(eq(pages.id, pageId)).limit(1);
   if (!page?.rasterStorageKey) return;
 
-  const existing = await db
-    .select({ id: layoutSpans.id })
-    .from(layoutSpans)
-    .where(eq(layoutSpans.pageId, pageId))
-    .limit(1);
+  // Done already — by the sidecar for a text-layer page, or by a previous model pass.
   // Spans are immutable once written (§4); re-running must not duplicate them.
-  if (existing.length) return;
+  if (page.layoutCompletedAt) return;
 
   /**
-   * Optional OCR transcription first, for a page with no text layer.
-   *
-   * Runs before layout so a reviewer can read what a transcription model saw next to the
-   * page image, whether or not the layout pass then produces usable spans.
-   *
-   * Failure here is never fatal. The class may be registered and unbound, in which case the
-   * router answers `capability_missing` and there is nothing to do about it from here. The
-   * job is recorded so the operator can see it, and layout proceeds exactly as it would have
-   * without the fallback enabled. An optional step that can take the required one down with
-   * it is not optional.
+   * Optional OCR transcription first, for a page with no text layer. Failure here is never
+   * fatal: the job is recorded and layout proceeds exactly as it would have without it.
    */
   if (shouldTranscribe(page)) {
     try {
@@ -277,7 +349,7 @@ export async function layoutPage(bundleId: string, pageId: string, userId: strin
     );
   } catch (err) {
     if (err instanceof RouterCallError) {
-      await parkJob('v1040_layout', { bundleId, pageId }, err);
+      await parkJob(TASK_CLASS.LAYOUT, { bundleId, pageId }, err);
       return;
     }
     throw err;
@@ -286,41 +358,38 @@ export async function layoutPage(bundleId: string, pageId: string, userId: strin
 
 // ── P8 → bind fields ─────────────────────────────────────────────────────────
 
+async function finishDocument(
+  documentId: string,
+  outcome: ExtractionOutcome,
+  extra: Partial<typeof documents.$inferInsert> = {},
+): Promise<void> {
+  await db
+    .update(documents)
+    .set({ ...extra, extractionOutcome: outcome, extractionCompletedAt: new Date() })
+    .where(eq(documents.id, documentId));
+}
+
 export async function extractDocument(
   bundleId: string,
   documentId: string,
   userId: string,
 ): Promise<void> {
   const [doc] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
-  if (!doc?.formType || doc.isSupplemental) return;
+  if (!doc) return;
+
+  if (doc.isSupplemental) return finishDocument(documentId, 'skipped_supplemental');
+  if (!doc.formType) return finishDocument(documentId, 'skipped_unclassified');
 
   const forms = await registry();
   const resolved = forms.resolve(doc.formType, doc.taxYear ?? 2025);
 
   if (!resolved) {
     /**
-     * No registered schema for this form type and year — which happens for a prior-year
-     * document sitting in the pile, exactly the case §7 says to catch.
-     *
-     * This must NOT be a silent skip. A document nobody read, in a bundle whose worksheet
-     * claims to summarize the bundle, is the single worst failure this tool can have. Raise
-     * a hard failure so the gate blocks until a human either registers the schema for that
-     * year or dispositions the document out.
+     * No registered schema for this form type in any year. This must not be a silent skip:
+     * the outcome is recorded here and reconcile raises the hard failure from it, so the
+     * failure survives the check-result reset (it used to be written here and deleted there).
      */
-    await db.insert(checkResults).values({
-      bundleId,
-      documentId,
-      checkKey: 'no_registered_schema',
-      severity: 'hard',
-      outcome: 'fail',
-      message:
-        `No registered schema for ${doc.formType} tax year ${doc.taxYear ?? 'unknown'}. ` +
-        'This document was not extracted and contributes nothing to the worksheet. Register ' +
-        `data/form-schemas/ty${doc.taxYear ?? '????'}/ or disposition the document out.`,
-      detail: { formType: doc.formType, taxYear: doc.taxYear },
-    });
-    await db.update(documents).set({ status: 'needs_review' }).where(eq(documents.id, documentId));
-    return;
+    return finishDocument(documentId, 'no_schema', { status: 'needs_review' });
   }
 
   const spanRows = await db
@@ -329,19 +398,39 @@ export async function extractDocument(
       spanIndex: layoutSpans.spanIndex,
       text: layoutSpans.text,
       pageId: layoutSpans.pageId,
+      x0: layoutSpans.x0,
+      y0: layoutSpans.y0,
+      x1: layoutSpans.x1,
+      y1: layoutSpans.y1,
     })
     .from(layoutSpans)
     .innerJoin(pages, eq(pages.id, layoutSpans.pageId))
     .where(eq(pages.documentId, documentId))
-    .orderBy(asc(layoutSpans.pageId), asc(layoutSpans.spanIndex));
+    .orderBy(asc(pages.pageNumber), asc(layoutSpans.spanIndex));
 
-  if (!spanRows.length) return;
+  if (!spanRows.length) return finishDocument(documentId, 'no_spans', { status: 'needs_review' });
 
   // Span indices are per page; renumber across the document so the binder sees one list.
   const spans: StoredSpan[] = spanRows.map((s, i) => ({ ...s, spanIndex: i }));
 
+  let images: PageImage[] | undefined;
+  if (env.EXTRACT_ATTACH_PAGE_IMAGE) {
+    const docPages = await db
+      .select({ id: pages.id, key: pages.rasterStorageKey })
+      .from(pages)
+      .where(and(eq(pages.documentId, documentId), isNotNull(pages.rasterStorageKey)))
+      .orderBy(asc(pages.pageNumber))
+      .limit(4);
+    images = [];
+    for (const p of docPages) images.push({ pageId: p.id, jpeg: await blobs.get(p.key!) });
+  }
+
   try {
-    const bound = await bindFields(resolved.schema, spans, { bundleId, userId });
+    const bound = await bindFields(resolved.schema, spans, {
+      bundleId,
+      userId,
+      ...(images ? { images } : {}),
+    });
     const persisted = await persistBoundFields(documentId, resolved.schema, bound);
 
     // §7: the plaintext TIN never lands in a column. It is hashed here and discarded.
@@ -356,13 +445,14 @@ export async function extractDocument(
       await saveProposal(bundleId, proposal);
     }
 
-    await db
-      .update(documents)
-      .set({ status: 'extracted', formSchemaVersion: resolved.schema.version })
-      .where(eq(documents.id, documentId));
+    await finishDocument(documentId, 'extracted', {
+      status: 'extracted',
+      formSchemaVersion: resolved.schema.version,
+    });
   } catch (err) {
     if (err instanceof RouterCallError) {
-      await parkJob('v1040_field_extract', { bundleId, documentId }, err);
+      // Outcome stays null: the document is not finished until a requeue completes it.
+      await parkJob(TASK_CLASS.FIELD_EXTRACT, { bundleId, documentId }, err);
       return;
     }
     throw err;
@@ -375,8 +465,7 @@ export async function extractDocument(
  * Re-attach a carried-forward disposition to its recomputed check result.
  *
  * `createdAt` is copied from the original so the record still says when the decision was
- * actually made, not when the bundle was last reprocessed. The row id changes, which is why
- * the audit log rather than this table is the authority on who decided what and when.
+ * actually made, not when the bundle was last reprocessed.
  */
 async function carryDisposition(
   carryable: Map<
@@ -410,17 +499,8 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
   const docs = await db.select().from(documents).where(eq(documents.bundleId, bundleId));
 
   /**
-   * Carry human dispositions across a re-run.
-   *
-   * Check results are recomputed from scratch every time, and `dispositions.check_result_id`
-   * cascades, so clearing them used to delete every disposition on the bundle. A reviewer who
-   * had worked through ten hard failures found the bundle blocked again with no record of the
-   * decisions. That made reprocessing unusable and lost decisions §11 requires be logged.
-   *
-   * A disposition is carried forward only when the finding is materially the same: same
-   * document, same check, same actual amount. A reviewer approved *those numbers*, not that
-   * check key forever — if a correction changed the amount, the approval no longer applies and
-   * the bundle blocks again, which is the right way for this to fail.
+   * Carry human dispositions across a re-run. A disposition is carried forward only when
+   * the finding is materially the same: same document, same check, same actual amount.
    */
   const priorDispositions = await db
     .select({
@@ -448,45 +528,69 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
   let hardFailures = 0;
   let softFailures = 0;
 
+  const record = async (documentId: string | null, result: CheckResult): Promise<void> => {
+    if (result.outcome === 'fail') {
+      if (result.severity === 'hard') hardFailures += 1;
+      else softFailures += 1;
+    }
+    const [row] = await db
+      .insert(checkResults)
+      .values({
+        bundleId,
+        documentId,
+        checkKey: result.checkKey,
+        severity: result.severity,
+        outcome: result.outcome,
+        message: result.message,
+        expectedCents: result.expectedCents ?? null,
+        actualCents: result.actualCents ?? null,
+        toleranceCents: result.toleranceCents ?? null,
+        detail: result.detail ?? {},
+      })
+      .returning({ id: checkResults.id });
+    if (result.outcome === 'fail' && result.severity === 'hard') {
+      await carryDisposition(carryable, carryKey(documentId, result.checkKey, result.actualCents ?? null), row!.id);
+    }
+  };
+
   const resolvedByDoc = new Map<string, Map<string, FieldValue>>();
   for (const doc of docs) {
     resolvedByDoc.set(doc.id, (await resolveDocumentFields(doc.id)).fields);
   }
 
-  // A tax document nobody could name never reaches the loop below, because it has no schema
-  // to check against. It still has to be said out loud (§6, §9) — the whole point is that a
-  // page the app could not read is louder than one it could, not quieter.
-  for (const doc of docs.filter((d) => d.unrecognisedForm)) {
-    const result = unrecognisedFormResult();
-    hardFailures += 1;
-    const [row] = await db
-      .insert(checkResults)
-      .values({
-        bundleId,
-        documentId: doc.id,
-        checkKey: result.checkKey,
-        severity: result.severity,
-        outcome: result.outcome,
-        message: result.message,
-        detail: result.detail ?? {},
-      })
-      .returning({ id: checkResults.id });
-    await carryDisposition(carryable, carryKey(doc.id, result.checkKey, null), row!.id);
+  /**
+   * Document-state failures come first. These are recomputed from what the document row
+   * says happened to it, so they survive the reset above — a page nobody could read must be
+   * louder than one they could, not quieter (§6, §9).
+   */
+  for (const doc of docs) {
+    if (doc.unrecognisedForm) await record(doc.id, unrecognisedFormResult());
+    if (doc.extractionOutcome === 'no_schema' && doc.formType) {
+      await record(doc.id, noRegisteredSchemaResult(doc.formType, doc.taxYear));
+    }
+    if (doc.extractionOutcome === 'no_spans' && doc.formType) {
+      await record(doc.id, noLayoutSpansResult(doc.formType));
+    }
   }
 
   for (const doc of docs) {
     if (!doc.formType || doc.isSupplemental) continue;
-    const schema = forms.resolve(doc.formType, doc.taxYear ?? bundle?.taxYear ?? 2025)?.schema;
-    if (!schema) continue;
+    if (doc.extractionOutcome !== 'extracted') continue;
+    const docYear = doc.taxYear ?? bundle?.taxYear ?? 2025;
+    const resolved = forms.resolve(doc.formType, docYear);
+    if (!resolved) continue;
+    if (doc.taxYear !== null && resolved.resolvedYear !== doc.taxYear) {
+      await record(doc.id, schemaYearSubstitutedResult(doc.formType, doc.taxYear, resolved.resolvedYear));
+    }
 
-    const table = await taxTableFor(doc.taxYear ?? bundle?.taxYear ?? 2025);
+    const table = await tableForYearOrBundle(docYear, bundle?.taxYear ?? 2025);
     const children = docs
       .filter((d) => d.parentDocumentId === doc.id && d.formType)
       .map((d) => ({ formType: d.formType!, fields: resolvedByDoc.get(d.id) ?? new Map() }));
 
     const ctx: CheckContext = {
       formType: doc.formType,
-      taxYear: doc.taxYear ?? bundle?.taxYear ?? 2025,
+      taxYear: docYear,
       toleranceCents: env.RECONCILE_TOLERANCE_CENTS,
       table,
       fields: resolvedByDoc.get(doc.id) ?? new Map(),
@@ -494,42 +598,14 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
       bundleTaxYear: bundle?.taxYear ?? null,
     };
 
-    const results = runChecks(ctx, schema.checks);
-    for (const result of results) {
-      if (result.outcome === 'fail') {
-        if (result.severity === 'hard') hardFailures += 1;
-        else softFailures += 1;
-      }
-      const [row] = await db
-        .insert(checkResults)
-        .values({
-          bundleId,
-          documentId: doc.id,
-          checkKey: result.checkKey,
-          severity: result.severity,
-          outcome: result.outcome,
-          message: result.message,
-          expectedCents: result.expectedCents ?? null,
-          actualCents: result.actualCents ?? null,
-          toleranceCents: result.toleranceCents ?? null,
-          detail: result.detail ?? {},
-        })
-        .returning({ id: checkResults.id });
-      if (result.outcome === 'fail' && result.severity === 'hard') {
-        await carryDisposition(
-          carryable,
-          carryKey(doc.id, result.checkKey, result.actualCents ?? null),
-          row!.id,
-        );
-      }
+    for (const result of runChecks(ctx, resolved.schema.checks)) {
+      await record(doc.id, result);
     }
   }
 
   // ── bundle-level checks ────────────────────────────────────────────────────
-  // Some things are only visible across documents. Excess social security withholding
-  // across employers is invisible to any single W-2 (added 2026-08-26).
   const bundleTaxYear = bundle?.taxYear ?? 2025;
-  const w2Docs = docs.filter((d) => d.formType === 'W-2');
+  const w2Docs = docs.filter((d) => d.formType === 'W-2' && d.extractionOutcome === 'extracted');
   const groups = new Map<string, BundleCheckContext['w2sByTaxpayer'][number]>();
 
   for (const doc of w2Docs) {
@@ -556,21 +632,7 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
       table: await taxTableFor(bundleTaxYear),
       w2sByTaxpayer: [...groups.values()],
     });
-    for (const result of results) {
-      if (result.outcome === 'fail') softFailures += 1;
-      await db.insert(checkResults).values({
-        bundleId,
-        documentId: null,
-        checkKey: result.checkKey,
-        severity: result.severity,
-        outcome: result.outcome,
-        message: result.message,
-        expectedCents: result.expectedCents ?? null,
-        actualCents: result.actualCents ?? null,
-        toleranceCents: result.toleranceCents ?? null,
-        detail: result.detail ?? {},
-      });
-    }
+    for (const result of results) await record(null, result);
   }
 
   await db
@@ -589,32 +651,83 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
   return { hardFailures, softFailures };
 }
 
-// ── fan-out helpers ──────────────────────────────────────────────────────────
-
-/** Fan out one layout job per rasterized page. Runs straight after classification (§7). */
-export async function startExtraction(bundleId: string, userId: string): Promise<number> {
-  const pageRows = await db
-    .select({ id: pages.id })
-    .from(pages)
-    .where(and(eq(pages.bundleId, bundleId), isNotNull(pages.rasterStorageKey)));
-
-  await db.update(bundles).set({ status: 'extracting' }).where(eq(bundles.id, bundleId));
-
-  for (const page of pageRows) {
-    await pipelineQueue.add('layout_page', { kind: 'layout_page', bundleId, pageId: page.id, userId });
+/**
+ * A document's own year's table, or the bundle's when none is registered for that year.
+ *
+ * A stray prior-year document (§7) must be checked, not crash the bundle's reconcile. The
+ * substitution is logged; the document already carries `schema_year_substituted` or
+ * `tax_year_matches_bundle` so the reviewer knows it is off-year.
+ */
+async function tableForYearOrBundle(year: number, bundleYear: number) {
+  try {
+    return await taxTableFor(year);
+  } catch (err) {
+    if (year === bundleYear) throw err;
+    console.warn(`[reconcile] no tax table for ${year}; using the bundle year ${bundleYear} table`);
+    return taxTableFor(bundleYear);
   }
-  return pageRows.length;
 }
 
-/** After every page has spans, fan out one binding job per document. */
-export async function queueExtractionForDocuments(bundleId: string, userId: string): Promise<number> {
-  const docs = await db
-    .select({ id: documents.id })
+// ── stage completion and hand-off ────────────────────────────────────────────
+
+/** True once every rasterized page in the bundle has recorded a layout outcome. */
+export async function layoutComplete(bundleId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ remaining: sql<number>`count(*)::int` })
+    .from(pages)
+    .where(and(eq(pages.bundleId, bundleId), isNotNull(pages.rasterStorageKey), isNull(pages.layoutCompletedAt)));
+  return (row?.remaining ?? 0) === 0;
+}
+
+/** True once every document in the bundle has recorded an extraction outcome. */
+export async function extractionComplete(bundleId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ remaining: sql<number>`count(*)::int` })
     .from(documents)
-    .where(and(eq(documents.bundleId, bundleId), isNull(documents.parentDocumentId)));
+    .where(and(eq(documents.bundleId, bundleId), isNull(documents.extractionCompletedAt)));
+  return (row?.remaining ?? 0) === 0;
+}
+
+/** Fan out one layout job per page that still needs one. Runs straight after classification. */
+export async function startExtraction(bundleId: string, userId: string): Promise<number> {
+  await db.update(bundles).set({ status: 'extracting' }).where(eq(bundles.id, bundleId));
+
+  const pending = await db
+    .select({ id: pages.id })
+    .from(pages)
+    .where(and(eq(pages.bundleId, bundleId), isNotNull(pages.rasterStorageKey), isNull(pages.layoutCompletedAt)));
+
+  for (const page of pending) {
+    await pipelineQueue.add('layout_page', { kind: 'layout_page', bundleId, pageId: page.id, userId });
+  }
+
+  // Every page may already be laid out (an all-native bundle). Nobody else would advance it.
+  if (!pending.length) await advanceAfterLayout(bundleId, userId);
+  return pending.length;
+}
+
+/** Called after each layout job. The last page to finish fans out the binding stage. */
+export async function advanceAfterLayout(bundleId: string, userId: string): Promise<boolean> {
+  if (!(await layoutComplete(bundleId))) return false;
+  await queueExtractionForDocuments(bundleId, userId);
+  return true;
+}
+
+/** Called after each extraction job. The last document to finish queues reconcile. */
+export async function advanceAfterExtraction(bundleId: string, userId: string): Promise<boolean> {
+  if (!(await extractionComplete(bundleId))) return false;
+  await pipelineQueue.add('reconcile_bundle', { kind: 'reconcile_bundle', bundleId, userId });
+  return true;
+}
+
+/** Queue one binding job per document. A re-run clears every outcome first. */
+export async function queueExtractionForDocuments(bundleId: string, userId: string): Promise<number> {
+  await db
+    .update(documents)
+    .set({ extractionOutcome: null, extractionCompletedAt: null })
+    .where(eq(documents.bundleId, bundleId));
 
   const all = await db.select({ id: documents.id }).from(documents).where(eq(documents.bundleId, bundleId));
-  void docs;
 
   for (const doc of all) {
     await pipelineQueue.add('extract_document', {
@@ -624,5 +737,61 @@ export async function queueExtractionForDocuments(bundleId: string, userId: stri
       userId,
     });
   }
+
+  // A bundle with no documents at all still needs a reconcile to reach a terminal status.
+  if (!all.length) await advanceAfterExtraction(bundleId, userId);
   return all.length;
+}
+
+// ── requeue parked and failed router work ────────────────────────────────────
+
+/**
+ * Send every parked or failed router job for a bundle back to the queue.
+ *
+ * Until this existed, "re-queue" was a word in the runbook with nothing behind it: a parked
+ * layout page kept the bundle at `extracting` forever, and the only way out was a full
+ * reprocess. Each job is re-created at the stage it failed in, and the recorded row is
+ * marked `requeued` so the history of the failure is kept.
+ */
+export async function requeueRouterJobs(
+  bundleId: string,
+  userId: string,
+): Promise<{ requeued: number; classify: boolean; pages: number; documents: number }> {
+  const rows = await db
+    .select()
+    .from(routerJobs)
+    .where(and(eq(routerJobs.bundleId, bundleId), inArray(routerJobs.state, ['parked', 'failed'])));
+
+  if (!rows.length) return { requeued: 0, classify: false, pages: 0, documents: 0 };
+
+  let classify = false;
+  const pageIds = new Set<string>();
+  const documentIds = new Set<string>();
+
+  for (const row of rows) {
+    if (row.taskClass === TASK_CLASS.PAGE_CLASSIFY) classify = true;
+    else if ((row.taskClass === TASK_CLASS.LAYOUT || row.taskClass === TASK_CLASS.OCR_TRANSCRIBE) && row.pageId) {
+      pageIds.add(row.pageId);
+    } else if (row.taskClass === TASK_CLASS.FIELD_EXTRACT && row.documentId) documentIds.add(row.documentId);
+  }
+
+  await db
+    .update(routerJobs)
+    .set({ state: 'requeued', updatedAt: new Date() })
+    .where(inArray(routerJobs.id, rows.map((r) => r.id)));
+
+  if (classify) {
+    // Classification runs as one job over the whole bundle and re-derives everything after it.
+    await pipelineQueue.add('classify_bundle', { kind: 'classify_bundle', bundleId, userId });
+    return { requeued: rows.length, classify, pages: 0, documents: 0 };
+  }
+
+  await db.update(bundles).set({ status: 'extracting', updatedAt: new Date() }).where(eq(bundles.id, bundleId));
+  for (const pageId of pageIds) {
+    await pipelineQueue.add('layout_page', { kind: 'layout_page', bundleId, pageId, userId });
+  }
+  for (const documentId of documentIds) {
+    await pipelineQueue.add('extract_document', { kind: 'extract_document', bundleId, documentId, userId });
+  }
+  return { requeued: rows.length, classify, pages: pageIds.size, documents: documentIds.size };
 }

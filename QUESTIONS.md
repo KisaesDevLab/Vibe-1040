@@ -127,6 +127,10 @@ Note the text-layer case needs none of this. PyMuPDF returns exact words *and* e
 a native digital PDF, which is the deferred sidecar-geometry work (decision log 2026-09-02) and
 strictly better than any model for those pages.
 
+**Partial answer (2026-09-16):** the text-layer case is built. The sidecar now measures exact
+spans for every `text_layer` page and the vision layout pass runs only for raster pages. Scanned
+pages still take option 3 — they get a model's boxes, or, with transcription only, they block.
+
 ### Q16 — Is SSA-1042S in scope, and what happens to an unregistered form type?
 **Raised:** 2026-09-10. **Answered and closed 2026-09-10.** Both parts.
 
@@ -267,7 +271,13 @@ per-token or per-field confidence. Multi-pass cannot be narrowed to fields below
 threshold, because there is no threshold to compare against. Budget accordingly: every
 field extraction costs at least 2× inference.
 
-**A:**
+**A (2026-09-16):** The premise was wrong. Two passes of the same prompt at temperature 0
+against the same model agree whether or not they are right, so the second pass measured
+nothing and doubled the cost. The confidence signal is now **verification**: every bound
+value is checked against the text of the spans it cites and flagged `span_mismatch` when it
+is not there. `EXTRACT_PASSES` defaults to 1. A second pass, when configured, runs at
+`EXTRACT_SECOND_PASS_TEMPERATURE` (0.4) and optionally against `EXTRACT_SECOND_PASS_MODEL`, so
+that disagreement is between different readings. Escalation on disagreement is unchanged.
 
 ---
 

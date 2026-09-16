@@ -20,6 +20,22 @@ export interface DocumentRow {
   isSupplemental: boolean;
   parentDocumentId: string | null;
   status: string;
+  /** Form 8949 section letter for a 1099-B split per section. */
+  sectionCode: string | null;
+  /** extracted | skipped_supplemental | skipped_unclassified | no_schema | no_spans, or null while pending. */
+  extractionOutcome: string | null;
+}
+
+export interface RouterJobRow {
+  id: string;
+  taskClass: string;
+  state: 'parked' | 'failed';
+  pageId: string | null;
+  documentId: string | null;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  retryAfter: string | null;
+  createdAt: string;
 }
 
 export interface CheckRow {

@@ -200,23 +200,39 @@ retention model and is not auto-purged.
 A general VLM asked to emit JSON will produce plausible field values and untrustworthy
 coordinates. Because the review UI requires bounding-box overlay, extraction is split:
 
-1. **Layout pass** (`v1040_layout`) — a vision model asked for text spans with boxes on a
-   0–1000 scale, the native grounding convention of the GLM/Qwen-family models policy binds.
-   Output is text spans with page-relative boxes. Store this verbatim; it is the provenance
-   substrate. The app detects the convention the model actually returned — fraction,
-   thousandths, or pixel — **once per page over the whole span set**, normalizes to 0..1,
-   records the convention on the page row and the serving model on every span. Policy
-   decides what serves, so a provider swap must be detectable rather than silent.
-   **GLM-OCR cannot serve this class**: it emits text and Markdown tables without geometry,
-   so a `local_only` binding of `v1040_layout` through the `local_ocr` kind is not viable as
-   written. See QUESTIONS.md Q14.
-2. **Field-binding pass** (`v1040_field_extract`) — takes the layout output plus
-   the registered schema for the classified form type and binds schema fields to spans.
-   Every emitted field carries `span_ids`, so every number on the worksheet traces to
-   pixels without the model ever being asked to invent a coordinate.
+1. **Layout pass** — text spans with page-relative boxes, the provenance substrate. Stored
+   verbatim. **Where the geometry comes from depends on the page (decided 2026-09-16):**
+   - A page with a usable text layer gets its spans from the **sidecar**: PyMuPDF words with
+     exact boxes, merged into spans, normalized to 0..1 in the rotated page space the raster
+     is rendered in. No model, no inference, no pixel leaves the appliance for geometry.
+     Recorded as `pages.layout_source = 'text_layer'`, producer `pymupdf`.
+   - A raster page (scan, phone photo, garbled text layer) goes to `v1040_layout`, a vision
+     model asked for spans with boxes on a 0–1000 scale, the native grounding convention of
+     the GLM/Qwen-family models policy binds. The app detects the convention the model
+     actually returned — fraction, thousandths, or pixel — **once per page over the whole
+     span set**, normalizes to 0..1, records the convention on the page row and the serving
+     model on every span. Recorded as `layout_source = 'model'`.
+   A page may print several copies of one form (Copy B, C, 2); every copy is transcribed.
+   **GLM-OCR cannot serve the vision class**: it emits text and Markdown tables without
+   geometry (QUESTIONS.md Q14).
+2. **Field-binding pass** (`v1040_field_extract`) — takes the spans **with their position**
+   plus the registered schema for the classified form type and binds schema fields to spans.
+   Spans are serialized grouped into rows, left to right, with x/y in thousandths, because a
+   tax form is a grid and a flat list of span text cannot say which label a value sits under.
+   With `EXTRACT_ATTACH_PAGE_IMAGE` the page image goes along too and the class is registered
+   as a vision class. Every emitted field carries `span_ids`, so every number on the worksheet
+   traces to pixels without the model ever being asked to invent a coordinate.
+
+**Verification is the confidence signal.** The router surfaces no logprobs (Q4). Every bound
+value is checked against the text of the spans it cites — money in cents, text loosely — and a
+value that is not in its own evidence is flagged `span_mismatch` and routed to review. A
+second pass (`EXTRACT_PASSES` ≥ 2) runs at a non-zero temperature and optionally against
+`EXTRACT_SECOND_PASS_MODEL`, so that agreement is between different readings; the old design
+ran the same prompt twice at temperature 0, which agrees whether or not it is right.
 
 A field the binder cannot tie to a span is emitted with `span_ids: []` and is
-automatically routed to review regardless of confidence.
+automatically routed to review regardless of confidence. A blank box legitimately cites
+nothing and is not a review item.
 
 ## 5. Blank is not zero
 
@@ -247,6 +263,10 @@ Hard failures (block):
   document must be louder than a readable one, not quieter. It blocks until a human reads the
   page, and it is carried onto the finished worksheet as an annotation even once
   dispositioned, because the amounts on it were never extracted.
+- A document classified as a form type with no registered schema in any year
+  (`no_registered_schema`), and a form document whose pages yielded no layout spans at all
+  (`no_layout_spans`). Both are recomputed at reconcile from the document's recorded
+  extraction outcome, so they survive the check-result reset.
 
 Soft failures (annotate):
 
@@ -255,6 +275,9 @@ Soft failures (annotate):
 - 1099-R box 2a blank with "taxable amount not determined" checked.
 - Distribution code implausible against the payee's age where a DOB is available.
 - Document tax year differs from the bundle's majority year.
+- A document read with another season's schema because its own year has none registered
+  (`schema_year_substituted`). The registry resolves to the nearest year in either direction
+  rather than dropping the document.
 
 Tolerance is $1 per document for rounding, configurable per firm. Do not silently widen
 it.
@@ -299,6 +322,13 @@ issued to a nonresident alien, so the return it belongs on may not be a 1040 at 
 characterization of the benefit is a determination §11 forbids this app from making. Report
 the printed boxes, land the whole form in Judgment Required, and let the preparer decide. Do
 not map it to a 1040 line.
+
+**1099-B is one document per Form 8949 section** (decided 2026-09-16). The classifier reports
+the section letter (A–F) printed in the heading, grouping splits on it, and the schema carries
+the section subtotals printed at the section's foot — proceeds, basis, wash sales, market
+discount, gain or loss as printed — which is what Schedule D needs. Per-lot rows are not
+extracted in v1; the section pages are attached for the preparer. Section subtotals foot to
+the package summary as a hard check on the container.
 
 **K-1 v1 scope is boxes-as-printed only.** No line dispersion onto the worksheet. A 1065
 K-1 puts the numbers that matter in lettered sub-codes and footnote statements rather

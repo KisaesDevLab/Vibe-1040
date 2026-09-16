@@ -325,35 +325,44 @@ export const a1095MonthlyFootsToAnnual: Check = (ctx) => {
   });
 };
 
-/** 1099-B section subtotals must foot to the package summary page (§6, hard). */
+/**
+ * 1099-B section subtotals must foot to the package summary page (§6, hard).
+ *
+ * Declared on the **container**. Each Form 8949 section of a 1099-B is its own document
+ * (split at classification), carrying the subtotal printed at the foot of that section; the
+ * package summary reports one gross-proceeds figure. The two must agree.
+ */
 export const bSubtotalsFootToSummary: Check = (ctx) => {
-  const rows = ctx.fields.get('box_1d_proceeds');
-  const summary = cents(ctx, 'summary_total_proceeds');
+  const summary = cents(ctx, 'summary_proceeds');
   if (summary === null) {
     return na('b_section_subtotals_foot_to_summary', 'hard', 'No package summary proceeds total.');
   }
-  // Repeating rows arrive as a pre-summed value on the document when the binder emitted
-  // them individually; children carry the per-section subtotals.
-  const subtotals = (ctx.children ?? [])
-    .filter((c) => c.formType === '1099-B')
-    .map((c) => c.fields.get('summary_total_proceeds')?.cents ?? null)
+  const sections = (ctx.children ?? []).filter((c) => c.formType === '1099-B');
+  const subtotals = sections
+    .map((c) => c.fields.get('section_total_proceeds')?.cents ?? null)
     .filter((v): v is number => v !== null);
-
-  const base = subtotals.length ? subtotals.reduce((a, b) => a + b, 0) : (rows?.cents ?? null);
-  if (base === null) {
-    return na('b_section_subtotals_foot_to_summary', 'hard', 'No section subtotals to foot.');
+  if (!subtotals.length) {
+    return na('b_section_subtotals_foot_to_summary', 'hard', 'No 1099-B section subtotals to foot.');
   }
+  const base = subtotals.reduce((a, b) => a + b, 0);
   const ok = withinTolerance(base, summary, ctx.toleranceCents);
   return {
     checkKey: 'b_section_subtotals_foot_to_summary',
     severity: 'hard',
     outcome: ok ? 'pass' : 'fail',
     message: ok
-      ? 'Section subtotals foot to the package summary.'
+      ? `${subtotals.length} section subtotal(s) foot to the package summary.`
       : `Section subtotals sum to ${base} but the package summary reports ${summary}.`,
     expectedCents: summary,
     actualCents: base,
     toleranceCents: ctx.toleranceCents,
+    detail: {
+      sections: sections.map((c) => ({
+        section: c.fields.get('section_code')?.text ?? null,
+        proceeds: c.fields.get('section_total_proceeds')?.cents ?? null,
+      })),
+      blankSections: sections.length - subtotals.length,
+    },
   };
 };
 
@@ -364,7 +373,7 @@ export const consolidatedTiesToSummary: Check = (ctx) => {
     { summaryKey: 'summary_ordinary_dividends', childForm: '1099-DIV', childKey: 'box_1a', label: 'ordinary dividends' },
     { summaryKey: 'summary_qualified_dividends', childForm: '1099-DIV', childKey: 'box_1b', label: 'qualified dividends' },
     { summaryKey: 'summary_capital_gain_distributions', childForm: '1099-DIV', childKey: 'box_2a', label: 'capital gain distributions' },
-    { summaryKey: 'summary_proceeds', childForm: '1099-B', childKey: 'summary_total_proceeds', label: 'gross proceeds' },
+    // Gross proceeds are owned by b_section_subtotals_foot_to_summary, which reports per section.
   ] as const;
 
   return pairs.map((p): CheckResult => {
@@ -609,6 +618,55 @@ export const CHECKS: Record<string, Check> = {
 };
 
 export const ALWAYS_RUN: Check[] = [everyFieldHasSpans, taxYearMatchesBundle];
+
+// ── document-state results (recomputed at reconcile, so they survive the reset) ──
+
+/**
+ * A document classified as a form type for which no schema is registered. It was not
+ * extracted and contributes nothing; the worksheet must not pretend otherwise (§6).
+ */
+export function noRegisteredSchemaResult(formType: string, taxYear: number | null): CheckResult {
+  return {
+    checkKey: 'no_registered_schema',
+    severity: 'hard',
+    outcome: 'fail',
+    message:
+      `No registered schema for ${formType} (tax year ${taxYear ?? 'unknown'}). This document ` +
+      'was not extracted and contributes nothing to the worksheet. Register a schema under ' +
+      'data/form-schemas/ or disposition the document out.',
+    detail: { formType, taxYear },
+  };
+}
+
+/** A form-type document whose pages yielded no layout spans at all — nothing to bind. */
+export function noLayoutSpansResult(formType: string): CheckResult {
+  return {
+    checkKey: 'no_layout_spans',
+    severity: 'hard',
+    outcome: 'fail',
+    message:
+      `The layout stage produced no text spans for this ${formType}, so nothing could be ` +
+      'extracted. The page may be blank, unreadable, or mis-rotated. Read it and disposition.',
+    detail: { formType },
+  };
+}
+
+/** The box map came from another season's schema (§7 prior-year document, §10). */
+export function schemaYearSubstitutedResult(
+  formType: string,
+  documentYear: number,
+  resolvedYear: number,
+): CheckResult {
+  return {
+    checkKey: 'schema_year_substituted',
+    severity: 'soft',
+    outcome: 'fail',
+    message:
+      `${formType} is dated ${documentYear} but was read with the ${resolvedYear} schema, the ` +
+      'nearest registered year. Box numbering is usually stable; confirm nothing moved.',
+    detail: { formType, documentYear, resolvedYear },
+  };
+}
 
 /** Run the checks a form declares, plus the cross-cutting ones. */
 export function runChecks(ctx: CheckContext, declared: readonly string[]): CheckResult[] {

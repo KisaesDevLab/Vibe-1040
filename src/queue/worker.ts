@@ -7,12 +7,13 @@
 import { Worker } from 'bullmq';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db, pool } from '../db/client.ts';
-import { documents, layoutSpans, pages, sourceFiles, users } from '../db/schema.ts';
+import { sourceFiles, users } from '../db/schema.ts';
 import {
+  advanceAfterExtraction,
+  advanceAfterLayout,
   classifyBundle,
   extractDocument,
   layoutPage,
-  queueExtractionForDocuments,
   reconcileBundle,
   recordRasterOutput,
 } from './pipeline.ts';
@@ -30,26 +31,6 @@ import {
 const log = (msg: string, extra: Record<string, unknown> = {}): void => {
   console.log(JSON.stringify({ at: new Date().toISOString(), msg, ...extra }));
 };
-
-/** True once every rasterized page in the bundle has spans. */
-async function layoutComplete(bundleId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ remaining: sql<number>`count(*)::int` })
-    .from(pages)
-    .leftJoin(layoutSpans, eq(layoutSpans.pageId, pages.id))
-    .where(and(eq(pages.bundleId, bundleId), isNull(layoutSpans.id)))
-    .groupBy(pages.bundleId);
-  return (row?.remaining ?? 0) === 0;
-}
-
-async function extractionComplete(bundleId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ remaining: sql<number>`count(*)::int` })
-    .from(documents)
-    .where(and(eq(documents.bundleId, bundleId), eq(documents.status, 'classified')));
-  return (row?.remaining ?? 0) === 0;
-}
-
 
 /**
  * True once every source file in the bundle has had its pages recorded. Rasterization fans
@@ -83,22 +64,18 @@ const worker = new Worker<PipelineJob>(
 
       case 'layout_page': {
         await layoutPage(data.bundleId, data.pageId, data.userId);
-        // The last page to finish fans out the binding stage.
-        if (await layoutComplete(data.bundleId)) {
-          const n = await queueExtractionForDocuments(data.bundleId, data.userId);
-          log('layout.complete', { bundleId: data.bundleId, documents: n });
+        // The last page to record a layout outcome fans out the binding stage (0007).
+        if (await advanceAfterLayout(data.bundleId, data.userId)) {
+          log('layout.complete', { bundleId: data.bundleId });
         }
         return;
       }
 
       case 'extract_document': {
         await extractDocument(data.bundleId, data.documentId, data.userId);
-        if (await extractionComplete(data.bundleId)) {
-          await pipelineQueue.add('reconcile_bundle', {
-            kind: 'reconcile_bundle',
-            bundleId: data.bundleId,
-            userId: data.userId,
-          });
+        // The last document to record an outcome queues reconcile (0007).
+        if (await advanceAfterExtraction(data.bundleId, data.userId)) {
+          log('extraction.complete', { bundleId: data.bundleId });
         }
         return;
       }

@@ -74,7 +74,7 @@ const { rows: classifierRows } = await pool.query(
   [bundleId],
 );
 const { rows: layoutRows } = await pool.query(
-  `SELECT DISTINCT ls.produced_by_model, p.layout_coord_convention
+  `SELECT DISTINCT ls.produced_by_model, p.layout_coord_convention, p.layout_source
      FROM layout_spans ls JOIN pages p ON p.id = ls.page_id
     WHERE p.bundle_id = $1`,
   [bundleId],
@@ -90,6 +90,8 @@ const provenance = {
   classify: distinct(classifierRows, 'classifier_model'),
   layout: distinct(layoutRows, 'produced_by_model'),
   layoutConventions: distinct(layoutRows, 'layout_coord_convention'),
+  // 'text_layer' pages carry exact boxes from the PDF; 'model' pages carry a vision estimate.
+  layoutSources: distinct(layoutRows, 'layout_source'),
   extract: distinct(extractRows, 'produced_by_model'),
 };
 

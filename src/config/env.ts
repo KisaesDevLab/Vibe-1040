@@ -96,8 +96,25 @@ const schema = z.object({
   RASTER_MAX_EDGE_PX: z.coerce.number().int().positive().default(2200),
   RASTER_JPEG_QUALITY: z.coerce.number().int().min(1).max(100).default(82),
 
-  EXTRACT_PASSES: z.coerce.number().int().min(1).default(2),
+  /**
+   * Binding passes per document. One by default: the confidence signal is verification of
+   * every bound value against the spans it cites (`span_mismatch`), not repetition. A second
+   * pass is only informative when it is a *different* reading, which is why passes after
+   * the first run at EXTRACT_SECOND_PASS_TEMPERATURE and, optionally, ask policy for
+   * EXTRACT_SECOND_PASS_MODEL. Two passes of the same prompt at temperature 0 agree whether
+   * or not they are right.
+   */
+  EXTRACT_PASSES: z.coerce.number().int().min(1).default(1),
   EXTRACT_PASSES_ON_DISAGREEMENT: z.coerce.number().int().min(1).default(3),
+  EXTRACT_SECOND_PASS_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.4),
+  /** Advisory model for passes after the first; policy still decides. Firm config, never code. */
+  EXTRACT_SECOND_PASS_MODEL: z.string().min(1).optional(),
+  /**
+   * Send the page image(s) to the binder alongside the positioned span list. Registers
+   * `v1040_field_extract` as a vision class, so the policy must bind a vision-capable model
+   * (the DigitalOcean runbook binding is text-only; switch the policy before enabling).
+   */
+  EXTRACT_ATTACH_PAGE_IMAGE: bool.default('false'),
 
   RECONCILE_TOLERANCE_CENTS: z.coerce.number().int().nonnegative().default(100),
 

@@ -7,6 +7,7 @@ import type {
   FactorState,
   FieldRow,
   PageRow,
+  RouterJobRow,
   SettingRow,
   SpanRow,
   UserRow,
@@ -148,6 +149,8 @@ export const api = {
       taxpayers: { taxpayerId: string; displayName: string | null; tinLast4: string; role: string; proposed: boolean }[];
       routerDown: boolean;
       parkedJobs: number;
+      failedJobs: number;
+      routerJobs: RouterJobRow[];
       blocking: { id: string; checkKey: string; message: string }[];
     }>(`/api/bundles/${id}`),
 
@@ -172,6 +175,12 @@ export const api = {
    * 'classify' starts again from the page images and is the only one that pays for vision.
    * A 409 means reclassifying would discard reviewer corrections; re-send acknowledged.
    */
+  requeueRouterJobs: (bundleId: string) =>
+    request<{ ok: boolean; requeued: number; classify: boolean; pages: number; documents: number }>(
+      `/api/bundles/${bundleId}/router-jobs/requeue`,
+      { method: 'POST' },
+    ),
+
   reprocess: async (
     bundleId: string,
     from: 'reconcile' | 'extract' | 'classify',

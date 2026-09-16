@@ -91,9 +91,10 @@ export const SETTINGS = [
     group: 'extraction',
     label: 'Extraction passes',
     help:
-      'Multi-pass agreement is the ONLY confidence signal available — the router surfaces ' +
-      'no per-field confidence. Setting this to 1 removes the only misread detection the ' +
-      'system has. Each pass costs one inference per document.',
+      'Binding passes per document. Every bound value is verified against the spans it cites ' +
+      'regardless of this setting; extra passes run at a non-zero temperature (and against ' +
+      'EXTRACT_SECOND_PASS_MODEL when set) so that disagreement is a real second reading. ' +
+      'Each pass costs one inference per document.',
     schema: z.number().int().min(1).max(5),
     default: () => env.EXTRACT_PASSES,
     input: 'number',

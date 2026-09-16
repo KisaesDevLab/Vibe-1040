@@ -171,8 +171,9 @@ const PROMPT =
   'scale, where 0 is the left or top edge of the page and 1000 is the right or bottom edge. ' +
   'Use the same scale for every span. Transcribe exactly what is printed, including currency ' +
   'formatting and any dashes used to denote a printed zero. Do not interpret, summarize, ' +
-  'total, or correct anything. An empty box has no span. Return JSON only; do not include ' +
-  'markdown or commentary.';
+  'total, or correct anything. An empty box has no span. A page may print several copies of ' +
+  'the same form (Copy B, Copy C, Copy 2); transcribe every copy, do not merge them. Return ' +
+  'JSON only; do not include markdown or commentary.';
 
 /**
  * Second-attempt instruction for a page whose full transcription overran the output budget.
@@ -274,7 +275,17 @@ export async function runLayoutPass(
     );
   }
 
-  await db.update(pages).set({ layoutCoordConvention: convention }).where(eq(pages.id, pageId));
+  // Completion is recorded, not inferred from span rows: a blank page with zero spans is
+  // done, and the bundle must not wait on it forever (0007).
+  await db
+    .update(pages)
+    .set({
+      layoutCoordConvention: convention,
+      layoutCompletedAt: new Date(),
+      spanCount: normalized.length,
+      layoutSource: 'model',
+    })
+    .where(eq(pages.id, pageId));
 
   return { spanCount: normalized.length, model, requestId, convention };
 }

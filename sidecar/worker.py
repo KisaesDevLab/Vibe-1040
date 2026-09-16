@@ -21,7 +21,13 @@ import pymupdf
 from bullmq import Worker
 
 from blobstore import BlobStore
-from triage import choose_dpi, rasterize, rasterize_image_file, triage_text_layer
+from triage import (
+    choose_dpi,
+    extract_layout_spans,
+    rasterize,
+    rasterize_image_file,
+    triage_text_layer,
+)
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "info").upper(),
@@ -60,6 +66,11 @@ def _process_pdf(bundle_id: str, source_file_id: str, data: bytes) -> list[dict[
             raster_key = f"bundles/{bundle_id}/raster/{source_file_id}-{index}.jpg"
             store.put(raster_key, jpeg)
 
+            # A usable text layer carries exact word boxes. Measure them here so the layout
+            # stage needs no model for this page (§4, decision 2026-09-16). A raster page has
+            # nothing to measure and goes to the vision layout pass as before.
+            layout_spans = extract_layout_spans(page) if result.route == "text_layer" else None
+
             pages.append(
                 {
                     "pageNumber": index,
@@ -74,6 +85,7 @@ def _process_pdf(bundle_id: str, source_file_id: str, data: bytes) -> list[dict[
                     "encodedBytes": len(jpeg),
                     "rasterStorageKey": raster_key,
                     "triageReason": result.reason,
+                    "layoutSpans": layout_spans,
                 }
             )
     return pages
@@ -99,6 +111,7 @@ def _process_image(bundle_id: str, source_file_id: str, data: bytes) -> list[dic
             "encodedBytes": len(jpeg),
             "rasterStorageKey": raster_key,
             "triageReason": "loose image",
+            "layoutSpans": None,
         }
     ]
 

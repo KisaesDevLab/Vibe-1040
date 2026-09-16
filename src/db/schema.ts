@@ -68,6 +68,8 @@ export const reviewReason = pgEnum('review_reason', [
   'soft_failure',
   'judgment_required',
   'unmapped',
+  /** The value the binder returned does not appear in the spans it cited (0007). */
+  'span_mismatch',
 ]);
 
 export const checkSeverity = pgEnum('check_severity', ['hard', 'soft']);
@@ -78,7 +80,7 @@ export const dispositionKind = pgEnum('disposition_kind', [
   'document_excluded',
 ]);
 
-export const jobState = pgEnum('job_state', ['queued', 'running', 'parked', 'done', 'failed']);
+export const jobState = pgEnum('job_state', ['queued', 'running', 'parked', 'done', 'failed', 'requeued']);
 
 /** Second-factor delivery channels. TOTP is the strongest; email and SMS are conveniences. */
 export const mfaMethod = pgEnum('mfa_method', ['totp', 'email', 'sms']);
@@ -259,6 +261,14 @@ export const documents = pgTable(
     taxYearMismatch: boolean('tax_year_mismatch').notNull().default(false),
     /** A tax document whose form type is not registered. Blocks until dispositioned (§6). */
     unrecognisedForm: boolean('unrecognised_form').notNull().default(false),
+    /** Form 8949 section letter for a 1099-B split into per-section documents (0007). */
+    sectionCode: text('section_code'),
+    /**
+     * Every exit from extraction writes one, including the paths that extract nothing, so
+     * "is extraction finished" is a count of nulls rather than a guess from status (0007).
+     */
+    extractionOutcome: text('extraction_outcome'),
+    extractionCompletedAt: timestamp('extraction_completed_at', { withTimezone: true }),
     taxpayerId: uuid('taxpayer_id').references(() => taxpayers.id),
     status: documentStatus('status').notNull().default('pending'),
     /** First-class at classification time, not buried in extraction (P4). */
@@ -316,6 +326,14 @@ export const pages = pgTable(
     encodedBytes: integer('encoded_bytes'),
     /** 'fraction' | 'thousandths' | 'pixel' — what scale the layout model actually returned (P7). */
     layoutCoordConvention: text('layout_coord_convention'),
+    /**
+     * Stage completion is recorded, never inferred from span rows (0007). A blank page
+     * legitimately has zero spans and is still done.
+     */
+    layoutCompletedAt: timestamp('layout_completed_at', { withTimezone: true }),
+    spanCount: integer('span_count'),
+    /** 'text_layer' — exact boxes measured by the sidecar; 'model' — estimated by a vision model. */
+    layoutSource: text('layout_source'),
     /** Derived PII. Purges on its own earlier schedule (§11, P13). */
     rasterStorageKey: text('raster_storage_key'),
     rasterPurgedAt: timestamp('raster_purged_at', { withTimezone: true }),

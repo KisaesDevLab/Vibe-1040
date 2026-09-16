@@ -39,6 +39,12 @@ export interface PageMetadata {
   encodedBytes: number;
   rasterStorageKey: string;
   triageReason: string;
+  /**
+   * Exact text spans with page-relative 0..1 boxes, measured by the sidecar from the PDF's
+   * own text layer. Present only for `text_layer` pages; such a page needs no vision
+   * layout pass (§4, decision 2026-09-16).
+   */
+  layoutSpans?: { text: string; x0: number; y0: number; x1: number; y1: number }[] | null;
 }
 
 export type PipelineJob =

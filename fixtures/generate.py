@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import pymupdf  # noqa: E402
 
 import forms  # noqa: E402
+import irs_forms  # noqa: E402
 from degrade import phone_photo, scanned  # noqa: E402
 from draw import FONT, FONT_BOLD, GREY, LETTER, MARGIN, money, new_doc  # noqa: E402
 from forms import MARIA, ROBERT, TRUST  # noqa: E402
@@ -325,6 +326,100 @@ def main() -> None:
         "expectedTaxYear": 2025,
         "expectedTaxpayers": [{"name": ROBERT["name"], "tinLast4": ROBERT["last4"], "kind": "SSN"}],
         "documents": k1_docs,
+    })
+
+    # ── bundle 5: the IRS's own forms, filled — what a client packet actually looks like ──
+    # Plus the two pages every real packet contains and no synthetic bundle did: a cover
+    # letter and a blank duplex back side. Both used to stall the pipeline (0007).
+    irs_docs: list[dict] = []
+
+    w2_single, t = irs_forms.w2(
+        employee=ROBERT, employee_address=("802 CEDAR ST", "MONETT, MO 65708"),
+        employer="ACME MANUFACTURING INC", employer_address=("1400 INDUSTRIAL PKWY", "MONETT, MO 65708"),
+        employer_ein="43-1122334",
+        box1=8_500_000, box2=1_142_000, box3=9_000_000, box4=558_000, box5=9_000_000, box6=130_500,
+        box7=None, box8=None, box10=None, box12=[("D", 500_000)], retirement_plan=True,
+        state="MO", state_id="12345678", box16=9_000_000, box17=382_500,
+        filename="irs_w2_copy_b.pdf",
+    )
+    t["expectedSoftFailure"] = "w2_box1_vs_box3_box5"
+    t["expectedRoute"] = "text_layer"
+    irs_docs.append(t)
+
+    three = irs_forms.three_copies_on_one_page(w2_single)
+    save(three, "irs_w2_three_copies.pdf")
+    t3 = {**t, "file": "irs_w2_three_copies.pdf",
+          "note": "Copy B, Copy C and Copy 2 on one page, as payroll vendors print them. Same values three times."}
+    irs_docs.append(t3)
+
+    scan = scanned(w2_single, seed=11)
+    scan.save(str(OUT / "irs_w2_scanned.pdf"), deflate=True)
+    scan.close()
+    irs_docs.append({**t, "file": "irs_w2_scanned.pdf", "expectedRoute": "raster",
+                     "note": "Flatbed scan of the IRS Copy B; no text layer, vision layout pass required."})
+    save(w2_single, "irs_w2_copy_b.pdf")
+
+    d, t = irs_forms.form_1099_int(
+        payer="FIRST MONETT BANK", payer_address=("100 MAIN ST", "MONETT, MO 65708"), payer_tin="43-7788990",
+        recipient=ROBERT, recipient_address=("802 CEDAR ST", "MONETT, MO 65708"), account="CHK-8890",
+        box1=76_400, box4=None, filename="irs_1099int.pdf",
+    )
+    save(d, "irs_1099int.pdf"); irs_docs.append(t)
+
+    d, t = irs_forms.form_1099_div(
+        payer="NORTHSHORE SECURITIES LLC", payer_address=("1 HARBOR PLAZA", "CHICAGO, IL 60601"), payer_tin="13-2233445",
+        recipient=ROBERT, recipient_address=("802 CEDAR ST", "MONETT, MO 65708"), account="NS-4471902",
+        box1a=318_700, box1b=291_400, box2a=44_900, filename="irs_1099div.pdf",
+    )
+    save(d, "irs_1099div.pdf"); irs_docs.append(t)
+
+    d, t = irs_forms.form_1099_r(
+        payer="VANGUARD FIDUCIARY TRUST", payer_address=("PO BOX 2600", "VALLEY FORGE, PA 19482"), payer_tin="23-1945678",
+        recipient=ROBERT, recipient_address=("802 CEDAR ST", "MONETT, MO 65708"), account="88-1234567",
+        box1=2_500_000, box2a=None, taxable_not_determined=True, total_distribution=True, box4=None,
+        box7_code="G", ira_sep_simple=False, filename="irs_1099r.pdf",
+    )
+    t["expectedSoftFailure"] = "r_taxable_not_determined"
+    save(d, "irs_1099r.pdf"); irs_docs.append(t)
+
+    d, t = irs_forms.form_1098(
+        lender="HERITAGE MORTGAGE CO", lender_address=("500 LENDER WAY", "SPRINGFIELD, MO 65806"), lender_tin="43-9988776",
+        borrower=ROBERT, borrower_address=("802 CEDAR ST", "MONETT, MO 65708"), account="ML-0099812",
+        box1=1_284_400, box2=24_800_000, box3="06/15/2019", box9=1, filename="irs_1098.pdf",
+    )
+    save(d, "irs_1098.pdf"); irs_docs.append(t)
+
+    d, t = irs_forms.form_1099_nec(
+        payer="OZARK DESIGN STUDIO LLC", payer_address=("22 ELM ST", "MONETT, MO 65708"), payer_tin="43-5566001",
+        recipient=MARIA, recipient_address=("802 CEDAR ST", "MONETT, MO 65708"),
+        box1=1_250_000, box4=None, filename="irs_1099nec.pdf",
+    )
+    save(d, "irs_1099nec.pdf"); irs_docs.append(t)
+
+    d, t = irs_forms.form_1099_misc(
+        payer="CEDAR CREEK RENTALS LP", payer_address=("9 RIVER RD", "MONETT, MO 65708"), payer_tin="43-1010101",
+        recipient=ROBERT, recipient_address=("802 CEDAR ST", "MONETT, MO 65708"),
+        box1=1_440_000, box3=None, filename="irs_1099misc.pdf",
+    )
+    save(d, "irs_1099misc.pdf"); irs_docs.append(t)
+
+    d, t = irs_forms.cover_letter(client="Robert and Maria Smith", firm="KISAES CPA GROUP", filename="cover_letter.pdf")
+    save(d, "cover_letter.pdf"); irs_docs.append(t)
+
+    d, t = irs_forms.blank_page(filename="blank_page.pdf")
+    save(d, "blank_page.pdf"); irs_docs.append(t)
+
+    manifest["bundles"].append({
+        "name": "irs-official-forms-2025",
+        "label": "Smith, Robert & Maria — 2025 (IRS-layout forms)",
+        "expectedTaxYear": 2025,
+        "expectedTaxpayers": [
+            {"name": ROBERT["name"], "tinLast4": ROBERT["last4"], "kind": "SSN"},
+            {"name": MARIA["name"], "tinLast4": MARIA["last4"], "kind": "ITIN"},
+        ],
+        "note": "Official IRS fillable forms (fixtures/irs/) filled with invented data and flattened. "
+                "These are the layouts a client actually hands over; the synthetic bundles above are not.",
+        "documents": irs_docs,
     })
 
     # ── degraded variants of the W-2 ─────────────────────────────────────────

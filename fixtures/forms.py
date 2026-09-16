@@ -347,8 +347,8 @@ def form_1099_b_section(
         tax_year,
         {
             "section_code": section_code,
-            "summary_total_proceeds": proceeds_total,
-            "summary_total_cost_basis": None if basis_missing else basis_total,
+            "section_total_proceeds": proceeds_total,
+            "section_total_cost_basis": None if basis_missing else basis_total,
             "box_5_noncovered": noncovered,
             "payer_name": payer,
         },

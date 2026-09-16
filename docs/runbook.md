@@ -122,8 +122,10 @@ and 8. Base URL below is the router's admin API.
      16384) or be raised if dense pages truncate.
    - `v1040_field_extract` → `defaultModel: digitalocean/qwen3.5-397b-a17b`,
      `allowedModels: [qwen3.5-397b-a17b, glm-5.3]`, `fallbackChain: []`.
-   Leave `temperatureMin` unset — the app sends `temperature: 0`, and multi-pass agreement
-   depends on it. **Never add an Anthropic- or OpenAI-on-DigitalOcean model** to these
+   Leave `temperatureMin` unset — the app sends `temperature: 0` on the first binding pass
+   and `EXTRACT_SECOND_PASS_TEMPERATURE` on any later one. If `EXTRACT_ATTACH_PAGE_IMAGE` is
+   on, `v1040_field_extract` registers as a vision class and must be bound to a vision-probed
+   model (`glm-5.3-flash`), not `qwen3.5-397b-a17b`. **Never add an Anthropic- or OpenAI-on-DigitalOcean model** to these
    policies; the WISP names DigitalOcean-hosted open models only (docs/wisp-amendment.md §3).
 7. **Set the app environment.** `ROUTER_EXPECTED_SENSITIVITY=cloud_deidentified` and
    `ROUTER_REQUIRE_US_REGION=false`. The second one is a recorded decision (STATE.md
@@ -138,8 +140,11 @@ and 8. Base URL below is the router's admin API.
 The accuracy harness is the only arbiter of which model is better on these forms. To compare:
 
 1. Upload the fixture bundle once **per candidate binding** — spans are immutable per page and
-   the layout job short-circuits when spans exist, so a re-run on the same bundle proves
-   nothing. Content-hash dedup flags the second upload as a duplicate but does not block it.
+   the layout job short-circuits when the page is marked laid out, so a re-run on the same
+   bundle proves nothing. Content-hash dedup flags the second upload as a duplicate but does
+   not block it. Use `test/fixtures/irs_*.pdf` plus `cover_letter.pdf` and `blank_page.pdf`
+   (the `irs-official-forms-2025` bundle): those are real IRS layouts, and the two non-form
+   pages are what every client packet contains.
 2. Between runs change only the router policy (step 6). Never change the app.
 3. Let classification finish, confirm identity in the UI, let extraction finish. Check
    `router_jobs` for the bundle is empty.
@@ -222,10 +227,14 @@ different coordinate convention. The app normalized it and recorded the conventi
 page, so nothing is wrong yet, but open one of those pages in the review UI and confirm the
 boxes sit on the text before trusting the season's overlays.
 
-### The UI says "Router unreachable — work is parked"
+### The UI says "Router unreachable — work is parked", or "N router job(s) failed"
 
 The router is down or the app token is wrong. Work is parked, not lost: nothing failed the
-bundle. Check `docker compose logs api`, verify the router is up, then re-queue.
+bundle. Check `docker compose logs api`, verify the router is up, then **Retry parked/failed
+jobs** in the bundle header (admin or partner; `POST /api/bundles/:id/router-jobs/requeue`).
+Each job is re-created at the stage it stopped in — a layout page, a document binding, or the
+whole classification — and the failure row is kept as `requeued`. A failed job (permanent
+router code such as `invalid_response`) is retried the same way once the cause is fixed.
 
 ```bash
 docker compose exec postgres psql -U vibe1040 -c \
@@ -249,10 +258,19 @@ extracted values and their coordinates survive; only the pixels are gone.
 
 ### Extraction is slower or costlier than expected
 
-Multi-pass agreement is the only confidence signal the router surfaces (QUESTIONS.md Q4), so
-every field extraction costs at least `EXTRACT_PASSES` inferences, escalating to
-`EXTRACT_PASSES_ON_DISAGREEMENT` when passes disagree. Lowering `EXTRACT_PASSES` to 1
-removes the only misread detection the system has.
+Native pages cost no layout inference at all: their spans come from the PDF text layer in the
+sidecar (`pages.layout_source = 'text_layer'`). Only raster pages go to `v1040_layout`. Binding
+costs `EXTRACT_PASSES` inferences per document (default 1), escalating to
+`EXTRACT_PASSES_ON_DISAGREEMENT` when passes disagree. Misread detection does not depend on
+the pass count — every bound value is verified against the spans it cites (`span_mismatch`).
+
+### A bundle sits in `extracting`
+
+Since 0007 this means work is genuinely outstanding: a page without a layout outcome or a
+document without an extraction outcome. Open the bundle; parked or failed router jobs show in
+the header with a retry button. `select id, layout_completed_at, layout_source, span_count from
+pages where bundle_id = …` and `select form_type, extraction_outcome from documents where
+bundle_id = …` name what is still open.
 
 ## Retention
 

@@ -4,7 +4,17 @@ import { api, formatCents } from './api';
 import { FieldEditor } from './components/FieldEditor';
 import { PageOverlay } from './components/PageOverlay';
 import { Admin } from './components/Admin';
-import type { Bundle, CheckRow, DocumentRow, FactorState, FieldRow, PageRow, SpanRow, WorksheetLine } from './types';
+import type {
+  Bundle,
+  CheckRow,
+  DocumentRow,
+  FactorState,
+  FieldRow,
+  PageRow,
+  RouterJobRow,
+  SpanRow,
+  WorksheetLine,
+} from './types';
 
 type View = 'login' | 'mfa' | 'forgot' | 'bundles' | 'review' | 'admin';
 
@@ -529,6 +539,8 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
   const [checks, setChecks] = useState<CheckRow[]>([]);
   const [blocking, setBlocking] = useState<{ id: string; checkKey: string; message: string }[]>([]);
   const [routerDown, setRouterDown] = useState(false);
+  const [routerJobs, setRouterJobs] = useState<RouterJobRow[]>([]);
+  const [requeueing, setRequeueing] = useState(false);
   const [activeDoc, setActiveDoc] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ pages: PageRow[]; fields: FieldRow[]; spans: SpanRow[] } | null>(null);
   const [selectedField, setSelectedField] = useState<FieldRow | null>(null);
@@ -547,6 +559,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         setChecks(data.checks);
         setBlocking(data.blocking);
         setRouterDown(data.routerDown);
+        setRouterJobs(data.routerJobs);
         setTaxpayers(data.taxpayers);
       })
       .catch((e: Error) => onError(e.message));
@@ -581,6 +594,27 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         <h2>{bundle?.label}</h2>
         <span className={`pill status-${bundle?.status}`}>{bundle?.status}</span>
         {routerDown && <span className="pill error">Router unreachable — work is parked</span>}
+        {routerJobs.some((j) => j.state === 'failed') && (
+          <span className="pill error" title={routerJobs.filter((j) => j.state === 'failed').map((j) => `${j.taskClass}: ${j.lastErrorCode ?? '?'} — ${j.lastErrorMessage ?? ''}`).join('\n')}>
+            {routerJobs.filter((j) => j.state === 'failed').length} router job(s) failed
+          </span>
+        )}
+        {routerJobs.length > 0 && (
+          <button
+            disabled={requeueing}
+            title="Send every parked or failed router job for this bundle back to the queue, at the stage it stopped in. Costs inference."
+            onClick={() => {
+              setRequeueing(true);
+              api
+                .requeueRouterJobs(bundleId)
+                .then(refreshBundle)
+                .catch((e: Error) => onError(e.message))
+                .finally(() => setRequeueing(false));
+            }}
+          >
+            {requeueing ? 'Requeueing…' : `Retry ${routerJobs.length} parked/failed job(s)`}
+          </button>
+        )}
         <div className="spacer" />
         <button
           disabled={blocking.length > 0 || !bundle?.identityConfirmedAt}
@@ -716,7 +750,13 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
                 {d.corrected && <span className="pill warn">CORRECTED</span>}
                 {d.void && <span className="pill warn">VOID</span>}
                 {d.taxYearMismatch && <span className="pill warn">year {d.taxYear}</span>}
+                {d.sectionCode && <span className="pill">section {d.sectionCode}</span>}
                 {d.parentDocumentId && <span className="pill">sub-form</span>}
+                {d.extractionOutcome === 'no_schema' && <span className="pill error">no schema</span>}
+                {d.extractionOutcome === 'no_spans' && <span className="pill error">no text found</span>}
+                {d.extractionOutcome === null && d.formType && !d.isSupplemental && (
+                  <span className="pill">extracting…</span>
+                )}
               </span>
             </button>
           ))}

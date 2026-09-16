@@ -10,6 +10,7 @@
  * audited firm-admin action that this app cannot perform for itself.
  */
 import type { TaskClassDeclaration } from '@kisaes/vibe-ai-client';
+import { env } from '../config/env.ts';
 
 export const APP_NAME = 'vibe-1040';
 
@@ -73,8 +74,13 @@ export const DECLARATIONS: TaskClassDeclaration[] = [
   },
   {
     key: TASK_CLASS.FIELD_EXTRACT,
-    description: 'Bind tax-form schema fields to layout span ids',
-    requires: { json_schema: true },
+    description: env.EXTRACT_ATTACH_PAGE_IMAGE
+      ? 'Bind tax-form schema fields to layout span ids, reading the page image alongside'
+      : 'Bind tax-form schema fields to positioned layout spans',
+    // With the page image attached the binder needs a vision model; the requirement is
+    // declared so policy refuses a text-only binding instead of the model silently ignoring
+    // the image. Registration re-reads this on every start.
+    requires: env.EXTRACT_ATTACH_PAGE_IMAGE ? { vision: true, json_schema: true } : { json_schema: true },
     defaultMaxTokens: 4096,
   },
 ];

@@ -37,7 +37,7 @@ import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
 import { ingestBundle, ingestBundlesPerFile, type IncomingFile, type IngestResult } from '../ingest/upload.ts';
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
-import { queueExtractionForDocuments, startExtraction } from '../queue/pipeline.ts';
+import { queueExtractionForDocuments, requeueRouterJobs, startExtraction } from '../queue/pipeline.ts';
 import { blockingFailures } from '../reconcile/gate.ts';
 import { deleteBundle } from '../retention/delete-bundle.ts';
 import { isRouterReachable } from '../router/client.ts';
@@ -423,10 +423,24 @@ export function registerRoutes(app: FastifyInstance): void {
 
     const docs = await db.select().from(documents).where(eq(documents.bundleId, id));
     const checks = await db.select().from(checkResults).where(eq(checkResults.bundleId, id));
-    const parked = await db
-      .select()
+    // Parked AND failed. A permanently failed job (invalid_response, output_truncated) used
+    // to be invisible here, so a bundle stuck at `extracting` looked merely slow.
+    const jobs = await db
+      .select({
+        id: routerJobs.id,
+        taskClass: routerJobs.taskClass,
+        state: routerJobs.state,
+        pageId: routerJobs.pageId,
+        documentId: routerJobs.documentId,
+        lastErrorCode: routerJobs.lastErrorCode,
+        lastErrorMessage: routerJobs.lastErrorMessage,
+        retryAfter: routerJobs.retryAfter,
+        createdAt: routerJobs.createdAt,
+      })
       .from(routerJobs)
-      .where(and(eq(routerJobs.bundleId, id), eq(routerJobs.state, 'parked')));
+      .where(and(eq(routerJobs.bundleId, id), inArray(routerJobs.state, ['parked', 'failed'])));
+    const parked = jobs.filter((j) => j.state === 'parked');
+    const failed = jobs.filter((j) => j.state === 'failed');
     const people = await db
       .select({
         taxpayerId: taxpayers.id,
@@ -447,8 +461,31 @@ export function registerRoutes(app: FastifyInstance): void {
       // The UI says "the Router is down" rather than "extraction failed" (§3).
       routerDown: parked.length > 0 || !isRouterReachable(),
       parkedJobs: parked.length,
+      failedJobs: failed.length,
+      routerJobs: jobs,
       blocking: await blockingFailures(id),
     };
+  });
+
+  /**
+   * Send every parked or failed router job for the bundle back to the queue, at the stage
+   * it failed in. Admin or partner, because it spends inference.
+   */
+  app.post('/api/bundles/:id/router-jobs/requeue', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin', 'partner']);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    const result = await requeueRouterJobs(id, user.id);
+    await auditAccess(req, 'bundle.requeue', {
+      bundleId: id,
+      entityType: 'bundle',
+      entityId: id,
+      detail: result,
+    });
+    return { ok: true, ...result };
   });
 
   // ── identity confirmation gate (§7) ────────────────────────────────────────

@@ -19,6 +19,23 @@ at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
 
+**Verified by execution on 2026-09-16** (pipeline review change set, released as v0.6.0;
+carries **migration 0007**):
+
+- 218 tests pass across 18 files (`npm test`), including a new **stage hand-off integration
+  test** (`test/pipeline.test.ts`) that walks a bundle with a cover letter, a native W-2, a
+  blank duplex page, and an unregistered form from raster output to `blocked`, with the
+  router mocked and the database real. That bundle stalled twice before this change set and
+  no test crossed a stage boundary to notice. The test skips itself, loudly, when the test
+  Postgres is not up.
+- Migration 0007 ran forward, back, and forward again against the compose Postgres 17.
+- `tsc --noEmit` clean; the UI builds; the sidecar compiles and its new text-layer span
+  extraction was run on the fixture W-2 (44 spans, boxes inside 0..1, rotation handled).
+- The IRS-form fixtures generate: every filled value is asserted present in the flattened
+  text layer, so the field maps are known to be right for the 2025 revisions on disk.
+- **Still not verified:** anything past the router boundary. No model has yet read the
+  IRS-layout fixtures. The harness is the next step and needs the router provisioned.
+
 **Verified by execution on 2026-09-02** (DigitalOcean-binding change set):
 
 - 126 tests pass across 12 files (`npm test`), including new coverage for page-level
@@ -83,6 +100,17 @@ the host):
 - Retention job runs and logs; dry-run mode works.
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
+
+**Released 2026-09-16 as v0.6.0** — the pipeline review change set (decision log 2026-09-16).
+Stage completion recorded instead of inferred, so a cover letter or a blank page no longer
+strands a bundle; silent drops (`no_registered_schema`, off-year documents, unnormalized form
+types) made loud; a requeue action for parked and failed router jobs; exact PyMuPDF geometry
+for native pages; the binder given span positions; verification against cited spans as the
+confidence signal in place of same-prompt repetition; 1099-B split per Form 8949 section;
+IRS-layout fixtures. A minor because the pipeline's stage contract and §4's geometry source
+both changed. **Carries migration 0007**, which also relaxes the §4 CHECK constraint that
+rejected every blank box. Images `ghcr.io/kisaesdevlab/vibe-1040` and `-sidecar`, tagged
+`0.6.0` / `0.6`.
 
 **Released 2026-09-11 as v0.5.0** — optional OCR transcription for pages with no text layer.
 Adds a fourth task class, `v1040_ocr_transcribe`, requiring `vision` and deliberately not
@@ -525,6 +553,62 @@ Kurt's call, and the right one — he pushed back on the gate as unnecessary and
 agreed with him.
 *Affects:* P4, P7, P8, P10, §7.
 
+**2026-09-16 — Pipeline review: stage completion recorded, exact geometry for native pages, the binder given position, verification as the confidence signal, 1099-B per section, IRS-layout fixtures.**
+An exhaustive review of the recognition path found the app could not finish a real client
+packet, and would not have been accurate if it had. Eight changes, one change set, migration
+0007. Each is a decision worth recording because each reverses something the build believed.
+
+1. **Stage completion is recorded, never inferred.** "Layout is done when every page has a
+   span row" stalled on any blank page (a blank page stores zero spans); "extraction is done
+   when no document is still `classified`" stalled on any cover letter (never extracted, never
+   left `classified`). Every real packet has both. `pages.layout_completed_at` / `span_count` /
+   `layout_source` and `documents.extraction_outcome` / `extraction_completed_at` are written on
+   every exit path, and `advanceAfterLayout` / `advanceAfterExtraction` are the only places a
+   bundle moves stage. A reprocess from classify also now deletes the prior documents instead
+   of doubling the list.
+2. **Silent drops made loud.** `no_registered_schema` was written at extraction and deleted by
+   reconcile's reset; it and a new `no_layout_spans` are now recomputed at reconcile from the
+   document's recorded outcome. The registry resolves to the nearest registered year in either
+   direction (a 2024 document in the pile is read, with a soft `schema_year_substituted`), and
+   the classifier's free-string form type is normalized onto registry keys ("Form W2",
+   "Schedule K-1 (Form 1065)", "SSA 1042-S") before lookup.
+3. **Requeue exists.** `POST /api/bundles/:id/router-jobs/requeue` re-creates every parked or
+   failed router job at the stage it stopped in; the bundle view shows failed jobs, which were
+   invisible before (only `parked` was queried). "Re-queue" had been a word in the runbook with
+   nothing behind it.
+4. **Exact geometry from the text layer.** Revises the 2026-09-02 "VLM geometry kept" decision
+   for native pages only: the sidecar measures PyMuPDF words with exact boxes, merges them into
+   spans, and marks the page laid out; the vision layout pass runs only for raster pages. Cloud
+   binding unchanged. No pixel leaves the appliance to obtain geometry for a native page, and
+   the boxes are exact rather than estimated. Recorded per page as `layout_source`.
+5. **The binder sees position.** It received `[index] text` with geometry stripped; on a W-2
+   grid nothing tied "85,000.00" to box 1 rather than box 3. Spans are now serialized in rows,
+   left to right, with x/y in thousandths, and the prompt explains the grid and multi-copy
+   pages. `EXTRACT_ATTACH_PAGE_IMAGE` (default off) additionally sends the page image and
+   registers the class as a vision class — the runbook binding is text-only, so it is opt-in.
+6. **Verification replaces repetition as the confidence signal.** Two passes of the same prompt
+   at temperature 0 against the same model agree whether or not they are right, so multi-pass
+   agreement measured nothing at 2× cost (Q8 answered). Every bound value is now checked against
+   the spans it cites (money in cents, text loosely) and flagged `span_mismatch` when absent —
+   a new review reason and a new column-level rule. `EXTRACT_PASSES` defaults to 1; later
+   passes run at a non-zero temperature and optionally against a second model. The §4 CHECK
+   constraint was also wrong in the other direction: it rejected a *blank* field with no span,
+   so the first real extraction would have failed on its first empty box. Relaxed in 0007.
+7. **1099-B is one document per Form 8949 section.** The old schema had ten "repeating" fields
+   and a flat bind response over a (document, field) unique index, so lots collapsed to one row
+   and two sections shared one `section_code`. The classifier now reports the section letter,
+   grouping splits on it, the schema carries the section subtotals printed at its foot, and
+   `b_section_subtotals_foot_to_summary` runs on the container against `summary_proceeds`.
+   Per-lot rows are a v2 question; Schedule D needs section totals.
+8. **Fixtures from the IRS's own forms.** `fixtures/irs_forms.py` fills the official fillable
+   PDFs (public US government works, kept in `fixtures/irs/`) with invented data, flattens
+   them, and keeps Copy B. The new bundle also carries a cover letter, a blank page, a
+   three-copies-on-one-page W-2, and a scanned W-2 — what a client packet actually contains.
+   The synthetic drawings stay for the arithmetic cases they were built for.
+
+Not done, and not claimable: no model has read any of it. The harness run is next and needs
+the router provisioned per the runbook. *Affects:* P2, P4, P7, P8, P9, §4, §6, §8, Q8, Q17.
+
 **2026-09-11 — Optional OCR fallback for pages with no text layer; sensitivity left to the firm.**
 Added `v1040_ocr_transcribe`, requiring `vision` and deliberately not `json_schema`. That is
 the only shape that can bind to the Router's `local_ocr` kind, which is pinned
@@ -559,13 +643,14 @@ and remains deferred.
 |---|---|---|
 | **Unscrubbed page images carrying SSNs egress to cloud providers** | P7, P8, P14 | Accepted 2026-08-26 — see decision log. WISP must name it (Q12); region pinning is the only remaining control (Q11) |
 | **No region enforcement exists, so nothing prevents non-US inference** | P14 | Accepted 2026-09-02 for the DigitalOcean binding — contractual only (Q13). Q11 remains open for R6 |
-| A general VLM returns plausible but imprecise span boxes | P7, P11 | Accepted 2026-09-02 (VLM geometry kept over sidecar geometry). Convention recorded per page; overlay checked at P7 verification; sidecar geometry is the fallback design (Q14) |
+| A general VLM returns plausible but imprecise span boxes | P7, P11 | Raster pages only since 2026-09-16; native pages carry exact PyMuPDF boxes (`layout_source`). Convention recorded per page; overlay checked at P7 verification |
 | 0–1000 vs pixel convention ambiguity on a near-empty page | P7 | Page-level detection prefers the requested scale; convention stored on the page; worker warns on any other |
 | Dense pages exceed the layout output budget | P7 | Budget 16384; one values-only retry; then `failed` with `json_truncated` in `router_jobs` for the operator |
 | Classes stay pinned `local_only` if provisioning forgets the firm-admin widening | P7 | App cannot widen itself; add to the provisioning checklist and assert the effective tier at startup |
-| Multi-pass is the only confidence signal, at ≥2× inference cost per field | P8 | Q4/Q8 — budget for it; do not promise calibrated confidence in the UI |
+| Multi-pass is the only confidence signal, at ≥2× inference cost per field | P8 | Retired 2026-09-16 — verification against cited spans (`span_mismatch`) is the signal; passes default to 1 (Q8) |
 | Constrained decoding may reduce accuracy on long documents vs prompt-based JSON | P8 | Validate empirically on fixtures; keep a re-prompt-and-validate fallback |
-| Consolidated 1099 layouts vary widely by brokerage | P4, P9 | Build the fixture set from multiple brokerages before P4 exit |
+| Consolidated 1099 layouts vary widely by brokerage | P4, P9 | Build the fixture set from multiple brokerages before P4 exit; 1099-B sections split by the classifier's section letter (2026-09-16) |
+| Classifier misfires now block, and section splitting depends on the classifier reading the 8949 heading | P4, P9 | Text-layer pre-classification cross-checks native pages and logs disagreement; measure on the IRS-layout fixtures |
 | Base64 inflation pushes request bodies past Router limits during season | P7 | Largely retired — Router default is 10 MiB vs ~800 KB/page. Still measure encoded sizes at P2 exit and confirm the deployed value |
 | K-1 renderings differ across UltraTax, CCH, Lacerte | P15 | Three-rendering fixture requirement in P15 exit criteria |
 | Powered-off GPU droplets still bill if the Router ever provisions one | Router-side | Not this repo's concern, but flag to Router work |
@@ -591,6 +676,9 @@ The build is only as good as the fixture set. Track what exists.
 | Bundle with planted prior-year document | yes | `1098_prior_year.pdf` — TY2024 in a TY2025 bundle |
 | K-1 1065 with §199A statement | yes | all three K-1 fixtures carry a box 20 code Z statement page |
 | K-1 from three different tax packages | yes | UltraTax / CCH / Lacerte renderings, visibly different layouts |
+| **IRS-layout forms** (W-2, 1099-INT, -DIV, -R, -NEC, -MISC, 1098) | yes | `irs_*.pdf` — official fillable PDFs filled and flattened; Copy B only |
+| W-2 with three copies on one page | yes | `irs_w2_three_copies.pdf` — payroll-vendor layout, identical values ×3 |
+| Cover letter and blank page | yes | `cover_letter.pdf`, `blank_page.pdf` — the two pages that stalled every real bundle |
 
 All fixtures must be synthetic or fully de-identified. Do not use live client documents as
 test fixtures.

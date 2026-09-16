@@ -6,7 +6,8 @@
   "container": true,
   "allJudgmentRequired": false,
   "checks": [
-    "consolidated_subforms_tie_to_summary"
+    "consolidated_subforms_tie_to_summary",
+    "b_section_subtotals_foot_to_summary"
   ],
   "fields": [
     {

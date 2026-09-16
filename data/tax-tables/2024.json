@@ -1,0 +1,20 @@
+{
+  "taxYear": 2024,
+  "socialSecurityWageBaseCents": 16860000,
+  "socialSecurityRate": 0.062,
+  "medicareRate": 0.0145,
+  "additionalMedicareRate": 0.009,
+  "additionalMedicareThresholdCents": 20000000,
+  "notes": [
+    "Wage base and rates are data, not constants in code (PHASES.md P9).",
+    "2024 Social Security wage base is $168,600.",
+    "Registered so a prior-year document in a current-year bundle (§7) is checked against its own year's limits rather than crashing reconcile.",
+    "Additional Medicare tax applies to box 5 wages above $200,000 regardless of filing status; the employer withholds on that basis."
+  ],
+  "form1099K": {
+    "reportingThresholdCents": 500000,
+    "reportingTransactionCount": 0,
+    "notes": "TY2024 IRS transitional threshold of $5,000 with no transaction-count test (Notice 2024-85)."
+  },
+  "form1099NecMiscThresholdCents": 60000
+}

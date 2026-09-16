@@ -117,12 +117,18 @@ export class FormRegistry {
   }
 
   /**
-   * Resolve with fallback to the most recent earlier year. A form whose layout did not
-   * change between seasons should not need a copied file, but the caller is told which
-   * year actually answered so the worksheet can say so.
+   * Resolve to the nearest registered year, preferring the most recent earlier one, then
+   * the nearest later one. A form whose layout did not change between seasons should not
+   * need a copied file, and a prior-year document in the pile (§7) must still be read rather
+   * than dropped. The caller is told which year answered; reconciliation annotates any
+   * substitution so a reviewer knows the box map came from another season.
    */
   resolve(formType: string, taxYear: number): { schema: FormSchema; resolvedYear: number } | undefined {
-    const years = [...this.byYear.keys()].filter((y) => y <= taxYear).sort((a, b) => b - a);
+    const years = [...this.byYear.keys()].sort((a, b) => {
+      const da = a <= taxYear ? taxYear - a : 1000 + (a - taxYear);
+      const db = b <= taxYear ? taxYear - b : 1000 + (b - taxYear);
+      return da - db;
+    });
     for (const y of years) {
       const schema = this.byYear.get(y)?.get(formType);
       if (schema) return { schema, resolvedYear: y };

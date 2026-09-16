@@ -154,7 +154,7 @@ describe('fixture set', () => {
     );
     expect(noncovered.length).toBeGreaterThanOrEqual(1);
     // A noncovered lot prints no basis at all — blank, not zero.
-    expect(noncovered[0]!.fields['summary_total_cost_basis']).toBeNull();
+    expect(noncovered[0]!.fields['section_total_cost_basis']).toBeNull();
   });
 
   it('includes a CORRECTED 1099 flagged at classification (P4)', async () => {

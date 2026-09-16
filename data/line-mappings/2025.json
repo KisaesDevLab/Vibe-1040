@@ -578,12 +578,7 @@
     },
     {
       "formType": "1099-B",
-      "fieldKey": "summary_total_proceeds",
-      "lineRef": "SCHD:PROCEEDS"
-    },
-    {
-      "formType": "1099-B",
-      "fieldKey": "box_1d_proceeds",
+      "fieldKey": "section_total_proceeds",
       "lineRef": "SCHD:PROCEEDS"
     },
     {
