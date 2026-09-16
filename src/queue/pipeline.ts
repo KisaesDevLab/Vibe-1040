@@ -452,7 +452,8 @@ export async function extractDocument(
         formType: doc.formType,
       }));
       const proposal = proposeIdentity(observations, [{ documentId, taxYear: doc.taxYear }]);
-      await saveProposal(bundleId, proposal);
+      // Refines the taxpayers; never the bundle year, which one document cannot outvote.
+      await saveProposal(bundleId, proposal, { setTaxYear: false });
     }
 
     await finishDocument(documentId, 'extracted', {

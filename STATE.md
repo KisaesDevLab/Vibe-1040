@@ -101,6 +101,11 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-16 as v0.7.1** — the bundle tax year is the classification majority and
+is no longer overwritten by the last document's proposal; confirming identity no longer
+re-extracts the bundle; the confirm panel takes a tax year; the title-box year outranks due
+dates in the text-layer reader. No migration. Images tagged `0.7.1` / `0.7`.
+
 **Released 2026-09-16 as v0.7.0** — fixes from the first real packets through v0.6.0 and the
 review workbook (decision log, same date). Stage fan-out claimed once per run; empty boxes
 (`$`, uncited `0`, unchecked checkboxes) stored blank without prompting; tax year read from the
@@ -560,6 +565,19 @@ uploads come from inside the firm, and reprocessing exists if a bundle needs red
 Kurt's call, and the right one — he pushed back on the gate as unnecessary and the evidence
 agreed with him.
 *Affects:* P4, P7, P8, P10, §7.
+
+**2026-09-16 — The bundle year came from whichever document extracted last; confirmation re-ran extraction.** (v0.7.1)
+A 2025 packet showed tax year 2026 with every form printed 2025. `saveProposal` wrote the
+proposal's year onto the bundle, and the post-extraction refinement is called per document with
+that one document's year, so a 5498 read as 2026 became the bundle year by extracting last. The
+proposal now sets the bundle year only at classification (the true majority); the per-document
+refinement touches taxpayers only, and no longer flips the bundle status mid-pipeline. The
+confirm route still called `startExtraction`, a leftover from the pre-2026-09-10 gate, so every
+confirmation re-extracted the whole bundle at full inference cost; it now re-runs reconcile only
+when the reviewer changed the year. The confirm panel has a year field, and confirming re-flags
+every document's mismatch against the chosen year. The text-layer year reader prefers the year
+printed beside the form name over due dates and contribution dates elsewhere on the page, and the
+classifier prompt says so too. *Affects:* P4, P5, P7, §7.
 
 **2026-09-16 — First real packets through v0.6.0: fan-out claimed once, empty boxes stop prompting, the year comes from the text layer, soft annotations can be acknowledged, and the workbook becomes a review instrument.** (v0.7.0, migration 0008)
 

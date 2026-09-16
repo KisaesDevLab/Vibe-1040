@@ -126,7 +126,11 @@ export function proposeIdentity(
  * Persist a proposal as *proposed*. Nothing is confirmed here — `confirmIdentity` is a
  * separate, human-driven step, and extraction results must not commit before it (§7).
  */
-export async function saveProposal(bundleId: string, proposal: IdentityProposal): Promise<void> {
+export async function saveProposal(
+  bundleId: string,
+  proposal: IdentityProposal,
+  options: { setTaxYear: boolean } = { setTaxYear: true },
+): Promise<void> {
   for (const [index, proposed] of proposal.taxpayers.entries()) {
     const [row] = await db
       .insert(taxpayers)
@@ -165,10 +169,19 @@ export async function saveProposal(bundleId: string, proposal: IdentityProposal)
       .where(eq(documents.id, mismatch.documentId));
   }
 
-  await db
-    .update(bundles)
-    .set({ taxYear: proposal.taxYear, status: 'awaiting_identity_confirmation', updatedAt: new Date() })
-    .where(eq(bundles.id, bundleId));
+  /**
+   * The bundle year is the majority across the whole bundle, proposed at classification.
+   * A later proposal made from one document — the post-extraction refinement carries a single
+   * document's year — must not replace it: with a 5498 read as 2026 in a 2025 pile, whichever
+   * document extracted last used to become the bundle year. Status is left alone here too;
+   * the pipeline owns it.
+   */
+  if (options.setTaxYear && proposal.taxYear !== null) {
+    await db
+      .update(bundles)
+      .set({ taxYear: proposal.taxYear, updatedAt: new Date() })
+      .where(eq(bundles.id, bundleId));
+  }
 
   await renameBundleFromPrimaryTaxpayer(bundleId, proposal);
 }
@@ -236,4 +249,14 @@ export async function confirmIdentity(
       updatedAt: new Date(),
     })
     .where(eq(bundles.id, bundleId));
+
+  // The reviewer's year is the bundle year. Re-flag every document against it, so a
+  // proposal that was wrong does not leave stale mismatch marks behind.
+  const docs = await db.select({ id: documents.id, taxYear: documents.taxYear }).from(documents).where(eq(documents.bundleId, bundleId));
+  for (const doc of docs) {
+    await db
+      .update(documents)
+      .set({ taxYearMismatch: doc.taxYear !== null && doc.taxYear !== taxYear })
+      .where(eq(documents.id, doc.id));
+  }
 }

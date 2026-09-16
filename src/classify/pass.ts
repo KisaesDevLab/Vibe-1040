@@ -108,7 +108,9 @@ function systemPrompt(formTypes: readonly string[]): string {
     'tax_year is the calendar year the form REPORTS: the large printed year, or the year after',
     '"For calendar year". It is never the form revision date such as "(Rev. January 2024)" or',
     '"Rev. 1-2024", and never an OMB or catalog number. A 2025 form may carry a 2024 revision',
-    'date; its tax_year is 2025.',
+    'date; its tax_year is 2025. It is also never a due date, a payment date, or the year a',
+    'contribution was made: a Form 5498 or 1099-R issued in 2026 for 2025 says 2025 in its',
+    'title box, and that is the tax_year.',
     '',
     'Report what is printed. Do not infer a form type from context you cannot see on this page.',
     '',
@@ -293,6 +295,14 @@ export function preclassifyFromText(text: string | null, known: readonly string[
 export function dominantYear(upper: string): number | null {
   const calendar = upper.match(/(?:FOR\s+)?CALENDAR\s+YEAR\s*[:\-]?\s*(20[0-9]{2})\b/);
   if (calendar) return Number(calendar[1]);
+  // The year printed in the title box sits next to the form name: "2025 Form 1098-E",
+  // "Form 5498 2025", "Form 1099-INT (Rev. January 2024) 2025". A due date or a
+  // contribution date elsewhere on the page does not outvote it.
+  const FORM = 'FORM\\s+(?:W-?2G?|1099-?[A-Z]+|1098(?:-[ET])?|1095-?A|5498(?:-SA)?|SSA-?\\d{4}S?|RRB-?1099)';
+  const titled =
+    upper.match(new RegExp(`\\b(20[0-9]{2})\\s+${FORM}\\b`)) ??
+    upper.match(new RegExp(`\\b${FORM}\\s*(?:\\([^)]*\\))?\\s*(20[0-9]{2})\\b`));
+  if (titled) return Number(titled[1]);
   const stripped = upper
     .replace(/\(?\bREV\.?\s*[A-Z]*\.?\s*\d{0,2}\s*[-/]?\s*(20[0-9]{2})\)?/g, ' ')
     .replace(/\bOMB\s+NO\.?\s*\d{4}-\d{4}/g, ' ');

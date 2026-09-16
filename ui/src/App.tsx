@@ -549,6 +549,8 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
     { taxpayerId: string; displayName: string | null; tinLast4: string; role: string; proposed: boolean }[]
   >([]);
   const [confirming, setConfirming] = useState(false);
+  const [yearInput, setYearInput] = useState<string>('');
+  useEffect(() => setYearInput(bundle?.taxYear?.toString() ?? ''), [bundle?.taxYear]);
 
   const refreshBundle = useCallback(() => {
     api
@@ -699,8 +701,18 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
             </tbody>
           </table>
           <p className="muted">
-            Tax year <strong>{bundle.taxYear ?? 'not detected'}</strong>, the majority across these
-            documents. Any document with a different year is flagged.
+            Tax year{' '}
+            <input
+              value={yearInput}
+              onChange={(e) => setYearInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+              placeholder="20xx"
+              size={5}
+              title="Proposed as the majority year across the documents. Change it if the documents say otherwise; each document's own year can be corrected in its Fields pane."
+            />
+            {bundle.taxYear !== null && yearInput !== bundle.taxYear.toString() && (
+              <span className="pill warn"> proposed {bundle.taxYear}</span>
+            )}
+            . Any document with a different year is flagged.
           </p>
           <button
             /*
@@ -709,13 +721,13 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
              * and §7's gate is that a human looked — the client can be confirmed on the
              * refined proposal after extraction.
              */
-            disabled={confirming || bundle.taxYear === null}
+            disabled={confirming || yearInput.length !== 4}
             onClick={() => {
               setConfirming(true);
               api
                 .confirmIdentity(
                   bundleId,
-                  bundle.taxYear!,
+                  Number(yearInput),
                   taxpayers.map((t) => ({ taxpayerId: t.taxpayerId, role: t.role })),
                 )
                 .then(refreshBundle)

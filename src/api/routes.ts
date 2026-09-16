@@ -37,7 +37,7 @@ import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
 import { ingestBundle, ingestBundlesPerFile, type IncomingFile, type IngestResult } from '../ingest/upload.ts';
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
-import { queueExtractionForDocuments, requeueRouterJobs, startExtraction } from '../queue/pipeline.ts';
+import { queueExtractionForDocuments, requeueRouterJobs } from '../queue/pipeline.ts';
 import { blockingFailures } from '../reconcile/gate.ts';
 import { deleteBundle } from '../retention/delete-bundle.ts';
 import { isRouterReachable } from '../router/client.ts';
@@ -513,16 +513,29 @@ export function registerRoutes(app: FastifyInstance): void {
       })
       .parse(req.body);
 
+    const [before] = await db.select({ taxYear: bundles.taxYear }).from(bundles).where(eq(bundles.id, id)).limit(1);
     await confirmIdentity(id, user.id, body.taxpayers, body.taxYear);
     await auditAccess(req, 'bundle.identity_confirmed', {
       bundleId: id,
       entityType: 'bundle',
       entityId: id,
-      detail: { taxYear: body.taxYear, taxpayerCount: body.taxpayers.length },
+      detail: { taxYear: body.taxYear, previousTaxYear: before?.taxYear ?? null, taxpayerCount: body.taxpayers.length },
     });
 
-    const queued = await startExtraction(id, user.id);
-    return { ok: true, pagesQueued: queued };
+    /**
+     * Confirmation used to call `startExtraction` here — a leftover from when the gate sat
+     * before extraction. Since 2026-09-10 extraction has already run by the time anyone
+     * confirms, so that call re-extracted the entire bundle at full inference cost on every
+     * confirm. What confirmation changes is the year the checks are judged against, so
+     * reconcile re-runs when the reviewer picked a different year.
+     */
+    let reconcileQueued = false;
+    if (before?.taxYear !== body.taxYear) {
+      await db.update(bundles).set({ reconcileFanoutAt: new Date(), updatedAt: new Date() }).where(eq(bundles.id, id));
+      await pipelineQueue.add('reconcile_bundle', { kind: 'reconcile_bundle', bundleId: id, userId: user.id });
+      reconcileQueued = true;
+    }
+    return { ok: true, reconcileQueued };
   });
 
   app.post('/api/bundles/:id/classify', async (req, reply) => {

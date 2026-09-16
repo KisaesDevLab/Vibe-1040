@@ -192,6 +192,9 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
             // Cites the right span but reports a number that is not in it: a misread.
             { field_key: 'box_2', value: '9,999.00', span_indices: [3] },
             { field_key: 'employer_name', value: 'ACME MANUFACTURING INC', span_indices: [4] },
+            // A TIN makes extraction re-propose identity for this one 2024 document. That
+            // proposal must not overwrite the bundle's majority year (2025).
+            { field_key: 'employee_tin', value: '123-45-6789', span_indices: [0] },
             { field_key: 'box_3', value: null, span_indices: [] },
             // The model's three spellings of "empty": a bare "$", a zero it cannot cite, and
             // an unchecked box. None is a review item and none is an orphan (§5).
@@ -215,6 +218,11 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
     }
     expect(await pipeline.advanceAfterExtraction(bundleId, userId)).toBe('fanned_out');
     expect(await pipeline.advanceAfterExtraction(bundleId, userId)).toBe('already');
+    const [bundleAfter] = await db.select().from(schema.bundles).where(eq(schema.bundles.id, bundleId));
+    expect(bundleAfter!.taxYear, 'a single document\'s year must not replace the bundle majority').toBe(2025);
+    expect(bundleAfter!.status, 'the post-extraction proposal must not flip the status mid-pipeline').toBe('extracting');
+    const proposed = await db.select().from(schema.bundleTaxpayers).where(eq(schema.bundleTaxpayers.bundleId, bundleId));
+    expect(proposed).toHaveLength(1);
     expect(queued.mock.calls.filter((c) => c[0] === 'reconcile_bundle')).toHaveLength(1);
 
     const after = await db.select().from(schema.documents).where(eq(schema.documents.bundleId, bundleId));

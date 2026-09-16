@@ -95,6 +95,14 @@ describe('preclassifyFromText', () => {
     expect(preclassifyFromText('Form 1099-MISC (Rev. April 2025)', KNOWN)?.taxYear).toBeNull();
   });
 
+  it('takes the year in the title box over dates elsewhere on the page', () => {
+    // A 5498 for 2025 is issued in 2026 and talks about 2026 more than once.
+    const text =
+      '2025 Form 5498 IRA Contribution Information\nContributions made in 2026 for 2025 by April 15, 2026\nFile by May 31, 2026';
+    expect(preclassifyFromText(text, KNOWN)).toMatchObject({ formType: '5498', taxYear: 2025 });
+    expect(preclassifyFromText('Form 1098-E 2025 Student Loan Interest Statement', KNOWN)?.taxYear).toBe(2025);
+  });
+
   it('handles 1099 variants, 1098, and K-1s', () => {
     expect(preclassifyFromText('Form 1099-INT Interest Income', KNOWN)?.formType).toBe('1099-INT');
     expect(preclassifyFromText('Form 1098 Mortgage Interest Statement', KNOWN)?.formType).toBe('1098');
