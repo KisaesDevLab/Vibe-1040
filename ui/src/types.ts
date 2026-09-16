@@ -26,6 +26,15 @@ export interface DocumentRow {
   extractionOutcome: string | null;
 }
 
+export interface WorksheetRow {
+  id: string;
+  taxYear: number;
+  createdAt: string;
+  generatedByName: string | null;
+  hasXlsx: boolean;
+  hasPdf: boolean;
+}
+
 export interface RouterJobRow {
   id: string;
   taskClass: string;

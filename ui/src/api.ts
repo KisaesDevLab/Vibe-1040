@@ -8,6 +8,7 @@ import type {
   FieldRow,
   PageRow,
   RouterJobRow,
+  WorksheetRow,
   SettingRow,
   SpanRow,
   UserRow,
@@ -151,6 +152,7 @@ export const api = {
       parkedJobs: number;
       failedJobs: number;
       routerJobs: RouterJobRow[];
+      worksheets: WorksheetRow[];
       blocking: { id: string; checkKey: string; message: string }[];
     }>(`/api/bundles/${id}`),
 

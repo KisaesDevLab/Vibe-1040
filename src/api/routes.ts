@@ -454,6 +454,21 @@ export function registerRoutes(app: FastifyInstance): void {
       .where(and(eq(routerJobs.bundleId, id), inArray(routerJobs.state, ['parked', 'failed'])));
     const parked = jobs.filter((j) => j.state === 'parked');
     const failed = jobs.filter((j) => j.state === 'failed');
+    // Every generated worksheet, newest first, so the workbook is one click away after
+    // Generate and still there when the reviewer comes back tomorrow.
+    const generated = await db
+      .select({
+        id: worksheets.id,
+        taxYear: worksheets.taxYear,
+        createdAt: worksheets.createdAt,
+        generatedByName: users.displayName,
+        hasXlsx: sql<boolean>`${worksheets.xlsxStorageKey} is not null`,
+        hasPdf: sql<boolean>`${worksheets.pdfStorageKey} is not null`,
+      })
+      .from(worksheets)
+      .leftJoin(users, eq(users.id, worksheets.generatedBy))
+      .where(eq(worksheets.bundleId, id))
+      .orderBy(desc(worksheets.createdAt));
     const people = await db
       .select({
         taxpayerId: taxpayers.id,
@@ -476,6 +491,7 @@ export function registerRoutes(app: FastifyInstance): void {
       parkedJobs: parked.length,
       failedJobs: failed.length,
       routerJobs: jobs,
+      worksheets: generated,
       blocking: await blockingFailures(id),
     };
   });

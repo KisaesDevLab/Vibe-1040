@@ -101,6 +101,11 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-16 as v0.7.2** — the generated workbook is downloadable from the bundle
+view. The download route existed but the UI discarded the worksheet id after Generate, so
+nothing on screen led to the file. The bundle view now lists generated worksheets and shows
+Download Excel / Download PDF for the latest. No migration. Images tagged `0.7.2` / `0.7`.
+
 **Released 2026-09-16 as v0.7.1** — the bundle tax year is the classification majority and
 is no longer overwritten by the last document's proposal; confirming identity no longer
 re-extracts the bundle; the confirm panel takes a tax year; the title-box year outranks due

@@ -14,6 +14,7 @@ import type {
   RouterJobRow,
   SpanRow,
   WorksheetLine,
+  WorksheetRow,
 } from './types';
 
 type View = 'login' | 'mfa' | 'forgot' | 'bundles' | 'review' | 'admin';
@@ -540,6 +541,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
   const [blocking, setBlocking] = useState<{ id: string; checkKey: string; message: string }[]>([]);
   const [routerDown, setRouterDown] = useState(false);
   const [routerJobs, setRouterJobs] = useState<RouterJobRow[]>([]);
+  const [worksheets, setWorksheets] = useState<WorksheetRow[]>([]);
   const [requeueing, setRequeueing] = useState(false);
   const [activeDoc, setActiveDoc] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ pages: PageRow[]; fields: FieldRow[]; spans: SpanRow[] } | null>(null);
@@ -562,6 +564,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         setBlocking(data.blocking);
         setRouterDown(data.routerDown);
         setRouterJobs(data.routerJobs);
+        setWorksheets(data.worksheets);
         setTaxpayers(data.taxpayers);
       })
       .catch((e: Error) => onError(e.message));
@@ -634,8 +637,23 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
               .catch((e: Error) => onError(e.message));
           }}
         >
-          Generate worksheet
+          {worksheets.length ? 'Regenerate worksheet' : 'Generate worksheet'}
         </button>
+        {worksheets[0] && (
+          <span className="downloads" title={`Generated ${new Date(worksheets[0].createdAt).toLocaleString()}${worksheets[0].generatedByName ? ` by ${worksheets[0].generatedByName}` : ''}`}>
+            {worksheets[0].hasXlsx && (
+              <a className="button" href={`/api/worksheets/${worksheets[0].id}/xlsx`} download>
+                Download Excel
+              </a>
+            )}
+            {worksheets[0].hasPdf && (
+              <a className="button" href={`/api/worksheets/${worksheets[0].id}/pdf`} download>
+                Download PDF
+              </a>
+            )}
+            {worksheets.length > 1 && <span className="muted"> ({worksheets.length - 1} earlier)</span>}
+          </span>
+        )}
         <button
           title="Re-run the pipeline over the page images already stored. Costs inference."
           onClick={() => {
