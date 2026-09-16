@@ -42,6 +42,8 @@ import { blockingFailures } from '../reconcile/gate.ts';
 import { deleteBundle } from '../retention/delete-bundle.ts';
 import { isRouterReachable } from '../router/client.ts';
 import { blobs } from '../storage/index.ts';
+import { placementOf, sortDocuments } from '../worksheet/form-order.ts';
+import { buildSortedPdf } from '../worksheet/sorted-pdf.ts';
 import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts';
 import { IdentityNotConfirmedError, WorksheetBlockedError } from '../reconcile/gate.ts';
 import { auditAccess, requireRole, requireUser } from './middleware.ts';
@@ -421,7 +423,11 @@ export function registerRoutes(app: FastifyInstance): void {
 
     await auditAccess(req, 'bundle.view', { bundleId: id, entityType: 'bundle', entityId: id });
 
-    const docs = await db.select().from(documents).where(eq(documents.bundleId, id));
+    // Return order: wages, interest, dividends, retirement … then the pages that are not forms.
+    const docs = sortDocuments(await db.select().from(documents).where(eq(documents.bundleId, id))).map((d) => ({
+      ...d,
+      group: placementOf(d).groupLabel,
+    }));
     const checkRows = await db.select().from(checkResults).where(eq(checkResults.bundleId, id));
     const decided = checkRows.length
       ? await db
@@ -494,6 +500,42 @@ export function registerRoutes(app: FastifyInstance): void {
       worksheets: generated,
       blocking: await blockingFailures(id),
     };
+  });
+
+  /** Build (or rebuild) the bookmarked, return-ordered PDF of the source pages. */
+  app.post('/api/bundles/:id/sorted-pdf', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    const summary = await buildSortedPdf(id, user.id);
+    await auditAccess(req, 'bundle.sorted_pdf', {
+      bundleId: id,
+      entityType: 'bundle',
+      entityId: id,
+      detail: { pageCount: summary.pageCount, bookmarks: summary.bookmarks },
+    });
+    return { ok: true, ...summary };
+  });
+
+  /** The sorted PDF. Audited: this is every source page leaving the box in one file. */
+  app.get('/api/bundles/:id/sorted-pdf', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+    if (!bundle.sortedPdfStorageKey) return reply.code(404).send({ error: 'not built', message: 'Build the sorted PDF first.' });
+
+    await auditAccess(req, 'bundle.sorted_pdf_download', { bundleId: id, entityType: 'bundle', entityId: id });
+    const data = await blobs.get(bundle.sortedPdfStorageKey);
+    const safeLabel = bundle.label.replace(/[^A-Za-z0-9 _.-]+/g, '').trim() || 'bundle';
+    return reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `attachment; filename="${safeLabel} - sorted.pdf"`)
+      .send(data);
   });
 
   /**

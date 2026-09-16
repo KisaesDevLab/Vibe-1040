@@ -29,6 +29,7 @@ import { loadMapping } from '../mapping/engine.ts';
 import { APP_VERSION } from '../router/client.ts';
 import { registry } from '../schemas/registry.ts';
 import type { FieldType } from '../schemas/registry.ts';
+import { sortDocuments } from './form-order.ts';
 
 export interface ReviewField {
   fieldKey: string;
@@ -129,11 +130,9 @@ export async function loadReviewModel(bundleId: string, taxYear: number): Promis
   const forms = await registry();
   const mapping = await loadMapping(taxYear);
 
-  const docRows = await db
-    .select()
-    .from(documents)
-    .where(eq(documents.bundleId, bundleId))
-    .orderBy(asc(documents.createdAt));
+  const docRows = sortDocuments(
+    await db.select().from(documents).where(eq(documents.bundleId, bundleId)).orderBy(asc(documents.createdAt)),
+  );
 
   const pageRows = await db
     .select({

@@ -183,6 +183,9 @@ export const api = {
    * 'classify' starts again from the page images and is the only one that pays for vision.
    * A 409 means reclassifying would discard reviewer corrections; re-send acknowledged.
    */
+  buildSortedPdf: (bundleId: string) =>
+    request<{ ok: boolean; pageCount: number; bookmarks: number }>(`/api/bundles/${bundleId}/sorted-pdf`, { method: 'POST' }),
+
   requeueRouterJobs: (bundleId: string) =>
     request<{ ok: boolean; requeued: number; classify: boolean; pages: number; documents: number }>(
       `/api/bundles/${bundleId}/router-jobs/requeue`,

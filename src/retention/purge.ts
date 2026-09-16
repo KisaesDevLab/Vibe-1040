@@ -14,7 +14,7 @@ import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
 import { env } from '../config/env.ts';
 import { db } from '../db/client.ts';
-import { pages, purgeLog, sourceFiles } from '../db/schema.ts';
+import { bundles, pages, purgeLog, sourceFiles } from '../db/schema.ts';
 import { blobs } from '../storage/index.ts';
 
 export interface PurgeSummary {
@@ -49,6 +49,35 @@ export async function runRetention(): Promise<PurgeSummary> {
     );
 
   let rastersPurged = 0;
+
+  // The return-ordered PDF is source pages re-bound; it goes on the raster schedule (§11).
+  const staleSorted = await db
+    .select({ id: bundles.id, key: bundles.sortedPdfStorageKey, at: bundles.sortedPdfAt })
+    .from(bundles)
+    .where(and(isNotNull(bundles.sortedPdfStorageKey), lt(bundles.sortedPdfAt, rasterCutoff)));
+  for (const bundle of staleSorted) {
+    const ageDays = Math.floor((Date.now() - (bundle.at?.getTime() ?? Date.now())) / 86_400_000);
+    try {
+      if (!dryRun) {
+        await blobs.delete(bundle.key!);
+        await db.update(bundles).set({ sortedPdfStorageKey: null, sortedPdfAt: null }).where(eq(bundles.id, bundle.id));
+      }
+      await db.insert(purgeLog).values({
+        kind: 'sorted_pdf',
+        entityType: 'bundle',
+        entityId: bundle.id,
+        bundleId: bundle.id,
+        policyDays: env.RETENTION_RASTER_DAYS,
+        ageDays,
+        storageKey: bundle.key,
+        dryRun,
+      });
+      rastersPurged += 1;
+    } catch (err) {
+      errors.push({ key: bundle.key!, message: (err as Error).message });
+    }
+  }
+
   for (const page of staleRasters) {
     const ageDays = Math.floor((Date.now() - page.createdAt.getTime()) / 86_400_000);
     try {

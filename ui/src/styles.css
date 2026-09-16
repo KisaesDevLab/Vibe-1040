@@ -193,3 +193,6 @@ a.button:hover { background: #eef1f5; }
 .ws-c-amount { font-variant-numeric: tabular-nums; }
 .ws-c-src { color: var(--muted); font-size: 11px; }
 .ws-c-why { color: #7a4b00; font-size: 11px; margin-top: 2px; }
+
+/* Return-order group headings in the document list. */
+.doc-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 10px 0 4px; }

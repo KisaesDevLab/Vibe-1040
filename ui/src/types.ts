@@ -6,6 +6,8 @@ export interface Bundle {
   identityConfirmedAt: string | null;
   duplicateOfBundleId: string | null;
   createdAt: string;
+  /** Bookmarked, return-ordered PDF of the source pages, when built. */
+  sortedPdfAt?: string | null;
 }
 
 export interface DocumentRow {
@@ -24,6 +26,8 @@ export interface DocumentRow {
   sectionCode: string | null;
   /** extracted | skipped_supplemental | skipped_unclassified | no_schema | no_spans, or null while pending. */
   extractionOutcome: string | null;
+  /** Return-order group the server sorted this document into ("Wages", "Interest", …). */
+  group?: string;
 }
 
 export interface WorksheetRow {

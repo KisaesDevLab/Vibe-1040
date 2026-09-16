@@ -101,6 +101,10 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-16 as v0.8.0** — documents in return order in the UI and the workbook, and
+the bookmarked sorted PDF of the source pages (decision log, same date). **Carries migration
+0009.** Images tagged `0.8.0` / `0.8`.
+
 **Released 2026-09-16 as v0.7.3** — the worksheet preview lists what feeds each line
 (Judgment Required opens by default, with the reason per item); W-2 boxes 3–6 each get their own
 detail line instead of one meaningless sum (mapping 2025.2); box 16 is listed as state *wages*
@@ -577,6 +581,20 @@ uploads come from inside the firm, and reprocessing exists if a bundle needs red
 Kurt's call, and the right one — he pushed back on the gate as unnecessary and the evidence
 agreed with him.
 *Affects:* P4, P7, P8, P10, §7.
+
+**2026-09-16 — Documents in return order everywhere, and a bookmarked sorted PDF of the source pages.** (v0.8.0, migration 0009)
+One ordering, loaded from `data/form-order.json`: wages, interest, dividends, retirement,
+Social Security, capital gains, refunds, self-employment, K-1s, gambling, deductions, education
+and health accounts, marketplace insurance; unlisted forms after those, non-form pages last.
+Applied to the review UI's document list (with group headings), the workbook's Documents sheet
+and the order of its recap sheets, and a new artifact: the **sorted PDF**. The sidecar binds the
+stored source pages into one PDF in that order — PyMuPDF `insert_pdf`, so each page keeps its
+own text layer — with a level-1 bookmark per return section and a level-2 bookmark per
+document naming the form, section, issuer and CORRECTED/VOID. Built on demand from the bundle
+view (`POST /api/bundles/:id/sorted-pdf`, then a download), the job travels on the sidecar's
+existing queue and makes no AI call. It is source pages re-bound, so it is recorded on the
+bundle (`sorted_pdf_storage_key`) and **purged on the raster schedule** and on bundle delete
+(§11); it can be rebuilt while the sources exist. *Affects:* P11, P12, P13, §11.
 
 **2026-09-16 — The bundle year came from whichever document extracted last; confirmation re-ran extraction.** (v0.7.1)
 A 2025 packet showed tax year 2026 with every form printed 2025. `saveProposal` wrote the

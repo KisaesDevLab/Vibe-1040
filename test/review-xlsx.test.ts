@@ -169,7 +169,7 @@ describe('review workbook', () => {
   it('has the reading-path sheets in order', async () => {
     const { wb } = await build();
     expect(wb.worksheets.map((s) => s.name)).toEqual([
-      'Summary', 'Worksheet', 'Documents', '1099-INT', 'W-2', 'Judgment Required', 'Review Items', 'Checks', 'Provenance',
+      'Summary', 'Worksheet', 'Documents', 'W-2', '1099-INT', 'Judgment Required', 'Review Items', 'Checks', 'Provenance',
     ]);
   });
 

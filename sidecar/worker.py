@@ -116,8 +116,63 @@ def _process_image(bundle_id: str, source_file_id: str, data: bytes) -> list[dic
     ]
 
 
+def _assemble(payload: dict[str, Any]) -> dict[str, Any]:
+    """Bind the bundle's source pages into one PDF in return order, with bookmarks.
+
+    Pages from a PDF are inserted as-is, so each keeps its own text layer; a loose image
+    becomes a page of its own size. The outline has one level-1 entry per return section
+    (Wages, Interest, …) and a level-2 entry per document naming the form and the issuer.
+    """
+    out = pymupdf.open()
+    toc: list[list[Any]] = []
+    opened: dict[str, pymupdf.Document] = {}
+    try:
+        for section in payload["sections"]:
+            section_start: int | None = None
+            entries: list[list[Any]] = []
+            for entry in section["entries"]:
+                entry_start = out.page_count
+                for page_ref in entry["pages"]:
+                    key = page_ref["storageKey"]
+                    number = int(page_ref["pageNumber"])
+                    if page_ref["mediaType"] == "application/pdf":
+                        src = opened.get(key)
+                        if src is None:
+                            src = pymupdf.open(stream=store.get(key), filetype="pdf")
+                            opened[key] = src
+                        if 1 <= number <= src.page_count:
+                            out.insert_pdf(src, from_page=number - 1, to_page=number - 1)
+                    else:
+                        data = store.get(key)
+                        with pymupdf.open(stream=data) as image_doc:
+                            rect = image_doc[0].rect
+                        page = out.new_page(width=rect.width, height=rect.height)
+                        page.insert_image(page.rect, stream=data)
+                if out.page_count > entry_start:
+                    if section_start is None:
+                        section_start = entry_start
+                    entries.append([2, entry["title"], entry_start + 1])
+            if section_start is not None:
+                toc.append([1, section["label"], section_start + 1])
+                toc.extend(entries)
+        out.set_toc(toc)
+        page_count = out.page_count
+        data = out.tobytes(deflate=True, garbage=3)
+    finally:
+        for src in opened.values():
+            src.close()
+        out.close()
+    store.put(payload["outputKey"], data)
+    return {"kind": "assemble", "bundleId": payload["bundleId"], "pageCount": page_count, "bytes": len(data)}
+
+
 async def process(job, job_token) -> dict[str, Any]:  # noqa: ANN001 - bullmq types
     payload = job.data
+    if payload.get("kind") == "assemble":
+        log.info("assembling sorted PDF for bundle %s", payload["bundleId"])
+        result = _assemble(payload)
+        log.info("assembled %s: %d bytes", payload["bundleId"], result["bytes"])
+        return result
     bundle_id: str = payload["bundleId"]
     source_file_id: str = payload["sourceFileId"]
     storage_key: str = payload["storageKey"]

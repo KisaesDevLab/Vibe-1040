@@ -27,6 +27,7 @@ import ExcelJS from 'exceljs';
 import { centsToDollars, formatCents } from '../lib/money.ts';
 import type { WorksheetModel } from '../mapping/engine.ts';
 import type { WorksheetContext } from './model.ts';
+import { compareFormTypes } from './form-order.ts';
 import { documentTitle, pagesLabel, type ReviewCheck, type ReviewDocument, type ReviewField, type ReviewModel } from './review.ts';
 
 const MONEY = '#,##0.00;(#,##0.00)';
@@ -92,7 +93,8 @@ export function planFormSheets(review: ReviewModel): FormSheetPlan[] {
     byType.set(doc.formType, [...(byType.get(doc.formType) ?? []), doc]);
   }
   const plans: FormSheetPlan[] = [];
-  for (const [formType, docs] of [...byType.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+  // Sheets in return order — wages first — not alphabetical.
+  for (const [formType, docs] of [...byType.entries()].sort(([a], [b]) => compareFormTypes(a, b))) {
     const fieldRow = new Map<string, number>();
     docs[0]!.fields.forEach((f, i) => fieldRow.set(f.fieldKey, FIRST_FIELD_ROW + i));
     const docCol = new Map<string, number>();

@@ -17,7 +17,8 @@ export const QUEUE_NAMES = {
   PIPELINE: 'v1040.pipeline',
 } as const;
 
-export interface RasterJob {
+export interface RasterizeJob {
+  kind?: 'rasterize';
   bundleId: string;
   sourceFileId: string;
   storageKey: string;
@@ -25,6 +26,30 @@ export interface RasterJob {
   /** Carried through so the classify job that follows is attributed to the uploader. */
   userId?: string;
 }
+
+/**
+ * Assemble the bookmarked, return-ordered PDF from the stored source files. Same queue,
+ * same sidecar: it already holds the blob key and PyMuPDF, and it makes no AI calls.
+ */
+export interface AssembleJob {
+  kind: 'assemble';
+  bundleId: string;
+  outputKey: string;
+  sections: {
+    label: string;
+    entries: { title: string; pages: { storageKey: string; mediaType: string; pageNumber: number }[] }[];
+  }[];
+  userId?: string;
+}
+
+export interface AssembleResult {
+  kind: 'assemble';
+  bundleId: string;
+  pageCount: number;
+  bytes: number;
+}
+
+export type RasterJob = RasterizeJob | AssembleJob;
 
 export interface PageMetadata {
   pageNumber: number;

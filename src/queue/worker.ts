@@ -109,9 +109,10 @@ rasterEvents.on('completed', ({ jobId, returnvalue }) => {
       if (!job) return;
       const result =
         typeof returnvalue === 'string'
-          ? (JSON.parse(returnvalue) as { sourceFileId: string; pages: PageMetadata[] })
-          : (returnvalue as unknown as { sourceFileId: string; pages: PageMetadata[] });
-      if (!result?.pages) return;
+          ? (JSON.parse(returnvalue) as { kind?: string; sourceFileId: string; pages: PageMetadata[] })
+          : (returnvalue as unknown as { kind?: string; sourceFileId: string; pages: PageMetadata[] });
+      // The sidecar also assembles sorted PDFs on this queue; those results carry no pages.
+      if (result?.kind === 'assemble' || !result?.pages) return;
 
       await recordRasterOutput(job.data.bundleId, result.sourceFileId, result.pages);
       log('raster.recorded', {

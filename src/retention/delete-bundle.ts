@@ -47,6 +47,9 @@ export async function deleteBundle(bundleId: string): Promise<DeleteSummary> {
       targets.push({ key: page.rasterStorageKey, entityType: 'page', entityId: page.id, kind: 'raster' });
     }
   }
+  if (bundle.sortedPdfStorageKey) {
+    targets.push({ key: bundle.sortedPdfStorageKey, entityType: 'bundle', entityId: bundleId, kind: 'sorted_pdf' });
+  }
   for (const sheet of await db.select().from(worksheets).where(eq(worksheets.bundleId, bundleId))) {
     for (const key of [sheet.xlsxStorageKey, sheet.pdfStorageKey]) {
       if (key) targets.push({ key, entityType: 'worksheet', entityId: sheet.id, kind: 'worksheet' });

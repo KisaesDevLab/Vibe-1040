@@ -1,0 +1,23 @@
+{
+  "version": "2025.1",
+  "notes": [
+    "The order a preparer works a return in, top of Form 1040 downward, then schedules and credits. Used by the review UI's document list, the workbook's Documents sheet and recap sheets, and the bookmarked sorted PDF.",
+    "Forms not listed here sort after every group under 'Other forms'; pages that are not forms (cover letters, blank pages, supplemental detail) sort last under 'Other pages'.",
+    "Data, not code: adding a form type or moving one between groups is an edit here (PHASES.md P10 spirit)."
+  ],
+  "groups": [
+    { "label": "Wages", "line": "Form 1040 line 1", "forms": ["W-2"] },
+    { "label": "Interest", "line": "Form 1040 line 2 / Schedule B", "forms": ["1099-INT", "1099-OID"] },
+    { "label": "Dividends", "line": "Form 1040 line 3 / Schedule B", "forms": ["1099-DIV"] },
+    { "label": "Retirement distributions", "line": "Form 1040 lines 4–5", "forms": ["1099-R", "5498"] },
+    { "label": "Social Security and Railroad", "line": "Form 1040 line 6", "forms": ["SSA-1099", "SSA-1042S", "RRB-1099"] },
+    { "label": "Capital gains and sales", "line": "Form 1040 line 7 / Schedule D", "forms": ["1099-CONSOLIDATED", "1099-B", "1099-S"] },
+    { "label": "Refunds and government payments", "line": "Schedule 1", "forms": ["1099-G"] },
+    { "label": "Business and self-employment", "line": "Schedule 1 / Schedule C", "forms": ["1099-NEC", "1099-MISC", "1099-K"] },
+    { "label": "Pass-through (Schedule K-1)", "line": "Schedule E", "forms": ["K-1-1065", "K-1-1120S", "K-1-1041"] },
+    { "label": "Gambling", "line": "Schedule 1", "forms": ["W-2G"] },
+    { "label": "Deductions", "line": "Schedule A / Schedule 1", "forms": ["1098", "1098-E"] },
+    { "label": "Education, health and other accounts", "line": "Forms 8863, 8889, 8853, 1099-Q", "forms": ["1098-T", "1099-Q", "1099-SA", "5498-SA", "1099-LTC"] },
+    { "label": "Health insurance marketplace", "line": "Form 8962", "forms": ["1095-A"] }
+  ]
+}

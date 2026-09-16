@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, formatCents } from './api';
 import { FieldEditor } from './components/FieldEditor';
@@ -542,6 +542,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
   const [routerDown, setRouterDown] = useState(false);
   const [routerJobs, setRouterJobs] = useState<RouterJobRow[]>([]);
   const [worksheets, setWorksheets] = useState<WorksheetRow[]>([]);
+  const [sorting, setSorting] = useState(false);
   const [requeueing, setRequeueing] = useState(false);
   const [activeDoc, setActiveDoc] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ pages: PageRow[]; fields: FieldRow[]; spans: SpanRow[] } | null>(null);
@@ -643,6 +644,28 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         >
           {worksheets.length ? 'Regenerate worksheet' : 'Generate worksheet'}
         </button>
+        <button
+          disabled={sorting}
+          title="Build a PDF of every source page in return order — wages, interest, dividends, retirement … — with a bookmark naming each form and issuer."
+          onClick={() => {
+            setSorting(true);
+            api
+              .buildSortedPdf(bundleId)
+              .then(() => {
+                refreshBundle();
+                window.location.assign(`/api/bundles/${bundleId}/sorted-pdf`);
+              })
+              .catch((e: Error) => onError(e.message))
+              .finally(() => setSorting(false));
+          }}
+        >
+          {sorting ? 'Sorting…' : bundle?.sortedPdfAt ? 'Rebuild sorted PDF' : 'Sorted PDF'}
+        </button>
+        {bundle?.sortedPdfAt && !sorting && (
+          <a className="button" href={`/api/bundles/${bundleId}/sorted-pdf`} download title={`Built ${new Date(bundle.sortedPdfAt).toLocaleString()}`}>
+            Download sorted PDF
+          </a>
+        )}
         {worksheets[0] && (
           <span className="downloads" title={`Generated ${new Date(worksheets[0].createdAt).toLocaleString()}${worksheets[0].generatedByName ? ` by ${worksheets[0].generatedByName}` : ''}`}>
             {worksheets[0].hasXlsx && (
@@ -772,9 +795,10 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
       <div className="review-body">
         <aside className="doc-list">
           <h3>Documents</h3>
-          {documents.map((d) => (
+          {documents.map((d, i) => (
+            <Fragment key={d.id}>
+            {d.group && d.group !== documents[i - 1]?.group && <div className="doc-group">{d.group}</div>}
             <button
-              key={d.id}
               className={d.id === activeDoc ? 'doc active' : 'doc'}
               onClick={() => openDoc(d.id)}
             >
@@ -793,6 +817,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
                 )}
               </span>
             </button>
+            </Fragment>
           ))}
 
           <h3>Checks</h3>

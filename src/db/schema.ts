@@ -195,6 +195,9 @@ export const bundles = pgTable(
      */
     extractionFanoutAt: timestamp('extraction_fanout_at', { withTimezone: true }),
     reconcileFanoutAt: timestamp('reconcile_fanout_at', { withTimezone: true }),
+    /** Bookmarked, return-ordered PDF of the source pages (0009). Purged with the rasters. */
+    sortedPdfStorageKey: text('sorted_pdf_storage_key'),
+    sortedPdfAt: timestamp('sorted_pdf_at', { withTimezone: true }),
     /** Confirmed by a human before extraction results commit. Null until then. */
     identityConfirmedAt: timestamp('identity_confirmed_at', { withTimezone: true }),
     identityConfirmedBy: uuid('identity_confirmed_by').references(() => users.id),

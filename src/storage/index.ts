@@ -83,5 +83,7 @@ export const keys = {
     `bundles/${bundleId}/worksheet/${worksheetId}.xlsx`,
   worksheetPdf: (bundleId: string, worksheetId: string): string =>
     `bundles/${bundleId}/worksheet/${worksheetId}.pdf`,
+  /** One per bundle, rebuilt in place; lives under raster/ so the raster sweep's reasoning covers it. */
+  sortedPdf: (bundleId: string): string => `bundles/${bundleId}/raster/sorted.pdf`,
   newId: (): string => randomUUID(),
 } as const;

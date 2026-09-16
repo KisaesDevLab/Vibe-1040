@@ -135,7 +135,7 @@ cd sidecar && pip install -r requirements.txt && python worker.py
 | `src/layout/`, `src/extract/` | the two-pass extraction (§4) |
 | `src/reconcile/` | the arithmetic gate (§6) — `gate.ts` is the one door |
 | `src/mapping/` | 1040 line mapping engine (P10) |
-| `src/worksheet/` | XLSX review workbook (1040 lines, document index, one recap sheet per form type, review items, checks, provenance) and bookmarked PDF |
+| `src/worksheet/` | XLSX review workbook (1040 lines, document index, one recap sheet per form type, review items, checks, provenance), the bookmarked line-worksheet PDF, return order (`data/form-order.json`), and the bookmarked sorted PDF of the source pages |
 | `data/form-schemas/` | 27 form schemas; adding one is a data change |
 | `data/line-mappings/` | per-tax-year box → line mapping |
 | `data/tax-tables/` | wage bases and rates, per year |
