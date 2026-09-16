@@ -1,12 +1,13 @@
 {
   "taxYear": 2025,
-  "version": "2025.1",
+  "version": "2025.2",
   "notes": [
     "Adding TY2026 must be a data change only (PHASES.md P10 exit criterion).",
     "Line 1z reports gross wages including tips and overtime exactly as printed on the W-2. The new TY2025 deductions are below-the-line on Schedule 1-A and this app does not compute them (CLAUDE.md §10).",
     "A mapping that would require deciding a characterization question routes to JUDGMENT instead (CLAUDE.md §9, §11).",
     "Boxes with no Form 1040 line (W-2 boxes 3-6) map to an INFO detail line, not to Judgment Required. Judgment Required is for questions a preparer must decide; padding it with routine payroll figures buries the items that actually need attention.",
-    "W-2 box 12: code W routes to Form 8889; elective-deferral and similar reported codes route to an informational detail line; any code not enumerated here falls through to Judgment Required, because its treatment is not mechanical. Reviewed 2026-08-26."
+    "W-2 box 12: code W routes to Form 8889; elective-deferral and similar reported codes route to an informational detail line; any code not enumerated here falls through to Judgment Required, because its treatment is not mechanical. Reviewed 2026-08-26.",
+    "2026-09-16: W-2 boxes 3-6 each get their own INFO line. One line summing wages and withholding together answered nothing. Box 16 is state WAGES and lists under INFO:state_wages; box 17 (state income tax withheld) stays on Schedule A line 5a and is also listed under INFO:state_withholding beside the 1099 state withholding boxes. Boxes 18/19 added the same way."
   ],
   "lines": [
     {
@@ -253,9 +254,24 @@
       "sortOrder": 1120
     },
     {
+      "ref": "INFO:state_wages",
+      "label": "Detail — state wages (W-2 box 16; no state section in v1)",
+      "sortOrder": 1899
+    },
+    {
       "ref": "INFO:state_withholding",
       "label": "Detail — state income tax withheld (no state section in v1)",
       "sortOrder": 1900
+    },
+    {
+      "ref": "INFO:local_wages",
+      "label": "Detail — local wages (W-2 box 18; no local section in v1)",
+      "sortOrder": 1901
+    },
+    {
+      "ref": "INFO:local_withholding",
+      "label": "Detail — local income tax withheld (W-2 box 19; also on Schedule A line 5a)",
+      "sortOrder": 1902
     },
     {
       "ref": "INFO:ira_fmv",
@@ -274,9 +290,24 @@
       "judgment": true
     },
     {
-      "ref": "INFO:payroll_taxes",
-      "label": "Detail — Social Security and Medicare wages and withholding (no Form 1040 line). Check for excess Social Security withholding across multiple employers, which is a Schedule 3 credit the preparer must claim.",
+      "ref": "INFO:ss_wages",
+      "label": "Detail — Social Security wages (W-2 box 3; no Form 1040 line)",
       "sortOrder": 1905
+    },
+    {
+      "ref": "INFO:ss_withheld",
+      "label": "Detail — Social Security tax withheld (W-2 box 4). Across multiple employers, an excess over the annual maximum is a Schedule 3 credit the preparer must claim.",
+      "sortOrder": 1906
+    },
+    {
+      "ref": "INFO:medicare_wages",
+      "label": "Detail — Medicare wages and tips (W-2 box 5; no Form 1040 line)",
+      "sortOrder": 1907
+    },
+    {
+      "ref": "INFO:medicare_withheld",
+      "label": "Detail — Medicare tax withheld (W-2 box 6)",
+      "sortOrder": 1908
     },
     {
       "ref": "SCH1:18",
@@ -313,12 +344,13 @@
     {
       "formType": "W-2",
       "fieldKey": "box_17",
-      "lineRef": "SCHA:5a"
+      "lineRef": "SCHA:5a",
+      "alsoDetail": "INFO:state_withholding"
     },
     {
       "formType": "W-2",
       "fieldKey": "box_16",
-      "lineRef": "INFO:state_withholding"
+      "lineRef": "INFO:state_wages"
     },
     {
       "formType": "W-2",
@@ -336,22 +368,22 @@
     {
       "formType": "W-2",
       "fieldKey": "box_3",
-      "lineRef": "INFO:payroll_taxes"
+      "lineRef": "INFO:ss_wages"
     },
     {
       "formType": "W-2",
       "fieldKey": "box_4",
-      "lineRef": "INFO:payroll_taxes"
+      "lineRef": "INFO:ss_withheld"
     },
     {
       "formType": "W-2",
       "fieldKey": "box_5",
-      "lineRef": "INFO:payroll_taxes"
+      "lineRef": "INFO:medicare_wages"
     },
     {
       "formType": "W-2",
       "fieldKey": "box_6",
-      "lineRef": "INFO:payroll_taxes"
+      "lineRef": "INFO:medicare_withheld"
     },
     {
       "formType": "W-2",
@@ -805,6 +837,17 @@
       "lineRef": "1040:25b",
       "informationalOnly": true,
       "note": "Package summary. The sub-form values are what roll up; this is shown for footing only."
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_18",
+      "lineRef": "INFO:local_wages"
+    },
+    {
+      "formType": "W-2",
+      "fieldKey": "box_19",
+      "lineRef": "SCHA:5a",
+      "alsoDetail": "INFO:local_withholding"
     }
   ]
 }

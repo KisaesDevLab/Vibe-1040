@@ -547,6 +547,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
   const [detail, setDetail] = useState<{ pages: PageRow[]; fields: FieldRow[]; spans: SpanRow[] } | null>(null);
   const [selectedField, setSelectedField] = useState<FieldRow | null>(null);
   const [lines, setLines] = useState<WorksheetLine[]>([]);
+  const [docLabels, setDocLabels] = useState<Record<string, string>>({});
   const [taxpayers, setTaxpayers] = useState<
     { taxpayerId: string; displayName: string | null; tinLast4: string; role: string; proposed: boolean }[]
   >([]);
@@ -570,7 +571,10 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
       .catch((e: Error) => onError(e.message));
     api
       .worksheetPreview(bundleId)
-      .then((p) => setLines(p.model.lines))
+      .then((p) => {
+        setLines(p.model.lines);
+        setDocLabels(p.documentLabels ?? {});
+      })
       .catch(() => setLines([]));
   }, [bundleId, onError]);
 
@@ -861,6 +865,27 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
                 <div className="ws-label">{line.label}</div>
                 {line.nullContributorCount > 0 && (
                   <div className="ws-nulls">{line.nullContributorCount} contributing box(es) blank</div>
+                )}
+                {line.contributions.length > 0 && (
+                  /* Judgment Required opens by default: its total is meaningless without the
+                     list of what a preparer has to decide. Other lines open on demand. */
+                  <details className="ws-contrib" open={line.isJudgmentRequired}>
+                    <summary>{line.contributions.length} contributing box(es)</summary>
+                    {line.contributions.map((c, i) => (
+                      <div key={`${c.documentId}-${c.fieldKey}-${i}`} className="ws-c">
+                        <div className="ws-c-head">
+                          <span className="ws-c-field">{c.formType} — {c.fieldLabel}</span>
+                          <span className="ws-c-amount">{c.valueCents === null ? 'blank' : formatCents(c.valueCents)}</span>
+                        </div>
+                        <div className="ws-c-src">
+                          {docLabels[c.documentId] ?? c.documentId}
+                          {c.wasCorrected ? ' · corrected' : ''}
+                          {c.informational ? ' · informational' : ''}
+                        </div>
+                        {c.judgmentReason && <div className="ws-c-why">{c.judgmentReason}</div>}
+                      </div>
+                    ))}
+                  </details>
                 )}
               </div>
             ))}

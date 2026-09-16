@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildUserMessage,
   groupIntoRows,
+  recoverPlaceholder,
   serializeSpans,
   valueSupportedBySpans,
   type StoredSpan,
@@ -63,6 +64,27 @@ describe('spatial serialization', () => {
     const msg = buildUserMessage(schema, [span(0, '1 Wages', 0.05, 0.2)]);
     expect(msg).toContain('box_1 (box 1): Wages [money]');
     expect(msg.indexOf('Fields to bind')).toBeLessThan(msg.indexOf('Spans extracted'));
+  });
+});
+
+/**
+ * The router scrubs identifiers out of the span list before a cloud model sees it, and the
+ * model copies the placeholder back. The cited spans are the unscrubbed originals.
+ */
+describe('recoverPlaceholder', () => {
+  it('recovers an EIN or SSN from the cited span text', () => {
+    expect(recoverPlaceholder('[EIN]', [span(0, 'b Employer identification number 47-2918453', 0, 0)])).toBe('47-2918453');
+    expect(recoverPlaceholder('[SSN]', [span(0, '123-45-6789', 0, 0)])).toBe('123-45-6789');
+  });
+
+  it('takes the whole span when the placeholder stood for all of it', () => {
+    expect(recoverPlaceholder('[NAME]', [span(0, 'MARCUS D RIVERA', 0, 0)])).toBe('MARCUS D RIVERA');
+  });
+
+  it('leaves ordinary values and uncited placeholders alone', () => {
+    expect(recoverPlaceholder('85,000.00', [span(0, '85,000.00', 0, 0)])).toBe('85,000.00');
+    expect(recoverPlaceholder('[EIN]', [])).toBe('[EIN]');
+    expect(recoverPlaceholder(null, [])).toBeNull();
   });
 });
 

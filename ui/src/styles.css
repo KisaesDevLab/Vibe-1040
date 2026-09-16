@@ -182,3 +182,14 @@ button.danger:hover:not(:disabled) { background: #fee4e2; }
 .downloads { display: inline-flex; gap: 6px; align-items: center; }
 a.button { font: inherit; padding: 6px 10px; border: 1px solid var(--line); background: #fff; border-radius: 6px; color: inherit; text-decoration: none; }
 a.button:hover { background: #eef1f5; }
+
+/* Contributions beneath a worksheet line: what fed the total, from which document, and why
+   it is Judgment Required. */
+.ws-contrib { margin-top: 4px; font-size: 12px; }
+.ws-contrib summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.ws-c { padding: 4px 0 4px 10px; border-left: 2px solid #e5e8ee; margin: 3px 0; }
+.ws-c-head { display: flex; justify-content: space-between; gap: 8px; }
+.ws-c-field { font-weight: 500; }
+.ws-c-amount { font-variant-numeric: tabular-nums; }
+.ws-c-src { color: var(--muted); font-size: 11px; }
+.ws-c-why { color: #7a4b00; font-size: 11px; margin-top: 2px; }

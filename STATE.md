@@ -101,6 +101,13 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-16 as v0.7.3** — the worksheet preview lists what feeds each line
+(Judgment Required opens by default, with the reason per item); W-2 boxes 3–6 each get their own
+detail line instead of one meaningless sum (mapping 2025.2); box 16 is listed as state *wages*
+and box 17 appears under state withholding beside the 1099 boxes, boxes 18/19 added; a
+de-identification placeholder such as `[EIN]` the cloud model copies back is recovered from the
+unscrubbed span it cites. No migration. Images tagged `0.7.3` / `0.7`.
+
 **Released 2026-09-16 as v0.7.2** — the generated workbook is downloadable from the bundle
 view. The download route existed but the UI discarded the worksheet id after Generate, so
 nothing on screen led to the file. The bundle view now lists generated worksheets and shows

@@ -221,6 +221,36 @@ export function buildUserMessage(schema: FormSchema, spans: readonly StoredSpan[
   ].join('\n');
 }
 
+// ── de-identification placeholders ───────────────────────────────────────────
+
+/**
+ * The router's scrubber rewrites text content parts for a `cloud_deidentified` class, so
+ * the binder sees "[EIN]" or "[SSN]" where the span list said 47-2918453, and faithfully
+ * copies the placeholder back. The spans stored on this side are the unscrubbed originals
+ * and the model still cites them, so the real value is recoverable here without another
+ * call: an identifier-shaped token from the cited span text, or the whole span when the
+ * placeholder stood for all of it.
+ */
+const PLACEHOLDER = /\[[A-Z][A-Z0-9_ -]*\]/;
+
+const IDENTIFIER_SHAPES: [RegExp, RegExp][] = [
+  [/\[(?:EIN|TIN|PAYER'?S? TIN|FEDERAL ID)\]/i, /\b\d{2}-\d{7}\b/],
+  [/\[(?:SSN|ITIN|TIN|RECIPIENT'?S? TIN)\]/i, /\b\d{3}-\d{2}-\d{4}\b/],
+  [/\[(?:PHONE|TEL)[A-Z ]*\]/i, /\(?\d{3}\)?[ -]?\d{3}-\d{4}/],
+];
+
+export function recoverPlaceholder(raw: string | null, cited: readonly StoredSpan[]): string | null {
+  if (raw === null || !PLACEHOLDER.test(raw) || !cited.length) return raw;
+  const joined = cited.map((s) => s.text).join(' ');
+  for (const [tag, shape] of IDENTIFIER_SHAPES) {
+    if (!tag.test(raw)) continue;
+    const m = joined.match(shape);
+    if (m) return m[0];
+  }
+  // The placeholder replaced the whole value (a name, an address): take the span text.
+  return raw.trim().replace(PLACEHOLDER, '').trim() === '' ? joined : raw;
+}
+
 // ── verification against cited spans ─────────────────────────────────────────
 
 const normalizeText = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -306,12 +336,13 @@ async function singlePass(
   for (const field of parsed.fields) {
     if (!known.has(field.field_key)) continue; // hallucinated key; drop it
     const resolved = field.span_indices.map((i) => byIndex.get(i)).filter((s): s is StoredSpan => !!s);
+    const raw = recoverPlaceholder(field.value, resolved);
     values.set(field.field_key, {
       fieldKey: field.field_key,
-      raw: field.value,
+      raw,
       spanIds: resolved.map((s) => s.id),
       pageId: resolved[0]?.pageId ?? null,
-      spanMismatch: !valueSupportedBySpans(field.value, resolved, moneyKeys.has(field.field_key)),
+      spanMismatch: !valueSupportedBySpans(raw, resolved, moneyKeys.has(field.field_key)),
     });
   }
   return { values, model, requestId };
