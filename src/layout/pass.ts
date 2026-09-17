@@ -59,10 +59,11 @@ const layoutResponse = z.object({
   spans: z.array(
     z.object({
       text: z.string(),
-      x0: z.number(),
-      y0: z.number(),
-      x1: z.number(),
-      y1: z.number(),
+      // Coerced: a model that quotes its numbers ("512") must not kill the job.
+      x0: z.coerce.number(),
+      y0: z.coerce.number(),
+      x1: z.coerce.number(),
+      y1: z.coerce.number(),
     }),
   ),
 });

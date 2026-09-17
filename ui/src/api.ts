@@ -7,6 +7,8 @@ import type {
   FactorState,
   FieldRow,
   PageRow,
+  BundleProgress,
+  QueueFailure,
   RouterJobRow,
   WorksheetRow,
   SettingRow,
@@ -152,6 +154,8 @@ export const api = {
       parkedJobs: number;
       failedJobs: number;
       routerJobs: RouterJobRow[];
+      progress: BundleProgress;
+      queueFailures: QueueFailure[];
       worksheets: WorksheetRow[];
       blocking: { id: string; checkKey: string; message: string }[];
     }>(`/api/bundles/${id}`),

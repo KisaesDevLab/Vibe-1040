@@ -11,6 +11,8 @@ import type {
   FactorState,
   FieldRow,
   PageRow,
+  BundleProgress,
+  QueueFailure,
   RouterJobRow,
   SpanRow,
   WorksheetLine,
@@ -542,6 +544,8 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
   const [routerDown, setRouterDown] = useState(false);
   const [routerJobs, setRouterJobs] = useState<RouterJobRow[]>([]);
   const [worksheets, setWorksheets] = useState<WorksheetRow[]>([]);
+  const [progress, setProgress] = useState<BundleProgress | null>(null);
+  const [queueFailures, setQueueFailures] = useState<QueueFailure[]>([]);
   const [sorting, setSorting] = useState(false);
   const [requeueing, setRequeueing] = useState(false);
   const [activeDoc, setActiveDoc] = useState<string | null>(null);
@@ -567,6 +571,8 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         setRouterDown(data.routerDown);
         setRouterJobs(data.routerJobs);
         setWorksheets(data.worksheets);
+        setProgress(data.progress);
+        setQueueFailures(data.queueFailures);
         setTaxpayers(data.taxpayers);
       })
       .catch((e: Error) => onError(e.message));
@@ -580,6 +586,12 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
   }, [bundleId, onError]);
 
   useEffect(refreshBundle, [refreshBundle]);
+  useEffect(() => {
+    const running = bundle && ['triaging', 'classifying', 'extracting', 'reconciling'].includes(bundle.status);
+    if (!running) return undefined;
+    const t = setInterval(refreshBundle, 8000);
+    return () => clearInterval(t);
+  }, [bundle?.status, refreshBundle]);
 
   const openDoc = (id: string) => {
     setActiveDoc(id);
@@ -604,12 +616,28 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         <h2>{bundle?.label}</h2>
         <span className={`pill status-${bundle?.status}`}>{bundle?.status}</span>
         {routerDown && <span className="pill error">Router unreachable — work is parked</span>}
+        {progress && bundle && ['classifying', 'extracting', 'reconciling'].includes(bundle.status) && (
+          <span
+            className="pill"
+            title={`${progress.pagesFromTextLayer} page(s) with exact text-layer geometry, ${progress.pagesFromModel} laid out by the vision model. Refreshes every 8 s while running.`}
+          >
+            layout {progress.pagesLaidOut}/{progress.pages} pages · binding {progress.documentsDone}/{progress.documents} documents
+          </span>
+        )}
+        {queueFailures.length > 0 && (
+          <span
+            className="pill error"
+            title={queueFailures.map((f) => `${f.kind} (${f.attemptsMade} attempts): ${f.error}`).join('\n')}
+          >
+            {queueFailures.length} pipeline job(s) died — {queueFailures[0]!.error.slice(0, 80)}
+          </span>
+        )}
         {routerJobs.some((j) => j.state === 'failed') && (
           <span className="pill error" title={routerJobs.filter((j) => j.state === 'failed').map((j) => `${j.taskClass}: ${j.lastErrorCode ?? '?'} — ${j.lastErrorMessage ?? ''}`).join('\n')}>
             {routerJobs.filter((j) => j.state === 'failed').length} router job(s) failed
           </span>
         )}
-        {routerJobs.length > 0 && (
+        {(routerJobs.length > 0 || queueFailures.length > 0) && (
           <button
             disabled={requeueing}
             title="Send every parked or failed router job for this bundle back to the queue, at the stage it stopped in. Costs inference."
@@ -622,7 +650,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
                 .finally(() => setRequeueing(false));
             }}
           >
-            {requeueing ? 'Requeueing…' : `Retry ${routerJobs.length} parked/failed job(s)`}
+            {requeueing ? 'Requeueing…' : `Retry ${routerJobs.length + queueFailures.length} parked/failed job(s)`}
           </button>
         )}
         <div className="spacer" />

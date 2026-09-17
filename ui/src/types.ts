@@ -30,6 +30,27 @@ export interface DocumentRow {
   group?: string;
 }
 
+export interface BundleProgress {
+  pages: number;
+  pagesLaidOut: number;
+  pagesFromTextLayer: number;
+  pagesFromModel: number;
+  documents: number;
+  documentsDone: number;
+  extractionFannedOut: boolean;
+  reconcileQueued: boolean;
+}
+
+export interface QueueFailure {
+  jobId: string;
+  kind: string;
+  pageId: string | null;
+  documentId: string | null;
+  attemptsMade: number;
+  error: string;
+  failedAt: string | null;
+}
+
 export interface WorksheetRow {
   id: string;
   taxYear: number;

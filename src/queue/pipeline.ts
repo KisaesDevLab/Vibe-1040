@@ -793,6 +793,85 @@ export async function queueExtractionForDocuments(bundleId: string, userId: stri
   return all.length;
 }
 
+// ── progress and queue failures ──────────────────────────────────────────────
+
+export interface BundleProgress {
+  pages: number;
+  pagesLaidOut: number;
+  pagesFromTextLayer: number;
+  pagesFromModel: number;
+  documents: number;
+  documentsDone: number;
+  extractionFannedOut: boolean;
+  reconcileQueued: boolean;
+}
+
+/** Where a bundle stands, in counts a reviewer can read: pages laid out, documents bound. */
+export async function bundleProgress(bundleId: string): Promise<BundleProgress> {
+  const [p] = await db
+    .select({
+      pages: sql<number>`count(*) filter (where ${pages.rasterStorageKey} is not null)::int`,
+      laidOut: sql<number>`count(*) filter (where ${pages.layoutCompletedAt} is not null)::int`,
+      text: sql<number>`count(*) filter (where ${pages.layoutSource} = 'text_layer')::int`,
+      model: sql<number>`count(*) filter (where ${pages.layoutSource} = 'model')::int`,
+    })
+    .from(pages)
+    .where(eq(pages.bundleId, bundleId));
+  const [d] = await db
+    .select({
+      documents: sql<number>`count(*)::int`,
+      done: sql<number>`count(*) filter (where ${documents.extractionCompletedAt} is not null)::int`,
+    })
+    .from(documents)
+    .where(eq(documents.bundleId, bundleId));
+  const [b] = await db
+    .select({ fanout: bundles.extractionFanoutAt, reconcile: bundles.reconcileFanoutAt })
+    .from(bundles)
+    .where(eq(bundles.id, bundleId))
+    .limit(1);
+  return {
+    pages: p?.pages ?? 0,
+    pagesLaidOut: p?.laidOut ?? 0,
+    pagesFromTextLayer: p?.text ?? 0,
+    pagesFromModel: p?.model ?? 0,
+    documents: d?.documents ?? 0,
+    documentsDone: d?.done ?? 0,
+    extractionFannedOut: b?.fanout !== null && b?.fanout !== undefined,
+    reconcileQueued: b?.reconcile !== null && b?.reconcile !== undefined,
+  };
+}
+
+export interface QueueFailure {
+  jobId: string;
+  kind: string;
+  pageId: string | null;
+  documentId: string | null;
+  attemptsMade: number;
+  error: string;
+  failedAt: Date | null;
+}
+
+/**
+ * Pipeline jobs that exhausted their retries for this bundle. A router condition parks or
+ * fails a `router_jobs` row and shows in the UI; an app error — a response shape zod
+ * rejects, a page with no dimensions — used to fail the BullMQ job five times and vanish,
+ * leaving the bundle at `extracting` with nothing on screen to say why.
+ */
+export async function failedQueueJobs(bundleId: string): Promise<QueueFailure[]> {
+  const failed = await pipelineQueue.getJobs(['failed'], 0, 500);
+  return failed
+    .filter((job) => job.data.bundleId === bundleId)
+    .map((job) => ({
+      jobId: String(job.id),
+      kind: job.data.kind,
+      pageId: 'pageId' in job.data ? job.data.pageId : null,
+      documentId: 'documentId' in job.data ? job.data.documentId : null,
+      attemptsMade: job.attemptsMade,
+      error: job.failedReason ?? 'unknown',
+      failedAt: job.finishedOn ? new Date(job.finishedOn) : null,
+    }));
+}
+
 // ── requeue parked and failed router work ────────────────────────────────────
 
 /**
@@ -812,7 +891,18 @@ export async function requeueRouterJobs(
     .from(routerJobs)
     .where(and(eq(routerJobs.bundleId, bundleId), inArray(routerJobs.state, ['parked', 'failed'])));
 
-  if (!rows.length) return { requeued: 0, classify: false, pages: 0, documents: 0 };
+  // Dead BullMQ jobs are retried in place: same job, same stage, fresh attempts.
+  let queueRetried = 0;
+  for (const job of await pipelineQueue.getJobs(['failed'], 0, 500)) {
+    if (job.data.bundleId !== bundleId) continue;
+    await job.retry();
+    queueRetried += 1;
+  }
+  if (queueRetried) {
+    await db.update(bundles).set({ status: 'extracting', updatedAt: new Date() }).where(eq(bundles.id, bundleId));
+  }
+
+  if (!rows.length) return { requeued: queueRetried, classify: false, pages: 0, documents: 0 };
 
   let classify = false;
   const pageIds = new Set<string>();
@@ -833,7 +923,7 @@ export async function requeueRouterJobs(
   if (classify) {
     // Classification runs as one job over the whole bundle and re-derives everything after it.
     await pipelineQueue.add('classify_bundle', { kind: 'classify_bundle', bundleId, userId });
-    return { requeued: rows.length, classify, pages: 0, documents: 0 };
+    return { requeued: rows.length + queueRetried, classify, pages: 0, documents: 0 };
   }
 
   await db
@@ -852,5 +942,5 @@ export async function requeueRouterJobs(
   for (const documentId of documentIds) {
     await pipelineQueue.add('extract_document', { kind: 'extract_document', bundleId, documentId, userId });
   }
-  return { requeued: rows.length, classify, pages: pageIds.size, documents: documentIds.size };
+  return { requeued: rows.length + queueRetried, classify, pages: pageIds.size, documents: documentIds.size };
 }

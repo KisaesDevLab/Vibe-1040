@@ -101,6 +101,12 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-17 as v0.8.1** — the bundle view shows pipeline progress (pages laid out,
+documents bound, refreshed every 8 s while running) and pipeline jobs that died outside the
+router path (an app error after five attempts), which were invisible before and left a bundle
+at `extracting` with nothing on screen to say why. Retry covers them. Layout coordinates are
+coerced from quoted numbers. No migration. Images tagged `0.8.1` / `0.8`.
+
 **Released 2026-09-16 as v0.8.0** — documents in return order in the UI and the workbook, and
 the bookmarked sorted PDF of the source pages (decision log, same date). **Carries migration
 0009.** Images tagged `0.8.0` / `0.8`.

@@ -37,7 +37,7 @@ import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
 import { ingestBundle, ingestBundlesPerFile, type IncomingFile, type IngestResult } from '../ingest/upload.ts';
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
-import { queueExtractionForDocuments, requeueRouterJobs } from '../queue/pipeline.ts';
+import { bundleProgress, failedQueueJobs, queueExtractionForDocuments, requeueRouterJobs } from '../queue/pipeline.ts';
 import { blockingFailures } from '../reconcile/gate.ts';
 import { deleteBundle } from '../retention/delete-bundle.ts';
 import { isRouterReachable } from '../router/client.ts';
@@ -497,6 +497,8 @@ export function registerRoutes(app: FastifyInstance): void {
       parkedJobs: parked.length,
       failedJobs: failed.length,
       routerJobs: jobs,
+      progress: await bundleProgress(id),
+      queueFailures: await failedQueueJobs(id),
       worksheets: generated,
       blocking: await blockingFailures(id),
     };
