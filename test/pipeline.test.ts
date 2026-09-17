@@ -15,7 +15,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/queue/queues.ts', () => ({
-  pipelineQueue: { add: vi.fn(async () => undefined) },
+  pipelineQueue: { add: vi.fn(async () => undefined), getJobs: vi.fn(async () => []) },
   rasterQueue: { add: vi.fn(async () => undefined) },
   rasterEvents: { on: vi.fn() },
   connection: {},
