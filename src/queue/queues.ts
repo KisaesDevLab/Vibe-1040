@@ -17,12 +17,22 @@ export const QUEUE_NAMES = {
   PIPELINE: 'v1040.pipeline',
 } as const;
 
+export interface RasterSettings {
+  dpiDefault: number;
+  dpiDigital: number;
+  dpiDegraded: number;
+  maxEdgePx: number;
+  jpegQuality: number;
+}
+
 export interface RasterizeJob {
   kind?: 'rasterize';
   bundleId: string;
   sourceFileId: string;
   storageKey: string;
   mediaType: string;
+  /** Firm rasterization settings at enqueue time; the sidecar prefers these to its env. */
+  raster?: RasterSettings;
   /** Carried through so the classify job that follows is attributed to the uploader. */
   userId?: string;
 }

@@ -15,6 +15,7 @@ import { audit } from '../audit/log.ts';
 import { env } from '../config/env.ts';
 import { db } from '../db/client.ts';
 import { bundles, pages, purgeLog, sourceFiles } from '../db/schema.ts';
+import { setting } from '../settings/store.ts';
 import { blobs } from '../storage/index.ts';
 
 export interface PurgeSummary {
@@ -27,11 +28,14 @@ export interface PurgeSummary {
 const daysAgo = (days: number): Date => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
 export async function runRetention(): Promise<PurgeSummary> {
-  const dryRun = env.RETENTION_DRY_RUN;
+  // Retention policy is firm policy: edited in the admin UI, seeded from the environment.
+  const dryRun = await setting<boolean>('retention.dry_run');
+  const rasterDays = await setting<number>('retention.raster_days');
+  const documentDays = await setting<number>('retention.document_days');
   const errors: PurgeSummary['errors'] = [];
 
   // ── rasters ────────────────────────────────────────────────────────────────
-  const rasterCutoff = daysAgo(env.RETENTION_RASTER_DAYS);
+  const rasterCutoff = daysAgo(rasterDays);
   const staleRasters = await db
     .select({
       id: pages.id,
@@ -67,7 +71,7 @@ export async function runRetention(): Promise<PurgeSummary> {
         entityType: 'bundle',
         entityId: bundle.id,
         bundleId: bundle.id,
-        policyDays: env.RETENTION_RASTER_DAYS,
+        policyDays: rasterDays,
         ageDays,
         storageKey: bundle.key,
         dryRun,
@@ -93,7 +97,7 @@ export async function runRetention(): Promise<PurgeSummary> {
         entityType: 'page',
         entityId: page.id,
         bundleId: page.bundleId,
-        policyDays: env.RETENTION_RASTER_DAYS,
+        policyDays: rasterDays,
         ageDays,
         storageKey: page.key,
         dryRun,
@@ -105,7 +109,7 @@ export async function runRetention(): Promise<PurgeSummary> {
   }
 
   // ── source documents ───────────────────────────────────────────────────────
-  const sourceCutoff = daysAgo(env.RETENTION_DOCUMENT_DAYS);
+  const sourceCutoff = daysAgo(documentDays);
   const staleSources = await db
     .select({
       id: sourceFiles.id,
@@ -129,7 +133,7 @@ export async function runRetention(): Promise<PurgeSummary> {
         entityType: 'source_file',
         entityId: file.id,
         bundleId: file.bundleId,
-        policyDays: env.RETENTION_DOCUMENT_DAYS,
+        policyDays: documentDays,
         ageDays,
         storageKey: file.key,
         dryRun,
@@ -146,8 +150,8 @@ export async function runRetention(): Promise<PurgeSummary> {
       rastersPurged,
       sourcesPurged,
       dryRun,
-      rasterPolicyDays: env.RETENTION_RASTER_DAYS,
-      documentPolicyDays: env.RETENTION_DOCUMENT_DAYS,
+      rasterPolicyDays: rasterDays,
+      documentPolicyDays: documentDays,
       errors: errors.length,
     },
   });
@@ -157,6 +161,8 @@ export async function runRetention(): Promise<PurgeSummary> {
 
 /** Operator-facing view of what the next run would do. */
 export async function retentionForecast(): Promise<{ rastersDue: number; sourcesDue: number }> {
+  const rasterDays = await setting<number>('retention.raster_days');
+  const documentDays = await setting<number>('retention.document_days');
   const [rasters] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(pages)
@@ -164,13 +170,13 @@ export async function retentionForecast(): Promise<{ rastersDue: number; sources
       and(
         isNotNull(pages.rasterStorageKey),
         isNull(pages.rasterPurgedAt),
-        lt(pages.createdAt, daysAgo(env.RETENTION_RASTER_DAYS)),
+        lt(pages.createdAt, daysAgo(rasterDays)),
       ),
     );
   const [sources] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(sourceFiles)
-    .where(and(isNull(sourceFiles.purgedAt), lt(sourceFiles.createdAt, daysAgo(env.RETENTION_DOCUMENT_DAYS))));
+    .where(and(isNull(sourceFiles.purgedAt), lt(sourceFiles.createdAt, daysAgo(documentDays))));
 
   return { rastersDue: rasters?.n ?? 0, sourcesDue: sources?.n ?? 0 };
 }

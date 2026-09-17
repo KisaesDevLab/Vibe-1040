@@ -23,8 +23,8 @@
  * agreement means something.
  */
 import { z } from 'zod';
-import { env } from '../config/env.ts';
 import { parseMoney } from '../lib/money.ts';
+import { setting } from '../settings/store.ts';
 import { completeJson, type CallOptions } from '../router/client.ts';
 import { TASK_CLASS } from '../router/task-classes.ts';
 import type { FormSchema } from '../schemas/registry.ts';
@@ -380,14 +380,18 @@ export async function bindFields(
     ...(ctx.images?.length ? { images: ctx.images } : {}),
   };
   const firstPass = { ...base, temperature: 0 };
+  // Firm settings, editable in the admin UI without a restart; each seeds from its env var.
+  const passCount = await setting<number>('extract.passes');
+  const passesOnDisagreement = await setting<number>('extract.passes_on_disagreement');
+  const secondPassModel = (await setting<string>('extract.second_pass_model')).trim();
   const laterPass: PassOptions = {
     ...base,
-    temperature: env.EXTRACT_SECOND_PASS_TEMPERATURE,
-    ...(env.EXTRACT_SECOND_PASS_MODEL ? { model: env.EXTRACT_SECOND_PASS_MODEL } : {}),
+    temperature: await setting<number>('extract.second_pass_temperature'),
+    ...(secondPassModel ? { model: secondPassModel } : {}),
   };
 
   const passes = [await singlePass(schema, spans, firstPass)];
-  for (let i = 1; i < env.EXTRACT_PASSES; i += 1) {
+  for (let i = 1; i < passCount; i += 1) {
     passes.push(await singlePass(schema, spans, laterPass));
   }
 
@@ -399,8 +403,8 @@ export async function bindFields(
     if (new Set(seen).size > 1) disagreements.add(key);
   }
 
-  if (disagreements.size > 0 && passes.length < env.EXTRACT_PASSES_ON_DISAGREEMENT) {
-    while (passes.length < env.EXTRACT_PASSES_ON_DISAGREEMENT) {
+  if (disagreements.size > 0 && passes.length < passesOnDisagreement) {
+    while (passes.length < passesOnDisagreement) {
       passes.push(await singlePass(schema, spans, laterPass));
     }
   }

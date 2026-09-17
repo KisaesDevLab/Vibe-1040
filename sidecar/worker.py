@@ -46,22 +46,34 @@ RASTER_JPEG_QUALITY = int(os.environ.get("RASTER_JPEG_QUALITY", "82"))
 store = BlobStore()
 
 
-def _process_pdf(bundle_id: str, source_file_id: str, data: bytes) -> list[dict[str, Any]]:
+def _raster_settings(payload: dict[str, Any]) -> dict[str, int]:
+    """The firm's rasterization policy rides on the job; the environment is the fallback."""
+    r = payload.get("raster") or {}
+    return {
+        "default": int(r.get("dpiDefault", RASTER_DPI_DEFAULT)),
+        "digital": int(r.get("dpiDigital", RASTER_DPI_DIGITAL)),
+        "degraded": int(r.get("dpiDegraded", RASTER_DPI_DEGRADED)),
+        "max_edge_px": int(r.get("maxEdgePx", RASTER_MAX_EDGE_PX)),
+        "jpeg_quality": int(r.get("jpegQuality", RASTER_JPEG_QUALITY)),
+    }
+
+
+def _process_pdf(bundle_id: str, source_file_id: str, data: bytes, rs: dict[str, int]) -> list[dict[str, Any]]:
     pages: list[dict[str, Any]] = []
     with pymupdf.open(stream=data, filetype="pdf") as doc:
         for index, page in enumerate(doc, start=1):
             result = triage_text_layer(page)
             dpi = choose_dpi(
                 result,
-                default=RASTER_DPI_DEFAULT,
-                digital=RASTER_DPI_DIGITAL,
-                degraded=RASTER_DPI_DEGRADED,
+                default=rs["default"],
+                digital=rs["digital"],
+                degraded=rs["degraded"],
             )
             jpeg, width, height = rasterize(
                 page,
                 dpi=dpi,
-                max_edge_px=RASTER_MAX_EDGE_PX,
-                jpeg_quality=RASTER_JPEG_QUALITY,
+                max_edge_px=rs["max_edge_px"],
+                jpeg_quality=rs["jpeg_quality"],
             )
             raster_key = f"bundles/{bundle_id}/raster/{source_file_id}-{index}.jpg"
             store.put(raster_key, jpeg)
@@ -91,9 +103,9 @@ def _process_pdf(bundle_id: str, source_file_id: str, data: bytes) -> list[dict[
     return pages
 
 
-def _process_image(bundle_id: str, source_file_id: str, data: bytes) -> list[dict[str, Any]]:
+def _process_image(bundle_id: str, source_file_id: str, data: bytes, rs: dict[str, int]) -> list[dict[str, Any]]:
     jpeg, width, height = rasterize_image_file(
-        data, max_edge_px=RASTER_MAX_EDGE_PX, jpeg_quality=RASTER_JPEG_QUALITY
+        data, max_edge_px=rs["max_edge_px"], jpeg_quality=rs["jpeg_quality"]
     )
     raster_key = f"bundles/{bundle_id}/raster/{source_file_id}-1.jpg"
     store.put(raster_key, jpeg)
@@ -104,7 +116,7 @@ def _process_image(bundle_id: str, source_file_id: str, data: bytes) -> list[dic
             "hasTextLayer": False,
             "textLayerGarbled": False,
             "textLayer": None,
-            "dpi": RASTER_DPI_DEFAULT,
+            "dpi": rs["default"],
             "encoding": "image/jpeg",
             "widthPx": width,
             "heightPx": height,
@@ -181,10 +193,11 @@ async def process(job, job_token) -> dict[str, Any]:  # noqa: ANN001 - bullmq ty
     log.info("rasterizing %s (%s)", source_file_id, media_type)
     data = store.get(storage_key)
 
+    rs = _raster_settings(payload)
     if media_type == "application/pdf":
-        pages = _process_pdf(bundle_id, source_file_id, data)
+        pages = _process_pdf(bundle_id, source_file_id, data, rs)
     else:
-        pages = _process_image(bundle_id, source_file_id, data)
+        pages = _process_image(bundle_id, source_file_id, data, rs)
 
     total = sum(p["encodedBytes"] for p in pages)
     log.info(

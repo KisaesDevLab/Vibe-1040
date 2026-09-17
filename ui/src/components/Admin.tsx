@@ -14,7 +14,7 @@ type Tab = 'settings' | 'users' | 'audit' | 'retention';
 const GROUP_LABELS: Record<string, string> = {
   reconciliation: 'Reconciliation',
   retention: 'Retention',
-  extraction: 'Extraction',
+  extraction: 'AI extraction and pipeline',
   rasterization: 'Rasterization',
   email: 'Email delivery',
   sms: 'SMS delivery',

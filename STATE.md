@@ -101,6 +101,16 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-17 as v0.8.3** — the admin settings now do what they say. The
+reconciliation, retention, extraction and rasterization settings had been stored since
+2026-08-26 and read by nothing; the pipeline used the environment. Binding passes, escalation,
+second-pass temperature and model, reconcile tolerance, retention windows and dry-run are now
+read from the store on every use; rasterization settings ride on each raster job to the
+sidecar; and a new **Pipeline concurrency** setting is applied to the live worker within a
+minute. Env-only knobs that change task-class registration (`EXTRACT_ATTACH_PAGE_IMAGE`,
+`OCR_FALLBACK_ENABLED`) are shown read-only with the reason. No migration. Images tagged
+`0.8.3` / `0.8`.
+
 **Released 2026-09-17 as v0.8.2** — read from the router ledger of the first scanned packets.
 A worksheet is refused while any document has no extraction outcome (a bundle had reached
 `ready` with every line blank), and confirming identity no longer flips a running bundle to

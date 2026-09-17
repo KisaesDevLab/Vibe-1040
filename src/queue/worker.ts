@@ -8,6 +8,7 @@ import { Worker } from 'bullmq';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { env } from '../config/env.ts';
 import { db, pool } from '../db/client.ts';
+import { setting } from '../settings/store.ts';
 import { sourceFiles, users } from '../db/schema.ts';
 import {
   advanceAfterExtraction,
@@ -143,7 +144,25 @@ worker.on('completed', (job) => {
   log('job.completed', { id: job.id, kind: job.data.kind });
 });
 
-log('worker.listening', { queue: QUEUE_NAMES.PIPELINE });
+log('worker.listening', { queue: QUEUE_NAMES.PIPELINE, concurrency: worker.concurrency });
+
+/**
+ * Concurrency is firm policy in the admin UI (`pipeline.worker_concurrency`). BullMQ lets it
+ * change on a live worker, so poll and apply; a lower value lets running jobs finish first.
+ */
+const applyConcurrency = async (): Promise<void> => {
+  try {
+    const wanted = await setting<number>('pipeline.worker_concurrency');
+    if (wanted !== worker.concurrency) {
+      log('worker.concurrency', { from: worker.concurrency, to: wanted });
+      worker.concurrency = wanted;
+    }
+  } catch (err) {
+    log('worker.concurrency_read_failed', { error: (err as Error).message });
+  }
+};
+void applyConcurrency();
+setInterval(() => void applyConcurrency(), 60_000).unref();
 
 const shutdown = async (): Promise<void> => {
   log('worker.shutdown');

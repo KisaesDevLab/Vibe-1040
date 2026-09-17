@@ -42,6 +42,7 @@ import { bundleProgress, failedQueueJobs, queueExtractionForDocuments, requeueRo
 import { blockingFailures } from '../reconcile/gate.ts';
 import { deleteBundle } from '../retention/delete-bundle.ts';
 import { isRouterReachable } from '../router/client.ts';
+import { setting } from '../settings/store.ts';
 import { blobs } from '../storage/index.ts';
 import { placementOf, sortDocuments } from '../worksheet/form-order.ts';
 import { buildSortedPdf } from '../worksheet/sorted-pdf.ts';
@@ -52,8 +53,17 @@ import { auditAccess, requireRole, requireUser } from './middleware.ts';
 /** Queue every source file of a freshly ingested bundle for rasterisation. */
 async function queueRasterisation(result: IngestResult, userId: string): Promise<void> {
   const fileRows = await db.select().from(sourceFiles).where(eq(sourceFiles.bundleId, result.bundleId));
+  // The sidecar has no settings store; the firm's rasterization policy rides on the job.
+  const raster = {
+    dpiDefault: await setting<number>('raster.dpi_default'),
+    dpiDigital: await setting<number>('raster.dpi_digital'),
+    dpiDegraded: await setting<number>('raster.dpi_degraded'),
+    maxEdgePx: await setting<number>('raster.max_edge_px'),
+    jpegQuality: await setting<number>('raster.jpeg_quality'),
+  };
   for (const file of fileRows) {
     await rasterQueue.add('raster', {
+      raster,
       bundleId: result.bundleId,
       sourceFileId: file.id,
       storageKey: file.storageKey,

@@ -58,6 +58,7 @@ import { RouterCallError } from '../router/client.ts';
 import { TASK_CLASS } from '../router/task-classes.ts';
 import { registry } from '../schemas/registry.ts';
 import { blobs } from '../storage/index.ts';
+import { setting } from '../settings/store.ts';
 import { pipelineQueue, type PageMetadata } from './queues.ts';
 
 /** Producer recorded on spans the sidecar measured from the PDF text layer. */
@@ -508,6 +509,9 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
   const [bundle] = await db.select().from(bundles).where(eq(bundles.id, bundleId)).limit(1);
   const forms = await registry();
   const docs = await db.select().from(documents).where(eq(documents.bundleId, bundleId));
+  // Firm policy from the admin UI, not the environment (it was read from env and the setting
+  // did nothing until 2026-09-17).
+  const toleranceCents = await setting<number>('reconcile.tolerance_cents');
 
   /**
    * Carry human dispositions across a re-run. A disposition is carried forward only when
@@ -602,7 +606,7 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
     const ctx: CheckContext = {
       formType: doc.formType,
       taxYear: docYear,
-      toleranceCents: env.RECONCILE_TOLERANCE_CENTS,
+      toleranceCents,
       table,
       fields: resolvedByDoc.get(doc.id) ?? new Map(),
       children,
@@ -639,7 +643,7 @@ export async function reconcileBundle(bundleId: string): Promise<{ hardFailures:
   if (groups.size > 0) {
     const results = excessSocialSecurityWithheld({
       taxYear: bundleTaxYear,
-      toleranceCents: env.RECONCILE_TOLERANCE_CENTS,
+      toleranceCents,
       table: await taxTableFor(bundleTaxYear),
       w2sByTaxpayer: [...groups.values()],
     });

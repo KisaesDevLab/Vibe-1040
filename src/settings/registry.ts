@@ -108,6 +108,42 @@ export const SETTINGS = [
     default: () => env.EXTRACT_PASSES_ON_DISAGREEMENT,
     input: 'number',
   }),
+  def({
+    key: 'extract.second_pass_temperature',
+    group: 'extraction',
+    label: 'Second-pass temperature',
+    help:
+      'Sampling temperature for binding passes after the first. The first pass always runs at ' +
+      '0. A later pass is only informative when it is a different reading, so keep this above 0.',
+    schema: z.number().min(0).max(2),
+    default: () => env.EXTRACT_SECOND_PASS_TEMPERATURE,
+    input: 'number',
+  }),
+  def({
+    key: 'extract.second_pass_model',
+    group: 'extraction',
+    label: 'Second-pass model (advisory)',
+    help:
+      'Model name to ask the router for on passes after the first, e.g. digitalocean/glm-5.3. ' +
+      'Advisory only: router policy decides what serves, and the model must be in the ' +
+      'policy\'s allowed list. Blank uses the policy default.',
+    schema: z.string().max(120),
+    default: () => env.EXTRACT_SECOND_PASS_MODEL ?? '',
+    input: 'text',
+  }),
+  def({
+    key: 'pipeline.worker_concurrency',
+    group: 'extraction',
+    label: 'Pipeline concurrency',
+    help:
+      'Jobs the worker runs at once — each one is an in-flight router call. Layout on a ' +
+      'rate-limited provider takes a minute or two per scanned page, so more concurrency ' +
+      'finishes a scanned packet sooner but draws more 429s. Watch the router ledger.',
+    schema: z.number().int().min(1).max(32),
+    default: () => env.WORKER_CONCURRENCY,
+    input: 'number',
+    note: 'The worker picks up a change within about a minute; jobs already running finish first.',
+  }),
 
   // ── rasterization ──────────────────────────────────────────────────────────
   def({
@@ -360,6 +396,21 @@ export function readOnlyEnvironment(): { key: string; value: string; why: string
         'Whether the app refuses to start unless the router reports US-region pinning. This ' +
         'is the control keeping taxpayer page images inside US inference (§11), so it is ' +
         'deliberately not a UI toggle. Change it in the environment and restart.',
+    },
+    {
+      key: 'EXTRACT_ATTACH_PAGE_IMAGE',
+      value: String(env.EXTRACT_ATTACH_PAGE_IMAGE),
+      why:
+        'Whether the binder also receives the page image. Turning it on registers ' +
+        'v1040_field_extract as a vision class, which changes what router policy may bind, so ' +
+        'it is set in the environment and takes effect on restart.',
+    },
+    {
+      key: 'OCR_FALLBACK_ENABLED',
+      value: String(env.OCR_FALLBACK_ENABLED),
+      why:
+        'Whether pages with no text layer are transcribed through v1040_ocr_transcribe before ' +
+        'layout. Registers a task class at startup, so it lives in the environment.',
     },
     {
       key: 'ROUTER_EXPECTED_SENSITIVITY',
