@@ -196,3 +196,9 @@ a.button:hover { background: #eef1f5; }
 
 /* Return-order group headings in the document list. */
 .doc-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 10px 0 4px; }
+
+/* Taxpayer editor: inline names, a TIN entry that is hashed on the server. */
+.taxpayer-editor input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; min-width: 220px; }
+.taxpayer-add td { background: #fafbfd; }
+.taxpayers-strip { margin: 6px 12px; font-size: 13px; }
+.taxpayers-strip summary { cursor: pointer; color: var(--muted); }

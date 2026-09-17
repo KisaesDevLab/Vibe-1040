@@ -35,6 +35,7 @@ import {
 } from '../db/schema.ts';
 import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
+import { hashTin, isPlausibleTin, normalizeTin } from '../identity/tin.ts';
 import { ingestBundle, ingestBundlesPerFile, type IncomingFile, type IngestResult } from '../ingest/upload.ts';
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
 import { bundleProgress, failedQueueJobs, queueExtractionForDocuments, requeueRouterJobs } from '../queue/pipeline.ts';
@@ -45,7 +46,7 @@ import { blobs } from '../storage/index.ts';
 import { placementOf, sortDocuments } from '../worksheet/form-order.ts';
 import { buildSortedPdf } from '../worksheet/sorted-pdf.ts';
 import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts';
-import { IdentityNotConfirmedError, WorksheetBlockedError } from '../reconcile/gate.ts';
+import { ExtractionIncompleteError, IdentityNotConfirmedError, WorksheetBlockedError } from '../reconcile/gate.ts';
 import { auditAccess, requireRole, requireUser } from './middleware.ts';
 
 /** Queue every source file of a freshly ingested bundle for rasterisation. */
@@ -562,6 +563,116 @@ export function registerRoutes(app: FastifyInstance): void {
   });
 
   // ── identity confirmation gate (§7) ────────────────────────────────────────
+  /**
+   * Add a taxpayer by hand. A scanned packet has no text layer to harvest a TIN from, and
+   * the model's read of the SSN may be masked or wrong; the reviewer can type it. The
+   * plaintext is hashed here and dropped (§7): the response and the audit row carry the
+   * last four only.
+   */
+  app.post('/api/bundles/:id/taxpayers', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = z
+      .object({
+        displayName: z.string().trim().max(120).optional(),
+        tin: z.string().min(4).max(20),
+        role: z.enum(['primary', 'spouse', 'other']).default('other'),
+      })
+      .parse(req.body);
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    const normalized = normalizeTin(body.tin);
+    if (!normalized || !isPlausibleTin(normalized)) {
+      return reply.code(400).send({
+        error: 'invalid_tin',
+        message: 'Enter the full nine-digit SSN or ITIN. A masked or partial number cannot be a join key (§7).',
+      });
+    }
+    const identity = hashTin(body.tin)!;
+    const displayName = body.displayName?.trim() || null;
+
+    const [row] = await db
+      .insert(taxpayers)
+      .values({ tinHash: identity.tinHash, tinLast4: identity.tinLast4, displayName })
+      .onConflictDoUpdate({
+        target: taxpayers.tinHash,
+        set: { displayName: sql`coalesce(${displayName}, ${taxpayers.displayName})`, updatedAt: new Date() },
+      })
+      .returning({ id: taxpayers.id });
+    await db
+      .insert(bundleTaxpayers)
+      .values({ bundleId: id, taxpayerId: row!.id, role: body.role, proposed: false })
+      .onConflictDoUpdate({
+        target: [bundleTaxpayers.bundleId, bundleTaxpayers.taxpayerId],
+        set: { role: body.role, proposed: false, updatedAt: new Date() },
+      });
+
+    await auditAccess(req, 'bundle.taxpayer_added', {
+      bundleId: id,
+      entityType: 'taxpayer',
+      entityId: row!.id,
+      detail: { tinLast4: identity.tinLast4, role: body.role, named: displayName !== null },
+    });
+    return { ok: true, taxpayerId: row!.id, tinLast4: identity.tinLast4 };
+  });
+
+  /** Rename a taxpayer or change their role on this bundle. */
+  app.patch('/api/bundles/:id/taxpayers/:taxpayerId', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id, taxpayerId } = z.object({ id: z.string().uuid(), taxpayerId: z.string().uuid() }).parse(req.params);
+    const body = z
+      .object({
+        displayName: z.string().trim().max(120).nullable().optional(),
+        role: z.enum(['primary', 'spouse', 'other']).optional(),
+      })
+      .parse(req.body);
+    const [link] = await db
+      .select()
+      .from(bundleTaxpayers)
+      .where(and(eq(bundleTaxpayers.bundleId, id), eq(bundleTaxpayers.taxpayerId, taxpayerId)))
+      .limit(1);
+    if (!link) return reply.code(404).send({ error: 'not found' });
+
+    if (body.displayName !== undefined) {
+      await db
+        .update(taxpayers)
+        .set({ displayName: body.displayName?.trim() || null, updatedAt: new Date() })
+        .where(eq(taxpayers.id, taxpayerId));
+    }
+    if (body.role !== undefined) {
+      await db
+        .update(bundleTaxpayers)
+        .set({ role: body.role, proposed: false, updatedAt: new Date() })
+        .where(and(eq(bundleTaxpayers.bundleId, id), eq(bundleTaxpayers.taxpayerId, taxpayerId)));
+    }
+    await auditAccess(req, 'bundle.taxpayer_updated', {
+      bundleId: id,
+      entityType: 'taxpayer',
+      entityId: taxpayerId,
+      detail: { renamed: body.displayName !== undefined, role: body.role ?? null },
+    });
+    return { ok: true };
+  });
+
+  /** Take a wrongly proposed taxpayer off this bundle. The taxpayer record itself stays. */
+  app.delete('/api/bundles/:id/taxpayers/:taxpayerId', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id, taxpayerId } = z.object({ id: z.string().uuid(), taxpayerId: z.string().uuid() }).parse(req.params);
+    await db
+      .delete(bundleTaxpayers)
+      .where(and(eq(bundleTaxpayers.bundleId, id), eq(bundleTaxpayers.taxpayerId, taxpayerId)));
+    await db
+      .update(documents)
+      .set({ taxpayerId: null })
+      .where(and(eq(documents.bundleId, id), eq(documents.taxpayerId, taxpayerId)));
+    await auditAccess(req, 'bundle.taxpayer_removed', { bundleId: id, entityType: 'taxpayer', entityId: taxpayerId });
+    return { ok: true };
+  });
+
   app.post('/api/bundles/:id/identity/confirm', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
@@ -819,6 +930,15 @@ export function registerRoutes(app: FastifyInstance): void {
       const result = await generateWorksheet(id, { id: user.id, displayName: user.displayName });
       return { worksheetId: result.worksheetId, lines: result.model.lines.length };
     } catch (err) {
+      if (err instanceof ExtractionIncompleteError) {
+        return reply.code(409).send({
+          error: 'extraction_incomplete',
+          message:
+            `${err.pending} document(s) have not finished extracting. A worksheet now would be ` +
+            'blank. Wait for the progress pill to finish, or retry any dead jobs.',
+          pending: err.pending,
+        });
+      }
       if (err instanceof IdentityNotConfirmedError) {
         return reply.code(409).send({
           error: 'identity_not_confirmed',

@@ -7,9 +7,9 @@
  * no severity override — P9's exit criterion is that the gate cannot be bypassed by any
  * code path, and an escape hatch would be exactly that path.
  */
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db/client.ts';
-import { bundles, checkResults, dispositions } from '../db/schema.ts';
+import { bundles, checkResults, dispositions, documents } from '../db/schema.ts';
 
 export class WorksheetBlockedError extends Error {
   readonly bundleId: string;
@@ -58,9 +58,35 @@ export async function blockingFailures(
  * a worksheet, whereas a caller who forgets to await this gets an unhandled rejection.
  */
 export async function assertWorksheetAllowed(bundleId: string): Promise<void> {
+  await assertExtractionComplete(bundleId);
   const blocking = await blockingFailures(bundleId);
   if (blocking.length > 0) throw new WorksheetBlockedError(bundleId, blocking);
   await assertIdentityConfirmed(bundleId);
+}
+
+export class ExtractionIncompleteError extends Error {
+  readonly bundleId: string;
+  readonly pending: number;
+  constructor(bundleId: string, pending: number) {
+    super(`bundle ${bundleId} still has ${pending} document(s) not yet extracted; a worksheet now would be blank`);
+    this.name = 'ExtractionIncompleteError';
+    this.bundleId = bundleId;
+    this.pending = pending;
+  }
+}
+
+/**
+ * A worksheet is a statement about what the documents say. While any document has no
+ * extraction outcome the statement would be "nothing", rendered as every line blank — which
+ * is what a bundle reached `ready` with on 2026-09-17. Reconcile has also not run yet, so
+ * there are no check results to block on, which is why the other two gates let it through.
+ */
+export async function assertExtractionComplete(bundleId: string): Promise<void> {
+  const [row] = await db
+    .select({ pending: sql<number>`count(*)::int` })
+    .from(documents)
+    .where(and(eq(documents.bundleId, bundleId), isNull(documents.extractionCompletedAt)));
+  if ((row?.pending ?? 0) > 0) throw new ExtractionIncompleteError(bundleId, row!.pending);
 }
 
 export class IdentityNotConfirmedError extends Error {

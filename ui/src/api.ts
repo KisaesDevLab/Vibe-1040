@@ -223,6 +223,21 @@ Proceed and discard them?`)) return { ok: false };
     return parsed as { ok: boolean };
   },
 
+  addTaxpayer: (bundleId: string, body: { displayName?: string; tin: string; role: string }) =>
+    request<{ ok: boolean; taxpayerId: string; tinLast4: string }>(`/api/bundles/${bundleId}/taxpayers`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  updateTaxpayer: (bundleId: string, taxpayerId: string, body: { displayName?: string | null; role?: string }) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/taxpayers/${taxpayerId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  removeTaxpayer: (bundleId: string, taxpayerId: string) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/taxpayers/${taxpayerId}`, { method: 'DELETE' }),
+
   confirmIdentity: (bundleId: string, taxYear: number, taxpayers: { taxpayerId: string; role: string }[]) =>
     request<{ ok: boolean; pagesQueued: number }>(`/api/bundles/${bundleId}/identity/confirm`, {
       method: 'POST',

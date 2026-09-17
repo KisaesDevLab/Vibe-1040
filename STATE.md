@@ -101,6 +101,15 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-17 as v0.8.2** — read from the router ledger of the first scanned packets.
+A worksheet is refused while any document has no extraction outcome (a bundle had reached
+`ready` with every line blank), and confirming identity no longer flips a running bundle to
+`in_review`. Taxpayers can be typed, renamed, re-roled and removed in the UI — the full TIN is
+hashed on the server and only its last four kept (§7) — because a scanned packet has no text
+layer to harvest one from. Binding budget raised to 8192 tokens (ten truncations in the ledger),
+router timeout to ten minutes (layout on the fallback model reached 243 s a page), and
+`WORKER_CONCURRENCY` is configurable. No migration. Images tagged `0.8.2` / `0.8`.
+
 **Released 2026-09-17 as v0.8.1** — the bundle view shows pipeline progress (pages laid out,
 documents bound, refreshed every 8 s while running) and pipeline jobs that died outside the
 router path (an app error after five attempts), which were invisible before and left a bundle

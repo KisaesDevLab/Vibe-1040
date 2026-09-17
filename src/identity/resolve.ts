@@ -238,6 +238,10 @@ export async function confirmIdentity(
    * `assertIdentityConfirmed` (§7, decision 2026-09-10).
    */
   const blocking = await blockingFailures(bundleId);
+  const [current] = await db.select({ status: bundles.status }).from(bundles).where(eq(bundles.id, bundleId)).limit(1);
+  // While the pipeline is still running, confirmation records the decision and leaves the
+  // status to reconcile; flipping it to in_review mid-extraction let a blank worksheet through.
+  const running = ['triaging', 'classifying', 'extracting', 'reconciling'].includes(current?.status ?? '');
 
   await db
     .update(bundles)
@@ -245,7 +249,7 @@ export async function confirmIdentity(
       identityConfirmedAt: new Date(),
       identityConfirmedBy: userId,
       taxYear,
-      status: blocking.length > 0 ? 'blocked' : 'in_review',
+      ...(running ? {} : { status: blocking.length > 0 ? 'blocked' : 'in_review' }),
       updatedAt: new Date(),
     })
     .where(eq(bundles.id, bundleId));

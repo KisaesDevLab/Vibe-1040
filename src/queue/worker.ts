@@ -6,6 +6,7 @@
  */
 import { Worker } from 'bullmq';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { env } from '../config/env.ts';
 import { db, pool } from '../db/client.ts';
 import { sourceFiles, users } from '../db/schema.ts';
 import {
@@ -91,7 +92,7 @@ const worker = new Worker<PipelineJob>(
       }
     }
   },
-  { connection, concurrency: 4 },
+  { connection, concurrency: env.WORKER_CONCURRENCY },
 );
 
 /**

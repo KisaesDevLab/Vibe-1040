@@ -81,7 +81,9 @@ export const DECLARATIONS: TaskClassDeclaration[] = [
     // declared so policy refuses a text-only binding instead of the model silently ignoring
     // the image. Registration re-reads this on every start.
     requires: env.EXTRACT_ATTACH_PAGE_IMAGE ? { vision: true, json_schema: true } : { json_schema: true },
-    defaultMaxTokens: 4096,
+    // 4096 truncated ten binding responses in the first week (router ledger, 2026-09-17): a
+    // consolidated package's field list plus a verbose model overran it.
+    defaultMaxTokens: 8192,
   },
 ];
 

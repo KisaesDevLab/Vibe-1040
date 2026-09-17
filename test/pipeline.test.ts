@@ -264,6 +264,16 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
     expect(bundle!.status).toBe('blocked');
   });
 
+  it('refuses a worksheet while any document has no extraction outcome', async () => {
+    const { assertExtractionComplete } = await import('../src/reconcile/gate.ts');
+    await expect(assertExtractionComplete(bundleId)).resolves.toBeUndefined();
+    await pipeline.queueExtractionForPage(bundleId, pageIds[2]!, userId);
+    await expect(assertExtractionComplete(bundleId)).rejects.toThrow(/not yet extracted/);
+    // Put it back so the later tests see a finished bundle.
+    const w2 = (await db.select().from(schema.documents).where(and(eq(schema.documents.bundleId, bundleId), eq(schema.documents.formType, 'W-2'))))[0]!;
+    await db.update(schema.documents).set({ extractionOutcome: 'extracted', extractionCompletedAt: new Date() }).where(eq(schema.documents.id, w2.id));
+  });
+
   it('requeues a parked layout page at the layout stage and keeps the failure record', async () => {
     await db.insert(schema.routerJobs).values({
       bundleId,

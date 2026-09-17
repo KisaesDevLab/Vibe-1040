@@ -655,13 +655,19 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
         )}
         <div className="spacer" />
         <button
-          disabled={blocking.length > 0 || !bundle?.identityConfirmedAt}
+          disabled={
+            blocking.length > 0 ||
+            !bundle?.identityConfirmedAt ||
+            ['triaging', 'classifying', 'extracting', 'reconciling'].includes(bundle?.status ?? '')
+          }
           title={
-            blocking.length > 0
-              ? 'Disposition the hard failures first'
-              : !bundle?.identityConfirmedAt
-                ? 'Confirm which client this bundle belongs to first'
-                : 'Generate the worksheet'
+            ['triaging', 'classifying', 'extracting', 'reconciling'].includes(bundle?.status ?? '')
+              ? 'Extraction is still running; a worksheet now would be blank'
+              : blocking.length > 0
+                ? 'Disposition the hard failures first'
+                : !bundle?.identityConfirmedAt
+                  ? 'Confirm which client this bundle belongs to first'
+                  : 'Generate the worksheet'
           }
           onClick={() => {
             api
@@ -744,35 +750,15 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
               it will not be attributed to a client. Check the documents before you do.
             </p>
           )}
-          <table className="grid">
-            <thead>
-              <tr><th>Name</th><th>TIN</th><th>Role</th></tr>
-            </thead>
-            <tbody>
-              {taxpayers.map((t) => (
-                <tr key={t.taxpayerId}>
-                  <td>{t.displayName ?? <em className="muted">no name on the documents</em>}</td>
-                  <td>•••-••-{t.tinLast4}</td>
-                  <td>
-                    <select
-                      value={t.role}
-                      onChange={(e) =>
-                        setTaxpayers((prev) =>
-                          prev.map((p) =>
-                            p.taxpayerId === t.taxpayerId ? { ...p, role: e.target.value } : p,
-                          ),
-                        )
-                      }
-                    >
-                      <option value="primary">Primary</option>
-                      <option value="spouse">Spouse</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TaxpayerEditor
+            bundleId={bundleId}
+            taxpayers={taxpayers}
+            onRoleChange={(taxpayerId, role) =>
+              setTaxpayers((prev) => prev.map((p) => (p.taxpayerId === taxpayerId ? { ...p, role } : p)))
+            }
+            onChanged={refreshBundle}
+            onError={onError}
+          />
           <p className="muted">
             Tax year{' '}
             <input
@@ -811,6 +797,24 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
             {confirming ? 'Confirming…' : 'Confirm client and tax year'}
           </button>
         </div>
+      )}
+
+      {bundle?.identityConfirmedAt && (
+        <details className="taxpayers-strip">
+          <summary>
+            Client: {taxpayers.length ? taxpayers.map((t) => `${t.displayName ?? 'unnamed'} (…${t.tinLast4}, ${t.role})`).join('; ') : 'nobody attributed'}
+            {' '}· tax year {bundle.taxYear ?? '?'} — edit
+          </summary>
+          <TaxpayerEditor
+            bundleId={bundleId}
+            taxpayers={taxpayers}
+            onRoleChange={(taxpayerId, role) => {
+              api.updateTaxpayer(bundleId, taxpayerId, { role }).then(refreshBundle).catch((e: Error) => onError(e.message));
+            }}
+            onChanged={refreshBundle}
+            onError={onError}
+          />
+        </details>
       )}
 
       {blocking.length > 0 && (
@@ -944,6 +948,131 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
             ))}
         </aside>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Who this bundle belongs to, editable. Names are a tiebreaker and can be typed or fixed;
+ * a TIN is the join key and is typed in full, hashed on the server, and never shown again
+ * beyond its last four (§7). A wrongly proposed person can be taken off the bundle.
+ */
+function TaxpayerEditor({
+  bundleId,
+  taxpayers,
+  onRoleChange,
+  onChanged,
+  onError,
+}: {
+  bundleId: string;
+  taxpayers: { taxpayerId: string; displayName: string | null; tinLast4: string; role: string; proposed: boolean }[];
+  onRoleChange: (taxpayerId: string, role: string) => void;
+  onChanged: () => void;
+  onError: (m: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [tin, setTin] = useState('');
+  const [role, setRole] = useState('primary');
+  const [busy, setBusy] = useState(false);
+  const [names, setNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setNames(Object.fromEntries(taxpayers.map((t) => [t.taxpayerId, t.displayName ?? ''])));
+  }, [taxpayers]);
+
+  const saveName = (t: (typeof taxpayers)[number]) => {
+    const next = (names[t.taxpayerId] ?? '').trim();
+    if (next === (t.displayName ?? '')) return;
+    api
+      .updateTaxpayer(bundleId, t.taxpayerId, { displayName: next || null })
+      .then(onChanged)
+      .catch((e: Error) => onError(e.message));
+  };
+
+  return (
+    <div className="taxpayer-editor">
+      <table className="grid">
+        <thead>
+          <tr><th>Name</th><th>TIN</th><th>Role</th><th /></tr>
+        </thead>
+        <tbody>
+          {taxpayers.map((t) => (
+            <tr key={t.taxpayerId}>
+              <td>
+                <input
+                  value={names[t.taxpayerId] ?? ''}
+                  placeholder="no name on the documents"
+                  onChange={(e) => setNames((prev) => ({ ...prev, [t.taxpayerId]: e.target.value }))}
+                  onBlur={() => saveName(t)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  }}
+                />
+                {t.proposed && <span className="pill" title="Read from the documents; not yet confirmed"> proposed</span>}
+              </td>
+              <td>•••-••-{t.tinLast4}</td>
+              <td>
+                <select value={t.role} onChange={(e) => onRoleChange(t.taxpayerId, e.target.value)}>
+                  <option value="primary">Primary</option>
+                  <option value="spouse">Spouse</option>
+                  <option value="other">Other</option>
+                </select>
+              </td>
+              <td>
+                <button
+                  className="link"
+                  title="Take this person off the bundle. The documents assigned to them are unassigned."
+                  onClick={() =>
+                    api.removeTaxpayer(bundleId, t.taxpayerId).then(onChanged).catch((e: Error) => onError(e.message))
+                  }
+                >
+                  remove
+                </button>
+              </td>
+            </tr>
+          ))}
+          <tr className="taxpayer-add">
+            <td>
+              <input value={name} placeholder="Name (optional)" onChange={(e) => setName(e.target.value)} />
+            </td>
+            <td>
+              <input
+                value={tin}
+                placeholder="SSN or ITIN, all nine digits"
+                inputMode="numeric"
+                autoComplete="off"
+                onChange={(e) => setTin(e.target.value)}
+                title="Hashed on the server with the firm's salt; only the last four are ever stored or shown."
+              />
+            </td>
+            <td>
+              <select value={role} onChange={(e) => setRole(e.target.value)}>
+                <option value="primary">Primary</option>
+                <option value="spouse">Spouse</option>
+                <option value="other">Other</option>
+              </select>
+            </td>
+            <td>
+              <button
+                disabled={busy || tin.replace(/\D/g, '').length !== 9}
+                onClick={() => {
+                  setBusy(true);
+                  api
+                    .addTaxpayer(bundleId, { displayName: name.trim() || undefined, tin, role })
+                    .then(() => {
+                      setName('');
+                      setTin('');
+                      onChanged();
+                    })
+                    .catch((e: Error) => onError(e.message))
+                    .finally(() => setBusy(false));
+                }}
+              >
+                Add
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -75,6 +75,12 @@ const schema = z.object({
   B2_APPLICATION_KEY: z.string().optional(),
 
   SIDECAR_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  /**
+   * Pipeline jobs run at once by the worker. Layout on a rate-limited provider takes a
+   * minute or two per page; more concurrency finishes a scanned packet sooner but draws
+   * more 429s from the provider. Tune against the router ledger.
+   */
+  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(4),
 
   /**
    * Optional OCR fallback for pages with no text layer.
