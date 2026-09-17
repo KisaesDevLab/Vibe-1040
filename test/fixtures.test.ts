@@ -130,7 +130,7 @@ describe('fixture set', () => {
   it('includes three consolidated packages, one of which fails to tie (P4, §6)', async () => {
     const m = await manifest();
     const brokers = m.bundles.find((b) => b.name === 'brokerage-packages-2025')!;
-    const summaries = brokers.documents.filter((d) => d.formType === '1099-CONSOLIDATED');
+    const summaries = brokers.documents.filter((d) => d.formType === '1099-CONSOLIDATED' && d.isSummary);
     expect(summaries).toHaveLength(3);
 
     // Sub-forms are parented to their package summary.

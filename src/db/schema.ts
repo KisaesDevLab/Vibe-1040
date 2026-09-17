@@ -173,6 +173,13 @@ export const taxpayers = pgTable(
   (t) => [index('taxpayers_last4_idx').on(t.tinLast4)],
 );
 
+export interface IdentityHint {
+  last4: string;
+  name: string | null;
+  formType: string | null;
+  source: 'text_layer' | 'extraction';
+}
+
 export const bundles = pgTable(
   'bundles',
   {
@@ -195,6 +202,11 @@ export const bundles = pgTable(
      */
     extractionFanoutAt: timestamp('extraction_fanout_at', { withTimezone: true }),
     reconcileFanoutAt: timestamp('reconcile_fanout_at', { withTimezone: true }),
+    /**
+     * Last-four-and-name hints for the confirm panel (0010): masked TINs off brokerage
+     * statements, numbers extraction read but could not hash. Never a full TIN.
+     */
+    identityHints: jsonb('identity_hints').$type<IdentityHint[]>(),
     /** Bookmarked, return-ordered PDF of the source pages (0009). Purged with the rasters. */
     sortedPdfStorageKey: text('sorted_pdf_storage_key'),
     sortedPdfAt: timestamp('sorted_pdf_at', { withTimezone: true }),

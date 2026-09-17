@@ -261,9 +261,10 @@
         {
           "file": "consolidated_brokerage_a.pdf",
           "page": 6,
-          "formType": null,
+          "formType": "1099-CONSOLIDATED",
           "taxYear": 2025,
           "isSupplemental": true,
+          "packageDetailPage": true,
           "fields": {}
         },
         {
@@ -335,9 +336,10 @@
         {
           "file": "consolidated_brokerage_b.pdf",
           "page": 5,
-          "formType": null,
+          "formType": "1099-CONSOLIDATED",
           "taxYear": 2025,
           "isSupplemental": true,
+          "packageDetailPage": true,
           "fields": {}
         },
         {
@@ -422,9 +424,10 @@
         {
           "file": "consolidated_brokerage_c.pdf",
           "page": 6,
-          "formType": null,
+          "formType": "1099-CONSOLIDATED",
           "taxYear": 2025,
           "isSupplemental": true,
+          "packageDetailPage": true,
           "fields": {}
         }
       ]

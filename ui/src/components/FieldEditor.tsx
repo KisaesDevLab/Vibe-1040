@@ -3,7 +3,12 @@ import { api, formatCents } from '../api';
 import type { FieldRow } from '../types';
 
 /**
- * Editable field values with accept / correct actions (P11).
+ * Editable field values (P11).
+ *
+ * A field that nothing flagged is shown quietly — value, and a small "edit" affordance —
+ * because a Correct button on every row read as "every row needs correcting". A flagged
+ * field says in a sentence why it was flagged and offers two exits: correct it, or confirm
+ * it is right ("Looks right"), which clears the flag without changing the value.
  *
  * The blank-vs-zero distinction is visible in the UI, not just in the database: a blank box
  * renders as "blank" and a printed zero renders as 0.00, and "Set blank" is a distinct
@@ -17,6 +22,16 @@ interface Props {
   onSelect: () => void;
   onChanged: () => void;
 }
+
+const REASONS: Record<string, string> = {
+  no_span: 'No span on the page supports this value. Check it against the image.',
+  span_mismatch: 'The value is not in the text it cites — a likely misread.',
+  pass_disagreement: 'Two binding passes disagreed on this value.',
+  unmapped: 'The printed value could not be parsed as this field type.',
+  hard_failure: 'Part of a hard arithmetic failure.',
+  soft_failure: 'Part of a soft arithmetic annotation.',
+  judgment_required: 'Judgment Required.',
+};
 
 export function FieldEditor({ field, label, isMoney, selected, onSelect, onChanged }: Props) {
   const [editing, setEditing] = useState(false);
@@ -50,18 +65,30 @@ export function FieldEditor({ field, label, isMoney, selected, onSelect, onChang
     }
   };
 
-  const flags: string[] = [];
-  if (field.reviewReason === 'no_span') flags.push('no source span');
-  if (field.disagreed) flags.push('passes disagreed');
-  if (field.wasCorrected) flags.push('corrected');
+  const accept = async () => {
+    setBusy(true);
+    try {
+      await api.acceptField(field.fieldId);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEdit = () => {
+    setDraft(field.cents !== null ? String(field.cents / 100) : (field.text ?? ''));
+    setEditing(true);
+  };
+
+  const reason = field.needsReview ? (REASONS[field.reviewReason ?? ''] ?? `Needs review (${field.reviewReason ?? '?'}).`) : null;
 
   return (
     <div
       className={[
         'field-row',
         selected ? 'selected' : '',
-        field.needsReview ? 'needs-review' : '',
-        field.spanIds.length === 0 && field.present ? 'no-span' : '',
+        field.needsReview ? 'needs-review' : 'quiet',
+        field.needsReview && field.reviewReason === 'span_mismatch' ? 'mismatch' : '',
       ].join(' ')}
       onClick={onSelect}
     >
@@ -70,19 +97,24 @@ export function FieldEditor({ field, label, isMoney, selected, onSelect, onChang
         <span className={display === null ? 'field-value blank' : 'field-value'}>
           {display === null ? 'blank' : display}
         </span>
+        {!editing && !field.needsReview && (
+          <button
+            className="link field-edit-link"
+            title="Change this value"
+            onClick={(e) => {
+              e.stopPropagation();
+              startEdit();
+            }}
+          >
+            edit
+          </button>
+        )}
       </div>
 
-      {flags.length > 0 && (
-        <div className="field-flags">
-          {flags.map((f) => (
-            <span key={f} className="flag">{f}</span>
-          ))}
-        </div>
-      )}
-
+      {reason && <div className="field-reason">{reason}</div>}
       {field.wasCorrected && (
         <div className="field-original">
-          model read:{' '}
+          corrected · model read:{' '}
           {field.original.cents !== null
             ? formatCents(field.original.cents)
             : (field.original.text ?? (field.original.bool === null ? 'blank' : String(field.original.bool)))}
@@ -105,16 +137,14 @@ export function FieldEditor({ field, label, isMoney, selected, onSelect, onChang
           <button disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
         </div>
       ) : (
-        <div className="field-actions" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => {
-              setDraft(field.cents !== null ? String(field.cents / 100) : (field.text ?? ''));
-              setEditing(true);
-            }}
-          >
-            Correct
-          </button>
-        </div>
+        field.needsReview && (
+          <div className="field-actions" onClick={(e) => e.stopPropagation()}>
+            <button disabled={busy} onClick={() => void accept()} title="The value is right as read; clear the flag">
+              Looks right
+            </button>
+            <button disabled={busy} onClick={startEdit}>Correct</button>
+          </div>
+        )
       )}
     </div>
   );

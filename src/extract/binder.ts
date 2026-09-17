@@ -235,7 +235,7 @@ const PLACEHOLDER = /\[[A-Z][A-Z0-9_ -]*\]/;
 
 const IDENTIFIER_SHAPES: [RegExp, RegExp][] = [
   [/\[(?:EIN|TIN|PAYER'?S? TIN|FEDERAL ID)\]/i, /\b\d{2}-\d{7}\b/],
-  [/\[(?:SSN|ITIN|TIN|RECIPIENT'?S? TIN)\]/i, /\b\d{3}-\d{2}-\d{4}\b/],
+  [/\[(?:SSN|ITIN|TIN|RECIPIENT'?S? TIN)\]/i, /\b\d{3}[- ]\d{2}[- ]\d{4}\b|\b\d{9}\b/],
   [/\[(?:PHONE|TEL)[A-Z ]*\]/i, /\(?\d{3}\)?[ -]?\d{3}-\d{4}/],
 ];
 

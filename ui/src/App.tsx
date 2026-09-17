@@ -743,11 +743,29 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
             identification number. Extraction has already run; this decides whose return the
             worksheet says these numbers belong to.
           </p>
-          {taxpayers.length === 0 && (
+          {(bundle.identityHints ?? []).filter((h) => !taxpayers.some((t) => t.tinLast4 === h.last4)).length > 0 && (
+            <div className="identity-hints">
+              <strong>The documents show a number this app cannot use as a key:</strong>
+              <ul>
+                {(bundle.identityHints ?? [])
+                  .filter((h) => !taxpayers.some((t) => t.tinLast4 === h.last4))
+                  .map((h) => (
+                    <li key={h.last4}>
+                      •••-••-{h.last4}
+                      {h.name ? ` — ${h.name}` : ''}
+                      {h.formType ? ` (${h.formType})` : ''}
+                      {h.source === 'text_layer' ? ', masked on the form' : ', read from the page but not hashable'}
+                    </li>
+                  ))}
+              </ul>
+              <span className="muted">Type the full nine-digit number below to attribute this bundle. Only the last four are kept.</span>
+            </div>
+          )}
+          {taxpayers.length === 0 && !(bundle.identityHints ?? []).length && (
             <p className="warn-note">
               No taxpayer identification number could be read from these documents, so there is
-              nobody to propose. Confirming the tax year alone lets a worksheet be produced, but
-              it will not be attributed to a client. Check the documents before you do.
+              nobody to propose. Add the client below, or confirm the tax year alone — a
+              worksheet can then be produced, but it will not be attributed to a client.
             </p>
           )}
           <TaxpayerEditor

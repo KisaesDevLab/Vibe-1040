@@ -97,6 +97,39 @@ describe('1099-B section subtotals foot to the package summary', () => {
   });
 });
 
+describe('foreign tax on a consolidated package', () => {
+  const child = (formType: string, key: string, cents: number | null) => ({
+    formType,
+    fields: new Map<string, FieldValue>([[key, field(cents === null ? {} : { cents })]]),
+  });
+
+  it('passes when the summary ties to the 1099-INT/DIV boxes', () => {
+    const r = find(
+      runChecks(ctx({ summary_foreign_tax_paid: field({ cents: 12_300 }) }, { children: [child('1099-DIV', 'box_7', 10_000), child('1099-INT', 'box_6', 2_300)] }), ['consolidated_foreign_tax_ties_to_subforms']),
+      'consolidated_foreign_tax_ties_to_subforms',
+    )!;
+    expect(r.outcome).toBe('pass');
+  });
+
+  it('flags a summary with foreign tax whose sub-form boxes were missed', () => {
+    const r = find(
+      runChecks(ctx({ summary_foreign_tax_paid: field({ cents: 12_300 }) }, { children: [child('1099-DIV', 'box_7', null)] }), ['consolidated_foreign_tax_ties_to_subforms']),
+      'consolidated_foreign_tax_ties_to_subforms',
+    )!;
+    expect(r).toMatchObject({ severity: 'soft', outcome: 'fail' });
+    expect(r.message).toContain('missed');
+  });
+
+  it('flags sub-form foreign tax the summary does not carry', () => {
+    const r = find(
+      runChecks(ctx({}, { children: [child('1099-DIV', 'box_7', 4_400)] }), ['consolidated_foreign_tax_ties_to_subforms']),
+      'consolidated_foreign_tax_ties_to_subforms',
+    )!;
+    expect(r.outcome).toBe('fail');
+    expect(r.actualCents).toBe(4_400);
+  });
+});
+
 /**
  * Document-state failures are recomputed at reconcile from the document row, so they
  * survive the check-result reset that used to delete them.

@@ -8,6 +8,8 @@ export interface Bundle {
   createdAt: string;
   /** Bookmarked, return-ordered PDF of the source pages, when built. */
   sortedPdfAt?: string | null;
+  /** Masked or unhashable TINs seen on the documents: last four and a name. Never a full TIN. */
+  identityHints?: { last4: string; name: string | null; formType: string | null; source: string }[] | null;
 }
 
 export interface DocumentRow {

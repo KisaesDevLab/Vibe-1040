@@ -873,6 +873,24 @@ export function registerRoutes(app: FastifyInstance): void {
     return { ok: true, correctionId };
   });
 
+  /** The value is right as read: clear the review flag without changing anything. */
+  app.post('/api/fields/:id/accept', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const [field] = await db.select().from(extractedFields).where(eq(extractedFields.id, id)).limit(1);
+    if (!field) return reply.code(404).send({ error: 'not found' });
+    const [doc] = await db.select().from(documents).where(eq(documents.id, field.documentId)).limit(1);
+    await db.update(extractedFields).set({ needsReview: false, updatedAt: new Date() }).where(eq(extractedFields.id, id));
+    await auditAccess(req, 'field.accept', {
+      bundleId: doc?.bundleId,
+      entityType: 'extracted_field',
+      entityId: id,
+      detail: { fieldKey: field.fieldKey, reason: field.reviewReason },
+    });
+    return { ok: true };
+  });
+
   // ── the gate ───────────────────────────────────────────────────────────────
   app.post('/api/checks/:id/disposition', async (req, reply) => {
     const user = await requireUser(req, reply);

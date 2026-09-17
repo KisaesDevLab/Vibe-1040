@@ -20,7 +20,8 @@
       "key": "recipient_name",
       "label": "Recipient's name",
       "type": "text",
-      "box": "3"
+      "box": "3",
+      "identity": "name"
     },
     {
       "key": "marketplace_id",

@@ -1,13 +1,14 @@
 {
   "formType": "1099-CONSOLIDATED",
   "taxYear": 2025,
-  "version": "2025.1",
+  "version": "2025.2",
   "description": "Consolidated brokerage 1099 package — a container for sub-forms (P4)",
   "container": true,
   "allJudgmentRequired": false,
   "checks": [
     "consolidated_subforms_tie_to_summary",
-    "b_section_subtotals_foot_to_summary"
+    "b_section_subtotals_foot_to_summary",
+    "consolidated_foreign_tax_ties_to_subforms"
   ],
   "fields": [
     {
@@ -72,6 +73,32 @@
       "label": "Summary — federal income tax withheld",
       "type": "money",
       "box": "summary"
+    },
+    {
+      "key": "summary_foreign_tax_paid",
+      "label": "Summary — foreign tax paid (all 1099-INT/DIV in the package)",
+      "type": "money",
+      "box": "summary",
+      "notes": "Printed on the summary page and again on the foreign tax detail page. Sub-form boxes carry the same amounts; this is the package total, informational."
+    },
+    {
+      "key": "summary_foreign_source_income",
+      "label": "Foreign source income (from the foreign tax paid / foreign source income detail page)",
+      "type": "money",
+      "box": "detail",
+      "notes": "Needed for Form 1116. Printed only on the supplemental detail page of most packages; never computed here."
+    },
+    {
+      "key": "summary_foreign_source_qualified_dividends",
+      "label": "Foreign source qualified dividends (detail page)",
+      "type": "money",
+      "box": "detail"
+    },
+    {
+      "key": "summary_foreign_country",
+      "label": "Foreign country or 'various' (detail page)",
+      "type": "text",
+      "box": "detail"
     }
   ]
 }

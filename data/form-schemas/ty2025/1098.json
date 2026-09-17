@@ -16,7 +16,8 @@
     {
       "key": "recipient_name",
       "label": "Recipient's/Lender's name",
-      "type": "text"
+      "type": "text",
+      "identity": "name"
     },
     {
       "key": "recipient_tin",
@@ -26,7 +27,8 @@
     {
       "key": "borrower_name",
       "label": "Payer's/Borrower's name",
-      "type": "text"
+      "type": "text",
+      "identity": "name"
     },
     {
       "key": "corrected",

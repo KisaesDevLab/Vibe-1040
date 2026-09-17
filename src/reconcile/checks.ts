@@ -366,6 +366,45 @@ export const bSubtotalsFootToSummary: Check = (ctx) => {
   };
 };
 
+/**
+ * Foreign tax paid on the package summary should equal the sub-forms' foreign tax boxes
+ * (1099-DIV box 7, 1099-INT box 6). Soft: a mismatch usually means a sub-form box was
+ * missed, which is the failure the firm kept seeing on brokerage statements.
+ */
+export const consolidatedForeignTaxTies: Check = (ctx) => {
+  const summary = cents(ctx, 'summary_foreign_tax_paid');
+  const parts = (ctx.children ?? [])
+    .map((c) => (c.formType === '1099-DIV' ? c.fields.get('box_7')?.cents : c.formType === '1099-INT' ? c.fields.get('box_6')?.cents : null))
+    .filter((v): v is number => v !== null && v !== undefined);
+  if (summary === null && !parts.length) {
+    return na('consolidated_foreign_tax_ties_to_subforms', 'soft', 'No foreign tax reported on the summary or the sub-forms.');
+  }
+  if (summary === null) {
+    return {
+      checkKey: 'consolidated_foreign_tax_ties_to_subforms',
+      severity: 'soft',
+      outcome: 'fail',
+      message: `Sub-forms report foreign tax paid (${parts.reduce((a, b) => a + b, 0)}) but the package summary has none. Form 1116 needs the foreign source income from the detail page.`,
+      actualCents: parts.reduce((a, b) => a + b, 0),
+    };
+  }
+  const sum = parts.reduce((a, b) => a + b, 0);
+  const ok = parts.length > 0 && withinTolerance(sum, summary, ctx.toleranceCents);
+  return {
+    checkKey: 'consolidated_foreign_tax_ties_to_subforms',
+    severity: 'soft',
+    outcome: ok ? 'pass' : 'fail',
+    message: ok
+      ? 'Foreign tax paid on the summary ties to the 1099-INT/DIV boxes.'
+      : parts.length
+        ? `Package summary reports foreign tax paid ${summary} but the 1099-INT/DIV boxes sum to ${sum}. A sub-form box was probably missed.`
+        : `Package summary reports foreign tax paid ${summary} but no 1099-INT/DIV in the package carries it. The sub-form box 6/7 was probably missed.`,
+    expectedCents: summary,
+    actualCents: sum,
+    toleranceCents: ctx.toleranceCents,
+  };
+};
+
 /** A consolidated 1099's sub-form totals must tie to its summary (§6, hard). */
 export const consolidatedTiesToSummary: Check = (ctx) => {
   const pairs = [
@@ -615,6 +654,7 @@ export const CHECKS: Record<string, Check> = {
   a1095_monthly_rows_foot_to_annual: a1095MonthlyFootsToAnnual,
   b_section_subtotals_foot_to_summary: bSubtotalsFootToSummary,
   consolidated_subforms_tie_to_summary: consolidatedTiesToSummary,
+  consolidated_foreign_tax_ties_to_subforms: consolidatedForeignTaxTies,
   k_monthly_rows_foot_to_gross: kMonthlyFootsToGross,
 };
 

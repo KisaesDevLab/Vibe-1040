@@ -21,7 +21,24 @@ export interface PersistResult {
   flaggedForReview: number;
   /** Plaintext TINs, in memory only, for identity resolution to hash. Never persisted. */
   sensitiveValues: Map<string, string>;
+  /** The taxpayer's name as printed (the schema's `identity: name` field), for the proposal. */
+  identityName: string | null;
   unparseable: string[];
+}
+
+const MONEY_TOKEN = /\(?-?\$?\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?\)?|\(?-?\$?\d+(?:\.\d{1,2})?\)?/g;
+
+/**
+ * The one money token in a value that also carries a label — "D 20,500.00" from a box 12
+ * span, "$ 1,234.56 *". Only when exactly one token looks like an amount; two amounts in
+ * one value is a genuine misread and stays unparseable.
+ */
+export function moneyTokenIn(raw: string): string | null {
+  const tokens = raw.match(MONEY_TOKEN) ?? [];
+  const amounts = tokens.filter((t) => /[.,]/.test(t));
+  if (amounts.length === 1) return amounts[0]!;
+  if (amounts.length === 0 && tokens.length === 1) return tokens[0]!;
+  return null;
 }
 
 function toBool(raw: string): boolean | null {
@@ -38,6 +55,7 @@ export async function persistBoundFields(
 ): Promise<PersistResult> {
   const sensitiveValues = new Map<string, string>();
   const unparseable: string[] = [];
+  let identityName: string | null = null;
   const rows: (typeof extractedFields.$inferInsert)[] = [];
 
   for (const field of schema.fields) {
@@ -49,6 +67,7 @@ export async function persistBoundFields(
       if (bound.raw) sensitiveValues.set(field.key, bound.raw);
       continue;
     }
+    if (field.identity === 'name' && bound.raw?.trim()) identityName = bound.raw.trim();
 
     const disagreed = result.disagreements.has(field.key);
     const mismatched = result.mismatches.has(field.key);
@@ -79,9 +98,15 @@ export async function persistBoundFields(
            */
         } else if (parsed.kind === 'amount') valueCents = parsed.cents;
         else if (parsed.kind === 'unparseable') {
-          parseFailed = true;
-          valueText = bound.raw;
-          unparseable.push(field.key);
+          const token = moneyTokenIn(bound.raw!);
+          const reparsed = token ? parseMoney(token) : null;
+          if (reparsed?.kind === 'amount') {
+            valueCents = reparsed.cents;
+          } else {
+            parseFailed = true;
+            valueText = bound.raw;
+            unparseable.push(field.key);
+          }
         }
       } else if (field.type === 'bool') {
         valueBool = toBool(bound.raw!);
@@ -158,6 +183,7 @@ export async function persistBoundFields(
     written: rows.length,
     flaggedForReview: rows.filter((r) => r.needsReview).length,
     sensitiveValues,
+    identityName,
     unparseable,
   };
 }

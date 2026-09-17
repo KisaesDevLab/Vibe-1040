@@ -20,7 +20,8 @@
       "key": "beneficiary_name",
       "label": "Beneficiary's name",
       "type": "text",
-      "box": "1"
+      "box": "1",
+      "identity": "name"
     },
     {
       "key": "box_3",

@@ -36,6 +36,8 @@ const fieldSchema = z
      * four, and the value is dropped. `src/extract/persist.ts` refuses to write these.
      */
     sensitive: z.enum(['tin']).optional(),
+    /** `name` marks the field that names the taxpayer (recipient, employee, borrower…), for identity proposals (§7). */
+    identity: z.enum(['name']).optional(),
     notes: z.string().optional(),
   })
   .strict();

@@ -109,6 +109,7 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
       { text: '2 Federal income tax withheld', x0: 0.55, y0: 0.2, x1: 0.8, y1: 0.212 },
       { text: '11,420.00', x0: 0.56, y0: 0.215, x1: 0.7, y1: 0.227 },
       { text: 'ACME MANUFACTURING INC', x0: 0.06, y0: 0.1, x1: 0.3, y1: 0.112 },
+      { text: 'D 20,500.00', x0: 0.56, y0: 0.4, x1: 0.7, y1: 0.412 },
     ];
     await pipeline.recordRasterOutput(bundleId, fileId, [
       { pageNumber: 1, route: 'text_layer', hasTextLayer: true, textLayerGarbled: false, textLayer: 'Dear client, enclosed are your documents.', dpi: 200, encoding: 'image/jpeg', widthPx: 1700, heightPx: 2200, encodedBytes: 1, rasterStorageKey: 'r1', triageReason: 't', layoutSpans: [{ text: 'Dear client, enclosed are your documents.', x0: 0.1, y0: 0.1, x1: 0.5, y1: 0.11 }] },
@@ -124,12 +125,12 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
     const p2 = rows.find((r) => r.pageNumber === 2)!;
     expect(p2.layoutCompletedAt).not.toBeNull();
     expect(p2.layoutSource).toBe('text_layer');
-    expect(p2.spanCount).toBe(5);
+    expect(p2.spanCount).toBe(6);
     const p3 = rows.find((r) => r.pageNumber === 3)!;
     expect(p3.layoutCompletedAt).toBeNull();
 
     const spans = await db.select().from(schema.layoutSpans).where(eq(schema.layoutSpans.pageId, p2.id));
-    expect(spans.map((s) => s.producedByModel)).toEqual(Array(5).fill(pipeline.TEXT_LAYER_SPAN_PRODUCER));
+    expect(spans.map((s) => s.producedByModel)).toEqual(Array(6).fill(pipeline.TEXT_LAYER_SPAN_PRODUCER));
   });
 
   it('classifies, splits, and fans layout out only to the page that still needs it', async () => {
@@ -195,6 +196,9 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
             // A TIN makes extraction re-propose identity for this one 2024 document. That
             // proposal must not overwrite the bundle's majority year (2025).
             { field_key: 'employee_tin', value: '123-45-6789', span_indices: [0] },
+            { field_key: 'employee_name', value: 'ROBERT J SMITH', span_indices: [4] },
+            // A box 12 value the model copied with its code letter: the amount is the value.
+            { field_key: 'box_12a_amount', value: 'D 20,500.00', span_indices: [5] },
             { field_key: 'box_3', value: null, span_indices: [] },
             // The model's three spellings of "empty": a bare "$", a zero it cannot cite, and
             // an unchecked box. None is a review item and none is an orphan (§5).
@@ -223,6 +227,8 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
     expect(bundleAfter!.status, 'the post-extraction proposal must not flip the status mid-pipeline').toBe('extracting');
     const proposed = await db.select().from(schema.bundleTaxpayers).where(eq(schema.bundleTaxpayers.bundleId, bundleId));
     expect(proposed).toHaveLength(1);
+    const [person] = await db.select().from(schema.taxpayers).where(eq(schema.taxpayers.id, proposed[0]!.taxpayerId));
+    expect(person!.displayName, 'the taxpayer, never the employer').toBe('ROBERT J SMITH');
     expect(queued.mock.calls.filter((c) => c[0] === 'reconcile_bundle')).toHaveLength(1);
 
     const after = await db.select().from(schema.documents).where(eq(schema.documents.bundleId, bundleId));
@@ -242,6 +248,8 @@ describe.skipIf(!dbAvailable)('pipeline stage hand-offs (0007)', () => {
     expect(byKey.get('box_13_retirement')).toMatchObject({ valueBool: false, needsReview: false });
     // A checked box with nothing cited is a real orphan.
     expect(byKey.get('box_13_statutory')).toMatchObject({ valueBool: true, needsReview: true, reviewReason: 'no_span' });
+    // "D 20,500.00": the code letter copied along with the amount is not a parse failure.
+    expect(byKey.get('box_12a_amount')).toMatchObject({ valueCents: 2_050_000, needsReview: false });
     expect(byKey.has('made_up_key')).toBe(false);
   });
 

@@ -38,7 +38,8 @@ import { bindFields, type PageImage, type StoredSpan } from '../extract/binder.t
 import { persistBoundFields } from '../extract/persist.ts';
 import { resolveDocumentFields } from '../extract/resolve.ts';
 import { harvestIdentityFromText } from '../identity/harvest.ts';
-import { proposeIdentity, saveProposal, type TinObservation } from '../identity/resolve.ts';
+import { proposeIdentity, recordIdentityHints, saveProposal, type TinObservation } from '../identity/resolve.ts';
+import type { IdentityHint } from '../db/schema.ts';
 import { runLayoutPass } from '../layout/pass.ts';
 import {
   excessSocialSecurityWithheld,
@@ -298,18 +299,17 @@ export async function classifyBundle(bundleId: string, userId: string): Promise<
   }
 
   const observations: TinObservation[] = [];
+  const hints: IdentityHint[] = [];
   for (const page of identityPages) {
     if (!page.documentId) continue;
-    const { tins, name } = harvestIdentityFromText(page.textLayer);
+    const { tins, maskedLast4, name } = harvestIdentityFromText(page.textLayer);
+    const formType = docFormTypes.get(page.documentId)?.formType ?? null;
     for (const rawTin of tins) {
-      observations.push({
-        documentId: page.documentId,
-        rawTin,
-        name,
-        formType: docFormTypes.get(page.documentId)?.formType ?? null,
-      });
+      observations.push({ documentId: page.documentId, rawTin, name, formType });
     }
+    for (const last4 of maskedLast4) hints.push({ last4, name, formType, source: 'text_layer' });
   }
+  await recordIdentityHints(bundleId, hints, { replace: true });
 
   if (observations.length) {
     const documentYears = [...docFormTypes.entries()].map(([documentId, meta]) => ({
@@ -444,17 +444,23 @@ export async function extractDocument(
     });
     const persisted = await persistBoundFields(documentId, resolved.schema, bound);
 
-    // §7: the plaintext TIN never lands in a column. It is hashed here and discarded.
+    // §7: the plaintext TIN never lands in a column. It is hashed here and discarded. The
+    // name is the taxpayer's, from the schema's identity field — it used to be the payer's,
+    // which proposed the employer as the client on every W-2 read this way.
     if (persisted.sensitiveValues.size) {
       const observations: TinObservation[] = [...persisted.sensitiveValues.values()].map((raw) => ({
         documentId,
         rawTin: raw,
-        name: doc.payerName,
+        name: persisted.identityName,
         formType: doc.formType,
       }));
       const proposal = proposeIdentity(observations, [{ documentId, taxYear: doc.taxYear }]);
       // Refines the taxpayers; never the bundle year, which one document cannot outvote.
       await saveProposal(bundleId, proposal, { setTaxYear: false });
+      const masked = proposal.unusable
+        .filter((u) => u.last4)
+        .map((u): IdentityHint => ({ last4: u.last4!, name: persisted.identityName, formType: doc.formType, source: 'extraction' }));
+      if (masked.length) await recordIdentityHints(bundleId, masked);
     }
 
     await finishDocument(documentId, 'extracted', {

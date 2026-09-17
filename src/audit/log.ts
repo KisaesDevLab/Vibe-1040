@@ -29,6 +29,7 @@ export type AuditAction =
   | 'document.view'
   | 'page.raster_view'
   | 'field.correct'
+  | 'field.accept'
   | 'document.correct'
   | 'bundle.sorted_pdf'
   | 'bundle.sorted_pdf_download'

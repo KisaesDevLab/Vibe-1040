@@ -101,6 +101,11 @@ the host):
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
 
+**Released 2026-09-17 as v0.9.0** — taxpayer recognition (identity name field, spaced and
+bare TINs, masked-number hints), quieter field review with **Looks right**, code-letter money
+values parsed, and foreign tax / foreign source income captured from consolidated packages
+(decision log, same date). **Carries migration 0010.** Images tagged `0.9.0` / `0.9`.
+
 **Released 2026-09-17 as v0.8.3** — the admin settings now do what they say. The
 reconciliation, retention, extraction and rasterization settings had been stored since
 2026-08-26 and read by nothing; the pipeline used the environment. Binding passes, escalation,
@@ -606,6 +611,33 @@ uploads come from inside the firm, and reprocessing exists if a bundle needs red
 Kurt's call, and the right one — he pushed back on the gate as unnecessary and the evidence
 agreed with him.
 *Affects:* P4, P7, P8, P10, §7.
+
+**2026-09-17 — Taxpayer recognition, review false positives, and foreign income on brokerage packages.** (v0.9.0, migration 0010)
+Three complaints from the first week of real packets, one change set.
+
+1. **The taxpayer.** The post-extraction proposal passed the *payer's* name as the taxpayer's,
+   so a W-2 read through extraction proposed the employer as the client. Schemas now flag the
+   field that names the taxpayer (`identity: name` — recipient, employee, borrower, student,
+   participant, beneficiary, partner, shareholder, winner) and the proposal uses it. The text
+   harvest reads spaced and label-adjacent bare nine-digit numbers as well as dashed ones, and
+   keeps masked numbers (`XXX-XX-8214`, `***-**-8214`, "ending in 8214") as **hints**: last four
+   plus the name beside them, stored on the bundle (never a full TIN), shown in the confirm
+   panel as "documents show •••-••-8214 — MARCUS D WILLIAMS (W-2); type the full number". The
+   scrubbed-placeholder recovery also accepts spaced and bare SSNs.
+2. **False positives.** Unflagged fields render quietly with an "edit" affordance on hover; a
+   flagged field says in a sentence why, and offers **Looks right** (clears the flag, audited as
+   `field.accept`) beside **Correct**. A money value copied with its code letter ("D 20,500.00")
+   is parsed from its one amount token instead of being flagged unparseable.
+3. **Foreign income and taxes on brokerage statements.** Foreign tax paid was already mapped
+   to Judgment Required per sub-form box, but foreign *source* income lives on a package's
+   supplemental detail page, which was classified as a stand-alone non-form page and never
+   read. A supplemental page that continues an open consolidated package now stays with the
+   package document, the container schema gains `summary_foreign_tax_paid`,
+   `summary_foreign_source_income`, `summary_foreign_source_qualified_dividends` and
+   `summary_foreign_country`, two INFO lines carry them (mapping 2025.3), and a soft check
+   flags a package whose summary foreign tax does not tie to its 1099-INT box 6 / 1099-DIV
+   box 7 — the exact case of a missed sub-form box. The classifier prompt names these pages.
+*Affects:* P4, P5, P8, P9, P10, P11, §7, §9.
 
 **2026-09-16 — Documents in return order everywhere, and a bookmarked sorted PDF of the source pages.** (v0.8.0, migration 0009)
 One ordering, loaded from `data/form-order.json`: wages, interest, dividends, retirement,

@@ -28,7 +28,8 @@
     {
       "key": "recipient_name",
       "label": "Recipient name",
-      "type": "text"
+      "type": "text",
+      "identity": "name"
     },
     {
       "key": "account_number",

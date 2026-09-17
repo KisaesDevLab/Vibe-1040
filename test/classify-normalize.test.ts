@@ -163,6 +163,22 @@ describe('1099-B section splitting', () => {
     expect(groups[0]).toMatchObject({ sectionCode: 'B', pageIds: ['p1', 'p2'] });
   });
 
+  it('keeps a supplemental detail page inside a consolidated package with the package', () => {
+    const groups = groupPages([
+      page({ pageId: 'p1', form_type: '1099-CONSOLIDATED', continues_previous: false, is_summary: true }),
+      page({ pageId: 'p2', form_type: '1099-DIV', continues_previous: false }),
+      page({ pageId: 'p3', form_type: null, is_supplemental: true, continues_previous: true }),
+      page({ pageId: 'p4', form_type: 'W-2', continues_previous: false }),
+      page({ pageId: 'p5', form_type: null, is_supplemental: true, continues_previous: true }),
+    ]);
+    expect(groups.map((g) => [g.formType, g.pageIds])).toEqual([
+      ['1099-CONSOLIDATED', ['p1', 'p3']],
+      ['1099-DIV', ['p2']],
+      ['W-2', ['p4']],
+      [null, ['p5']],
+    ]);
+  });
+
   it('records no section on forms other than a 1099-B', () => {
     const groups = groupPages([page({ pageId: 'p1', form_type: 'W-2', continues_previous: false, section_code: 'A' })]);
     expect(groups[0]!.sectionCode).toBeNull();

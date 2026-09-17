@@ -305,6 +305,9 @@ place as the arithmetic gate.
 - Join key is a **salted hash of the TIN**, per-deployment salt held in the app's secret
   store. Plaintext SSNs are never written to the database.
 - Only the last four digits are stored in plaintext, for display.
+- The taxpayer's name comes from the schema field flagged `identity: name` (recipient,
+  employee, borrower, …), never from the payer. A masked number on a document is kept as a
+  last-four hint for the reviewer, never as a key; the reviewer types the full number.
 - Name matching is a tiebreaker, never the key. The W-2 says ROBERT J SMITH, the
   brokerage says SMITH FAMILY TRUST, and a joint return has two TINs with documents
   split unevenly between them. Expect and handle multiple TINs in one bundle.

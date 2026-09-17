@@ -101,6 +101,11 @@ function systemPrompt(formTypes: readonly string[]): string {
     'heading as section_code, and set continues_previous false when a new section starts.',
     'A page may print several copies of one form (Copy B, Copy C, Copy 2). That is still one',
     'page of one form type.',
+    'Inside a consolidated brokerage package, a page of supplemental detail — foreign tax paid',
+    'and foreign source income, accrued interest, fees, realized gain/loss detail, "not',
+    'reported to the IRS" information — belongs to the package: set is_supplemental true AND',
+    'continues_previous true, with form_type null. The foreign source income figures on those',
+    'pages are needed for the return.',
     '',
     'When the exact text layer of the page is supplied, it came from the PDF itself and is',
     'more reliable than your reading of the image for names, years, and form numbers.',
@@ -375,6 +380,15 @@ export function groupPages(classifications: readonly PageClassification[]): Docu
       previous.payerName ??= page.payer_name ?? null;
       previous.taxYear ??= page.tax_year ?? null;
       previous.confidence = Math.min(previous.confidence, page.confidence);
+      continue;
+    }
+
+    // Supplemental detail inside an open consolidated package (foreign tax paid and foreign
+    // source income, fees, accrued interest) stays with the package document, so the binder
+    // sees it when it reads the package's summary fields. Outside a package such a page is
+    // its own document, as before.
+    if (page.form_type === null && page.is_supplemental && page.continues_previous && openContainerIndex !== null) {
+      groups[openContainerIndex]!.pageIds.push(page.pageId);
       continue;
     }
 

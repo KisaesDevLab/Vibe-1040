@@ -5,28 +5,133 @@
   "description": "Proceeds From Broker and Barter Exchange Transactions — one document per Form 8949 section (A–F), reporting the section subtotals printed at its foot. Per-lot rows are not extracted in v1; the section is attached for the preparer to read (§9).",
   "checks": [],
   "fields": [
-    { "key": "recipient_tin", "label": "Recipient TIN", "type": "text", "sensitive": "tin" },
-    { "key": "payer_name", "label": "Payer name", "type": "text" },
-    { "key": "payer_tin", "label": "Payer TIN", "type": "text" },
-    { "key": "recipient_name", "label": "Recipient name", "type": "text" },
-    { "key": "account_number", "label": "Account number", "type": "text" },
-    { "key": "corrected", "label": "CORRECTED", "type": "bool" },
-
-    { "key": "section_code", "label": "Form 8949 section (A–F) printed in the heading", "type": "code", "notes": "A/B/C short-term, D/E/F long-term; reported vs not reported vs no 1099-B. Drives Schedule D." },
-    { "key": "section_lot_count", "label": "Number of lots (transactions) in this section", "type": "count", "notes": "Printed on many brokerage packages as a count; blank when not printed. Never computed here." },
-    { "key": "section_total_proceeds", "label": "Section subtotal — proceeds (box 1d)", "type": "money", "box": "1d" },
-    { "key": "section_total_cost_basis", "label": "Section subtotal — cost or other basis (box 1e)", "type": "money", "box": "1e", "judgmentRequired": true, "judgmentReason": "Missing or noncovered basis cannot be resolved from the form (§9)." },
-    { "key": "section_total_market_discount", "label": "Section subtotal — accrued market discount (box 1f)", "type": "money", "box": "1f" },
-    { "key": "section_total_wash_sale", "label": "Section subtotal — wash sale loss disallowed (box 1g)", "type": "money", "box": "1g", "judgmentRequired": true, "judgmentReason": "Wash sale adjustment requires preparer review (§9)." },
-    { "key": "section_total_gain_loss", "label": "Section subtotal — gain or loss, as printed", "type": "money", "notes": "Only when the package prints it. Never computed here." },
-    { "key": "box_3_basis_reported", "label": "Basis reported to IRS", "type": "bool", "box": "3" },
-    { "key": "box_4", "label": "Federal income tax withheld", "type": "money", "box": "4" },
-    { "key": "box_5_noncovered", "label": "Noncovered security", "type": "bool", "box": "5", "judgmentRequired": true, "judgmentReason": "Noncovered security: basis not reported to the IRS (§9)." },
-    { "key": "box_6_gross_or_net", "label": "Gross or net proceeds", "type": "code", "box": "6" },
-    { "key": "box_12_basis_reported_to_irs", "label": "Basis reported to IRS (section heading)", "type": "bool", "box": "12" },
-
-    { "key": "box_14_state", "label": "State", "type": "text", "box": "14" },
-    { "key": "box_15_state_id", "label": "State identification no.", "type": "text", "box": "15" },
-    { "key": "box_16", "label": "State tax withheld", "type": "money", "box": "16" }
+    {
+      "key": "recipient_tin",
+      "label": "Recipient TIN",
+      "type": "text",
+      "sensitive": "tin"
+    },
+    {
+      "key": "payer_name",
+      "label": "Payer name",
+      "type": "text"
+    },
+    {
+      "key": "payer_tin",
+      "label": "Payer TIN",
+      "type": "text"
+    },
+    {
+      "key": "recipient_name",
+      "label": "Recipient name",
+      "type": "text",
+      "identity": "name"
+    },
+    {
+      "key": "account_number",
+      "label": "Account number",
+      "type": "text"
+    },
+    {
+      "key": "corrected",
+      "label": "CORRECTED",
+      "type": "bool"
+    },
+    {
+      "key": "section_code",
+      "label": "Form 8949 section (A–F) printed in the heading",
+      "type": "code",
+      "notes": "A/B/C short-term, D/E/F long-term; reported vs not reported vs no 1099-B. Drives Schedule D."
+    },
+    {
+      "key": "section_lot_count",
+      "label": "Number of lots (transactions) in this section",
+      "type": "count",
+      "notes": "Printed on many brokerage packages as a count; blank when not printed. Never computed here."
+    },
+    {
+      "key": "section_total_proceeds",
+      "label": "Section subtotal — proceeds (box 1d)",
+      "type": "money",
+      "box": "1d"
+    },
+    {
+      "key": "section_total_cost_basis",
+      "label": "Section subtotal — cost or other basis (box 1e)",
+      "type": "money",
+      "box": "1e",
+      "judgmentRequired": true,
+      "judgmentReason": "Missing or noncovered basis cannot be resolved from the form (§9)."
+    },
+    {
+      "key": "section_total_market_discount",
+      "label": "Section subtotal — accrued market discount (box 1f)",
+      "type": "money",
+      "box": "1f"
+    },
+    {
+      "key": "section_total_wash_sale",
+      "label": "Section subtotal — wash sale loss disallowed (box 1g)",
+      "type": "money",
+      "box": "1g",
+      "judgmentRequired": true,
+      "judgmentReason": "Wash sale adjustment requires preparer review (§9)."
+    },
+    {
+      "key": "section_total_gain_loss",
+      "label": "Section subtotal — gain or loss, as printed",
+      "type": "money",
+      "notes": "Only when the package prints it. Never computed here."
+    },
+    {
+      "key": "box_3_basis_reported",
+      "label": "Basis reported to IRS",
+      "type": "bool",
+      "box": "3"
+    },
+    {
+      "key": "box_4",
+      "label": "Federal income tax withheld",
+      "type": "money",
+      "box": "4"
+    },
+    {
+      "key": "box_5_noncovered",
+      "label": "Noncovered security",
+      "type": "bool",
+      "box": "5",
+      "judgmentRequired": true,
+      "judgmentReason": "Noncovered security: basis not reported to the IRS (§9)."
+    },
+    {
+      "key": "box_6_gross_or_net",
+      "label": "Gross or net proceeds",
+      "type": "code",
+      "box": "6"
+    },
+    {
+      "key": "box_12_basis_reported_to_irs",
+      "label": "Basis reported to IRS (section heading)",
+      "type": "bool",
+      "box": "12"
+    },
+    {
+      "key": "box_14_state",
+      "label": "State",
+      "type": "text",
+      "box": "14"
+    },
+    {
+      "key": "box_15_state_id",
+      "label": "State identification no.",
+      "type": "text",
+      "box": "15"
+    },
+    {
+      "key": "box_16",
+      "label": "State tax withheld",
+      "type": "money",
+      "box": "16"
+    }
   ]
 }

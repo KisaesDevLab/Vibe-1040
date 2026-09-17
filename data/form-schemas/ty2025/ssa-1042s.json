@@ -14,7 +14,8 @@
       "key": "beneficiary_name",
       "label": "Name",
       "type": "text",
-      "box": "1"
+      "box": "1",
+      "identity": "name"
     },
     {
       "key": "beneficiary_tin",

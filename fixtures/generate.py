@@ -146,9 +146,11 @@ def consolidated_1099(
     sp.insert_text((MARGIN, LETTER.height - MARGIN),
                    "Synthetic fixture. Supplemental page.", fontname=FONT, fontsize=6.5, color=GREY)
 
+    # Since 2026-09-17 a supplemental detail page inside a package stays with the package
+    # document at classification (foreign tax paid / foreign source income live there).
     truths.append({
-        "file": filename, "page": page_number, "formType": None, "taxYear": 2025,
-        "isSupplemental": True, "fields": {},
+        "file": filename, "page": page_number, "formType": "1099-CONSOLIDATED", "taxYear": 2025,
+        "isSupplemental": True, "packageDetailPage": True, "fields": {},
     })
 
     if break_tie:

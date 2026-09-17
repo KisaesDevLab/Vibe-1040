@@ -11,7 +11,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.ts';
-import { bundleTaxpayers, bundles, documents, taxpayers } from '../db/schema.ts';
+import { bundleTaxpayers, bundles, documents, taxpayers, type IdentityHint } from '../db/schema.ts';
 import { blockingFailures } from '../reconcile/gate.ts';
 import { hashTin, isPlausibleTin, last4, normalizeTin } from './tin.ts';
 
@@ -215,6 +215,26 @@ async function renameBundleFromPrimaryTaxpayer(
     .update(bundles)
     .set({ label: primaryName, updatedAt: new Date() })
     .where(eq(bundles.id, bundleId));
+}
+
+/**
+ * Merge last-four-and-name hints onto the bundle (0010). A masked TIN cannot be a key, but
+ * "•••-••-8214, MARCUS D WILLIAMS, W-2" tells the reviewer exactly whose number to type.
+ */
+export async function recordIdentityHints(
+  bundleId: string,
+  hints: readonly IdentityHint[],
+  options: { replace?: boolean } = {},
+): Promise<void> {
+  const [row] = await db.select({ hints: bundles.identityHints }).from(bundles).where(eq(bundles.id, bundleId)).limit(1);
+  const merged = new Map<string, IdentityHint>();
+  for (const h of options.replace ? [] : (row?.hints ?? [])) merged.set(h.last4, h);
+  for (const h of hints) {
+    const existing = merged.get(h.last4);
+    if (!existing) merged.set(h.last4, h);
+    else if (!existing.name && h.name) merged.set(h.last4, { ...existing, name: h.name, formType: h.formType });
+  }
+  await db.update(bundles).set({ identityHints: [...merged.values()], updatedAt: new Date() }).where(eq(bundles.id, bundleId));
 }
 
 /** The human gate. Until this runs, the bundle does not proceed to extraction (§7). */

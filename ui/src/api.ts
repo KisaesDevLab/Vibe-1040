@@ -176,6 +176,8 @@ export const api = {
       body: JSON.stringify({ taxYear }),
     }),
 
+  acceptField: (fieldId: string) => request<{ ok: boolean }>(`/api/fields/${fieldId}/accept`, { method: 'POST' }),
+
   disposition: (checkId: string, kind: string, note: string) =>
     request<{ ok: boolean; remainingBlocking: number }>(`/api/checks/${checkId}/disposition`, {
       method: 'POST',

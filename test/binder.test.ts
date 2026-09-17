@@ -75,6 +75,7 @@ describe('recoverPlaceholder', () => {
   it('recovers an EIN or SSN from the cited span text', () => {
     expect(recoverPlaceholder('[EIN]', [span(0, 'b Employer identification number 47-2918453', 0, 0)])).toBe('47-2918453');
     expect(recoverPlaceholder('[SSN]', [span(0, '123-45-6789', 0, 0)])).toBe('123-45-6789');
+    expect(recoverPlaceholder('[SSN]', [span(0, "Employee's SSN 123456789", 0, 0)])).toBe('123456789');
   });
 
   it('takes the whole span when the placeholder stood for all of it', () => {
