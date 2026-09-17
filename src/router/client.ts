@@ -19,15 +19,16 @@ import {
   type TaskClassKey,
 } from './task-classes.ts';
 
-export const APP_VERSION = '0.8.1';
+export const APP_VERSION = '0.8.2';
 
 export const ai = new VibeAiClient({
   baseUrl: env.VIBE_AI_ROUTER_URL,
   token: env.VIBE_AI_TOKEN,
   // A layout pass over a dense page is a big non-streaming completion; the 120s default
   // is too tight for it, and a timeout here looks like a bad extraction rather than a
-  // slow one.
-  timeoutMs: 300_000,
+  // slow one. The router ledger on 2026-09-17 showed layout on the fallback model taking
+  // up to 243 s per page before the router's own retries; ten minutes leaves room.
+  timeoutMs: 600_000,
 });
 
 // ── error handling ───────────────────────────────────────────────────────────
