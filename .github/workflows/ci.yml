@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# `packages: read` lets GITHUB_TOKEN pull @kisaesdevlab/vibe-auth — provided that package's
+# "Manage Actions access" grants this repository. Without the grant the install 403s.
+permissions:
+  contents: read
+  packages: read
+
 env:
   # The SDK is not on a public registry; it is built from the (public) router repository.
   ROUTER_REPO: KisaesDevLab/Vibe-AI-Router
@@ -18,6 +24,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          # @kisaesdevlab/vibe-auth lives on GitHub Packages, which wants a token even to read.
+          # This writes a runner-level npmrc that expands NODE_AUTH_TOKEN at install time.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@kisaesdevlab'
 
       # §3 — this app reaches AI only through the router. Run first, because a provider
       # hostname landing here is a compliance problem, not a bug.
@@ -33,6 +43,8 @@ jobs:
 
       - name: Install
         run: node scripts/install-deps.mjs --sdk .router/packages/sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         run: npm run typecheck
@@ -50,8 +62,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          # @kisaesdevlab/vibe-auth lives on GitHub Packages, which wants a token even to read.
+          # This writes a runner-level npmrc that expands NODE_AUTH_TOKEN at install time.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@kisaesdevlab'
       - run: npm install --no-audit --no-fund
         working-directory: ui
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run build
         working-directory: ui
 
