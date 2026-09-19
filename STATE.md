@@ -61,8 +61,14 @@ at all. See External dependencies below and QUESTIONS.md Q11.
      from authentik. In particular authentik's actual `amr` values for TOTP, WebAuthn and
      static codes have not been observed against `amrSatisfiesMfa`.
   3. The Authentication tab and the sign-in button have been compiled, not looked at.
-  4. CI has not run: whether `GITHUB_TOKEN` can read the package depends on a grant in the
-     package's settings (External dependencies, below).
+- **CI (added the same day, PR #1):** green, and for the first time it *runs* the
+  database-backed tests rather than skipping them. The first CI run of this work passed with
+  36 tests skipped — every SSO test and every pipeline hand-off test — because the workflow had
+  no Postgres and a skipped test is green. The build job now has a Postgres 17 service, migrates
+  up, down and up, and fails if the suite reports the database unavailable: 271 of 271 ran.
+  That run also confirmed `GITHUB_TOKEN` can read the package, and exposed a race in one new
+  test (it asserted the IdP reachable straight after `start()`, which discovers in the
+  background) that a fast local machine had been winning.
 
 **Verified by execution on 2026-09-16** (pipeline review change set, released as v0.6.0;
 carries **migration 0007**):
@@ -400,7 +406,7 @@ historical — read this table first.
 | DigitalOcean provider configured in the Router; `glm-5.3-flash` probed for vision; policies bound | P4, P7, P8 | **runbook step**, decided 2026-09-02 — see decision log |
 | Router OpenAPI spec published | P3 | **moot** — no spec exists; SDK is the contract (Q3) |
 | DigitalOcean DPA executed | before live client data | not started |
-| Vibe Auth client `@kisaesdevlab/vibe-auth` ≥ 1.0.4 on GitHub Packages | P16 | **published** — 1.0.0–1.0.4 listed 2026-09-19. Restricted package: installs need `read:packages`, and the package's *Manage Actions access* must grant this repo or CI's `GITHUB_TOKEN` gets a 403 |
+| Vibe Auth client `@kisaesdevlab/vibe-auth` ≥ 1.0.4 on GitHub Packages | P16 | **published** — 1.0.0–1.0.4 listed 2026-09-19. Restricted package: installs need `read:packages`. CI's `GITHUB_TOKEN` reads it today (confirmed by PR #1's run); if that ever 403s, the package's *Manage Actions access* no longer grants this repo |
 | Vibe Auth broker ≥ 1.0.4 deployed and this app registered with it | P16 exit | **operator step** — `docs/sso.md`. Before 1.0.4 an MFA-enrolling sign-in carried no MFA `amr` and would be refused here (Q18) |
 | Vibe-Appliance manifest `sso` block + env-template keys for `vibe-1040` | P16 LAN-box check | **not started, outside this repo** — scoped out 2026-09-19 (Q19); checklist in `docs/sso.md` |
 | WISP amendment drafted — must name unscrubbed page-image egress | P14 | **drafted** — `docs/wisp-amendment.md` names DigitalOcean-hosted open models, their retention terms, and the region gap (Q12, Q13) |
