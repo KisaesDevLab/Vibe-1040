@@ -149,10 +149,14 @@ async function main(): Promise<void> {
   // locks every administrator out the first time the IdP is down.
   await vibeAuth.start();
   const sso = vibeAuth.status();
+  // Says nothing about whether the identity provider answered: `start()` begins discovery in
+  // the background and returns, so at this point it never has. The engine logs the outcome
+  // itself ("identity provider discovered", or an `idp.unreachable` audit row), and
+  // /auth/status reports it live.
   console.log(
     `[startup] sign-in mode: ${sso.mode}` +
       (sso.oidc.enabled
-        ? ` — single sign-on via ${sso.oidc.idpName} (${sso.oidc.reachable ? 'reachable' : 'NOT reachable'}); ` +
+        ? ` — single sign-on via ${sso.oidc.idpName} at ${sso.oidc.issuer ?? '(issuer unset)'}; ` +
           'SSO sessions require proof of a second factor (amr), which cannot be disabled here'
         : ' — single sign-on off'),
   );

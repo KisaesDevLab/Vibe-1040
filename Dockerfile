@@ -18,16 +18,20 @@ RUN apk add --no-cache git
 COPY package.json .npmrc ./
 COPY scripts ./scripts
 COPY vendor ./vendor
-RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true     printf '//npm.pkg.github.com/:_authToken=%s
-' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc  && node scripts/install-deps.mjs --omit=dev  ; status=$? ; rm -f /root/.npmrc ; exit $status
+RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
+    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && node scripts/install-deps.mjs --omit=dev \
+  ; status=$? ; rm -f /root/.npmrc ; exit $status
 
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json .npmrc ./
 COPY scripts ./scripts
 COPY vendor ./vendor
-RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true     printf '//npm.pkg.github.com/:_authToken=%s
-' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc  && node scripts/install-deps.mjs  ; status=$? ; rm -f /root/.npmrc ; exit $status
+RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
+    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && node scripts/install-deps.mjs \
+  ; status=$? ; rm -f /root/.npmrc ; exit $status
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npx tsc -p tsconfig.build.json && node scripts/copy-assets.mjs
@@ -35,8 +39,10 @@ RUN npx tsc -p tsconfig.build.json && node scripts/copy-assets.mjs
 FROM node:24-alpine AS ui
 WORKDIR /ui
 COPY ui/package.json ui/.npmrc ./
-RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true     printf '//npm.pkg.github.com/:_authToken=%s
-' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc  && npm install --no-audit --no-fund  ; status=$? ; rm -f /root/.npmrc ; exit $status
+RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
+    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && npm install --no-audit --no-fund \
+  ; status=$? ; rm -f /root/.npmrc ; exit $status
 COPY ui ./
 RUN npm run build
 

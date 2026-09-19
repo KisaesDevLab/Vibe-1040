@@ -222,6 +222,30 @@ describe.skipIf(!dbAvailable)('single sign-on (P16)', () => {
       expect(row?.mfa_enrolled_at).toBeNull();
     });
 
+    it.each([
+      ['vibe-admin', 'admin'],
+      ['vibe-it', 'admin'],
+      ['vibe-partner', 'partner'],
+      // Falls out of the package's "least privileged role" fallback, not an explicit entry —
+      // pinned here because docs/sso.md promises it and a package upgrade could move it.
+      ['vibe-manager', 'staff'],
+      ['vibe-staff', 'staff'],
+    ])('maps the suite group %s to the %s role', async (group, role) => {
+      idp.user = person(`map-${group}`, { groups: [group], roles: [group] });
+      const { res, cookies } = await ssoSignIn(b);
+      expect(res.statusCode, res.body).toBe(302);
+      const me = await b.app.inject({ method: 'GET', url: '/api/me', cookies: cookies! });
+      expect(me.json()).toMatchObject({ role });
+    });
+
+    it('refuses someone who is in none of the suite groups', async () => {
+      idp.user = person('nogroup', { groups: ['accounting'], roles: [] });
+      const { res, cookie } = await ssoSignIn(b);
+      expect(res.statusCode).toBe(401);
+      expect(cookie).toBeUndefined();
+      expect(await q(`select 1 from users where email = $1`, [idp.user.email])).toHaveLength(0);
+    });
+
     it('sets the session cookie with the same attributes as a local sign-in', async () => {
       idp.user = person('cookie');
       const { cookie } = await ssoSignIn(b);

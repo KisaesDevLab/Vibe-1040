@@ -183,7 +183,7 @@ Append the returned `VIBE_OIDC_*` lines to the app's env, set `VIBE_AUTH_MODE=bo
 the `vibe-1040` container, and check the boot log:
 
 ```
-[startup] sign-in mode: both — single sign-on via Vibe Auth (reachable); SSO sessions require proof of a second factor (amr), which cannot be disabled here
+[startup] sign-in mode: both — single sign-on via Vibe Auth at http://<host>/auth/application/o/vibe-1040/; SSO sessions require proof of a second factor (amr), which cannot be disabled here
 ```
 
 Registration is idempotent on the slug. After a host, IP or routing change, re-register (or
