@@ -36,6 +36,8 @@ import {
 import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
 import { hashTin, isPlausibleTin, normalizeTin } from '../identity/tin.ts';
+import { vibeAuth } from '../lib/vibeAuth.ts';
+import { BREAKGLASS_USERNAME, policyIdentifier, resolveLoginEmail } from '../lib/vibeAuthUsers.ts';
 import { ingestBundle, ingestBundlesPerFile, type IncomingFile, type IngestResult } from '../ingest/upload.ts';
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
 import { bundleProgress, failedQueueJobs, queueExtractionForDocuments, requeueRouterJobs } from '../queue/pipeline.ts';
@@ -85,14 +87,39 @@ export function registerRoutes(app: FastifyInstance): void {
 
   // ── auth ───────────────────────────────────────────────────────────────────
   app.post('/api/auth/login', async (req, reply) => {
-    const body = z.object({ email: z.string().email(), password: z.string() }).parse(req.body);
-    const [user] = await db.select().from(users).where(eq(users.email, body.email)).limit(1);
+    // An email, or the break-glass username — which is not an email and resolves to one.
+    const body = z
+      .object({
+        email: z.union([z.string().email(), z.literal(BREAKGLASS_USERNAME)]),
+        password: z.string(),
+      })
+      .parse(req.body);
+    // Lowercased: every write path stores the address that way, and single sign-on links an
+    // existing account by it. Compared as typed, `Pat@firm.example` never matched.
+    const email = resolveLoginEmail(body.email);
+
+    // In `oidc_only` the local form is for the break-glass account alone (P16). Judged
+    // before the password is looked at, so a refusal says nothing about whether it was right.
+    const policy = vibeAuth.localLoginAllowed(policyIdentifier(email));
+    if (!policy.allowed) {
+      await auditAccess(req, 'auth.login_failed', { detail: { email, reason: 'sso_required' } });
+      return reply.code(403).send({
+        error: 'sso_required',
+        message: 'Local sign-in is turned off for this firm. Use single sign-on.',
+      });
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
     const ok = user && !user.disabledAt && (await verifyPassword(body.password, user.passwordHash));
     if (!ok || !user) {
-      await auditAccess(req, 'auth.login_failed', { detail: { email: body.email } });
+      await auditAccess(req, 'auth.login_failed', { detail: { email } });
       return reply.code(401).send({ error: 'invalid credentials' });
     }
+
+    // Audits break-glass use under Vibe Auth's event name, which Vibe Sentinel alerts on.
+    // Nothing else changes for that account: it goes on to the second factor like anyone.
+    await vibeAuth.afterLocalLogin({ userId: user.id, username: policyIdentifier(email), email, ip: req.ip });
 
     const token = await issueSession(user.id, { ip: req.ip, userAgent: req.headers['user-agent'] ?? null });
     void reply.setCookie(SESSION_COOKIE, token, sessionCookieOptions);
@@ -156,7 +183,9 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get('/api/me', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
-    return { id: user.id, email: user.email, displayName: user.displayName, role: user.role };
+    // `sso` tells the UI which sign-out to use: a session born at the identity provider is
+    // ended through /auth/oidc/logout so Vibe Auth's logout audit and revocation run.
+    return { id: user.id, email: user.email, displayName: user.displayName, role: user.role, sso: user.sso };
   });
 
   // ── bundles ────────────────────────────────────────────────────────────────

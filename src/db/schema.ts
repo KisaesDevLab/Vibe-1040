@@ -115,15 +115,29 @@ export const sessions = pgTable(
       .notNull()
       .references(() => users.id),
     tokenHash: text('token_hash').notNull().unique(),
-    /** A session is only usable after the TOTP step completes. */
+    /**
+     * A session is only usable once a second factor is proven: the local verification step,
+     * or — for a session born from single sign-on — an ID token whose `amr` shows one (Q18).
+     */
     mfaSatisfiedAt: timestamp('mfa_satisfied_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     ip: text('ip'),
     userAgent: text('user_agent'),
+    /** Null for a session born from a local password; set for one born from SSO (0011). */
+    oidcIssuer: text('oidc_issuer'),
+    oidcSubject: text('oidc_subject'),
+    oidcSid: text('oidc_sid'),
+    /** Sealed with the blob key. Kept only as `id_token_hint` for sign-out at the IdP. */
+    oidcIdToken: text('oidc_id_token'),
+    oidcAmr: jsonb('oidc_amr').$type<string[]>(),
     ...timestamps,
   },
-  (t) => [index('sessions_user_idx').on(t.userId)],
+  (t) => [
+    index('sessions_user_idx').on(t.userId),
+    index('sessions_oidc_identity_idx').on(t.oidcIssuer, t.oidcSubject),
+    index('sessions_oidc_sid_idx').on(t.oidcSid),
+  ],
 );
 
 /**

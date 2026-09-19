@@ -5,30 +5,44 @@
 # .github/workflows/release.yml and scripts/install-deps.mjs. To build locally:
 #
 #   mkdir -p vendor && cp -r ../Vibe-AI-Router/packages/sdk vendor/sdk
-#   docker build -t vibe-1040 .
+#   NODE_AUTH_TOKEN=$(gh auth token) docker build --secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN -t vibe-1040 .
+#
+# `@kisaesdevlab/vibe-auth` (single sign-on, P16) comes from GitHub Packages, which requires a
+# token with read:packages even to read. `.npmrc` maps the scope and holds no credential. The
+# token arrives as a BuildKit secret, is written to a throwaway user npmrc, and is deleted in
+# the same RUN — it is never an ARG or ENV, so it lands in no layer and no image history.
 
 FROM node:24-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache git
-COPY package.json ./
+COPY package.json .npmrc ./
 COPY scripts ./scripts
 COPY vendor ./vendor
-RUN node scripts/install-deps.mjs --omit=dev
+RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
+    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && node scripts/install-deps.mjs --omit=dev \
+  ; status=$? ; rm -f /root/.npmrc ; exit $status
 
 FROM node:24-alpine AS build
 WORKDIR /app
-COPY package.json ./
+COPY package.json .npmrc ./
 COPY scripts ./scripts
 COPY vendor ./vendor
-RUN node scripts/install-deps.mjs
+RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
+    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && node scripts/install-deps.mjs \
+  ; status=$? ; rm -f /root/.npmrc ; exit $status
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npx tsc -p tsconfig.build.json && node scripts/copy-assets.mjs
 
 FROM node:24-alpine AS ui
 WORKDIR /ui
-COPY ui/package.json ./
-RUN npm install --no-audit --no-fund
+COPY ui/package.json ui/.npmrc ./
+RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
+    printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/NODE_AUTH_TOKEN)" > /root/.npmrc \
+ && npm install --no-audit --no-fund \
+  ; status=$? ; rm -f /root/.npmrc ; exit $status
 COPY ui ./
 RUN npm run build
 

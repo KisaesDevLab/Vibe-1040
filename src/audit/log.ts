@@ -52,7 +52,21 @@ export type AuditAction =
   | 'auth.password_reset_failed'
   | 'auth.password_reset_completed'
   | 'auth.password_changed'
-  | 'auth.password_change_failed';
+  | 'auth.password_change_failed'
+  // Single sign-on (P16). The names are Vibe Auth's, verbatim, because Vibe Sentinel matches
+  // on them across every product in the suite — do not rename them into this app's style.
+  | 'vibe.auth.login.success'
+  | 'vibe.auth.login.failure'
+  | 'vibe.auth.user.provisioned'
+  | 'vibe.auth.user.linked'
+  | 'vibe.auth.role.changed'
+  | 'vibe.auth.logout'
+  | 'vibe.auth.mode.changed'
+  | 'vibe.auth.breakglass.used'
+  | 'vibe.auth.breakglass.rotated'
+  | 'vibe.auth.idp.unreachable'
+  | 'vibe.auth.settings.changed'
+  | 'vibe.auth.mfa.enforcement.disabled';
 
 export interface AuditEntry {
   action: AuditAction;

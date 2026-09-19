@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { AuthSettingsPage } from '@kisaesdevlab/vibe-auth/react';
 import { api } from '../api';
 import type { AuditRow, EnvSetting, SettingRow, UserRow } from '../types';
 
@@ -9,7 +10,7 @@ import type { AuditRow, EnvSetting, SettingRow, UserRow } from '../types';
  * read-only, because a web form is the wrong place for a decryption key and the
  * compliance guardrails should not be a switch.
  */
-type Tab = 'settings' | 'users' | 'audit' | 'retention';
+type Tab = 'settings' | 'users' | 'audit' | 'retention' | 'authentication';
 
 const GROUP_LABELS: Record<string, string> = {
   reconciliation: 'Reconciliation',
@@ -22,12 +23,14 @@ const GROUP_LABELS: Record<string, string> = {
   licensing: 'Licensing',
 };
 
-export function Admin({ onError }: { onError: (m: string) => void }) {
+export function Admin({ role, onError }: { role: string; onError: (m: string) => void }) {
   const [tab, setTab] = useState<Tab>('settings');
+  // Single sign-on is admin-only, server-side too; a partner sees the audit trail, not this.
+  const tabs: Tab[] = ['settings', 'users', 'audit', 'retention', ...(role === 'admin' ? (['authentication'] as Tab[]) : [])];
   return (
     <div className="admin">
       <nav className="admin-tabs">
-        {(['settings', 'users', 'audit', 'retention'] as Tab[]).map((t) => (
+        {tabs.map((t) => (
           <button key={t} className={t === tab ? 'tab active' : 'tab'} onClick={() => setTab(t)}>
             {t[0]!.toUpperCase() + t.slice(1)}
           </button>
@@ -37,6 +40,42 @@ export function Admin({ onError }: { onError: (m: string) => void }) {
       {tab === 'users' && <UsersTab onError={onError} />}
       {tab === 'audit' && <AuditTab onError={onError} />}
       {tab === 'retention' && <RetentionTab onError={onError} />}
+      {tab === 'authentication' && <AuthenticationTab />}
+    </div>
+  );
+}
+
+// ── authentication (single sign-on) ──────────────────────────────────────────
+
+/**
+ * Vibe Auth's own settings page: sign-in mode, identity provider, role map, connection test,
+ * break-glass status. It talks to /auth/settings, not to this app's settings store.
+ *
+ * Two things differ from the other Vibe products and are said here so nobody goes looking:
+ *
+ * - **The MFA switch does nothing.** The page offers to stop requiring proof of a second
+ *   factor; this app refuses that request (§11). It is always required.
+ * - **The connection-test popup does not report back by itself.** Its result page uses an
+ *   inline script, which this app's Content-Security-Policy blocks on purpose. The result is
+ *   still recorded server-side, so the page is simply re-read whenever this window regains
+ *   focus — which is what happens when the popup is closed.
+ */
+function AuthenticationTab() {
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    const onFocus = () => setReload((n) => n + 1);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  return (
+    <div className="card">
+      <p className="muted">
+        Staff can sign in through the firm&rsquo;s identity provider instead of a local password.
+        Vibe 1040 always requires proof of a second factor from the identity provider; that
+        requirement cannot be turned off here. Close the connection-test window to see its result.
+      </p>
+      <AuthSettingsPage key={reload} basePath="" productName="Vibe 1040" />
     </div>
   );
 }

@@ -315,6 +315,48 @@ appears as a 1040 line total.
 
 ---
 
+## P16 — Single sign-on (Vibe Auth)
+
+**Depends on:** P0 (auth, sessions, audit) and P14 (the GLBA posture it must not weaken).
+**Externally gated on** `@kisaesdevlab/vibe-auth` ≥ 1.0.4 on GitHub Packages and, for exit, a
+Vibe Auth broker ≥ 1.0.4 to register against. Severable, like P15.
+
+Staff sign in through the suite identity service as an alternative to the local password.
+OIDC authorization code with PKCE, through the package's Fastify plugin mounted at `/auth/*`;
+this app implements only the adapters — users, sessions, audit, secret wrap — against its own
+tables. Local sign-in stays and stays the default. The session model is not redesigned: an SSO
+sign-in produces the same `sessions` row and the same cookie as a local one.
+
+The design decision is the MFA gate (QUESTIONS.md Q18). `requireUser` refuses a session without
+`mfa_satisfied_at`, so an SSO session is marked satisfied **only** when the ID token's `amr`
+proves a second factor at the IdP, and is refused outright otherwise. That refusal lives in this
+app's session adapter as well as in the package's configuration, so no setting can turn it off.
+The break-glass account is a local admin with an authenticator, not a password-only carve-out.
+
+Just-in-time users are created with an unusable password hash and no local factor. Roles map
+from the suite groups — `vibe-admin`/`vibe-it` → admin, `vibe-partner` → partner,
+`vibe-manager`/`vibe-staff` → staff — and re-sync on every sign-in. Back-channel logout revokes
+the matching session rows.
+
+Still not a client portal (§2): this is the staff realm only, and nothing here creates a
+client-facing account.
+
+Configuration surface: `VIBE_AUTH_MODE`, `VIBE_OIDC_ISSUER`, `VIBE_OIDC_INTERNAL_BASE`,
+`VIBE_OIDC_CLIENT_ID`, `VIBE_OIDC_CLIENT_SECRET`, `VIBE_OIDC_PUBLIC_URL`, `VIBE_OIDC_IDP_NAME`
+— the suite-wide names, written by the broker at registration. `NODE_AUTH_TOKEN` at install
+time only.
+
+**Exit:** against a standalone Vibe Auth, in `both` mode, a staff user signs in through SSO in
+a real browser and lands in the bundle list with no second-factor prompt, and the audit row
+records `amr`. A token whose `amr` shows a password alone is refused and writes no session. A
+back-channel logout ends the session. In `oidc_only` an ordinary local sign-in is refused, the
+break-glass account signs in at `/login/local` *and is still asked for its authenticator*, and
+the app refuses to boot in `oidc_only` without a break-glass account. Migration 0011 runs
+forward and back. The image builds with the registry token as a BuildKit secret and the token
+appears in no layer. The appliance LAN-box check waits on Q19.
+
+---
+
 ## Sequencing notes
 
 P0–P13 are Router-independent — the multimodal capability P7 needs already shipped. The one
@@ -328,3 +370,7 @@ criteria fight back, the problem is usually in P8's binding or P6's schema, not 
 checks. Do not weaken the gate to make P9 pass.
 
 P15 is severable. Shipping P0–P14 is a complete, useful product.
+
+P16 is severable too, and additive by construction: with `VIBE_AUTH_MODE` unset the app behaves
+exactly as it did before the phase. Its one external gate is a published package, not Router
+work.

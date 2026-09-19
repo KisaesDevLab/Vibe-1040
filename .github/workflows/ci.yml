@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# `packages: read` lets GITHUB_TOKEN pull @kisaesdevlab/vibe-auth — provided that package's
+# "Manage Actions access" grants this repository. Without the grant the install 403s.
+permissions:
+  contents: read
+  packages: read
+
 env:
   # The SDK is not on a public registry; it is built from the (public) router repository.
   ROUTER_REPO: KisaesDevLab/Vibe-AI-Router
@@ -12,12 +18,35 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The database-backed tests (test/pipeline.test.ts, test/sso.test.ts) skip themselves when
+    # there is no Postgres, and a skipped test is green. Without this service CI passed while
+    # never running the tests that prove the MFA gate on single sign-on (§11, Q18) — so the
+    # database is here, and the step below fails the job if those tests skip anyway.
+    # Credentials match vitest.config.ts; they are throwaway values for a throwaway container.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: vibe1040
+          POSTGRES_PASSWORD: vibe1040
+          POSTGRES_DB: vibe1040_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vibe1040 -d vibe1040_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          # @kisaesdevlab/vibe-auth lives on GitHub Packages, which wants a token even to read.
+          # This writes a runner-level npmrc that expands NODE_AUTH_TOKEN at install time.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@kisaesdevlab'
 
       # §3 — this app reaches AI only through the router. Run first, because a provider
       # hostname landing here is a compliance problem, not a bug.
@@ -33,12 +62,35 @@ jobs:
 
       - name: Install
         run: node scripts/install-deps.mjs --sdk .router/packages/sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         run: npm run typecheck
 
+      # Forward, back, forward: migrations running in both directions is a P0 exit criterion
+      # and nothing enforced it. The values are the same throwaway ones vitest.config.ts uses.
+      - name: Migrate the test database (up, down, up)
+        run: npm run db:migrate && npm run db:rollback && npm run db:migrate
+        env:
+          DATABASE_URL: postgres://vibe1040:vibe1040@localhost:5432/vibe1040_test
+          REDIS_URL: redis://localhost:6379
+          VIBE_AI_ROUTER_URL: http://vibe-ai-router:8220
+          VIBE_AI_TOKEN: test-token-not-a-real-credential
+          ROUTER_REQUIRE_US_REGION: 'false'
+          TIN_HASH_SALT: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+          SESSION_SECRET: CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=
+          STORAGE_ENCRYPTION_KEY: CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=
+
       - name: Test
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.log
+          # A skip here means the database-backed tests did not run. Treat it as a failure.
+          if grep -E "test database unavailable" test-output.log; then
+            echo "::error::database-backed tests skipped — the Postgres service is not reachable or not migrated"
+            exit 1
+          fi
 
       - name: Build
         run: npm run build
@@ -50,8 +102,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          # @kisaesdevlab/vibe-auth lives on GitHub Packages, which wants a token even to read.
+          # This writes a runner-level npmrc that expands NODE_AUTH_TOKEN at install time.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@kisaesdevlab'
       - run: npm install --no-audit --no-fund
         working-directory: ui
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run build
         working-directory: ui
 

@@ -24,11 +24,18 @@ jobs:
   # Never publish an image whose tests do not pass. A tag is not a reason to skip the gate.
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          # @kisaesdevlab/vibe-auth lives on GitHub Packages, which wants a token even to read.
+          # This writes a runner-level npmrc that expands NODE_AUTH_TOKEN at install time.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@kisaesdevlab'
       - run: node scripts/check-provider-leakage.mjs
       - uses: actions/checkout@v5
         with:
@@ -36,6 +43,8 @@ jobs:
           path: .router
           sparse-checkout: packages/sdk
       - run: node scripts/install-deps.mjs --sdk .router/packages/sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run typecheck
       - run: npm test
 
@@ -90,6 +99,10 @@ jobs:
         with:
           context: .
           push: true
+          # The registry token for @kisaesdevlab/vibe-auth, as a BuildKit secret: mounted for
+          # the install steps only, never an ARG or ENV, so it is in no layer and no history.
+          secrets: |
+            NODE_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           tags: ${{ steps.meta-api.outputs.tags }}
           labels: ${{ steps.meta-api.outputs.labels }}
           cache-from: type=gha
