@@ -13,6 +13,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
 import { db } from '../db/client.ts';
 import { sessions, users } from '../db/schema.ts';
+import { emailMatches, isSsoOnlyAccount } from '../lib/vibeAuthUsers.ts';
 import { setting } from '../settings/store.ts';
 import { hashPassword } from './credentials.ts';
 import { issueCode, verifyCode } from './otp.ts';
@@ -29,7 +30,7 @@ export async function requestReset(
   email: string,
   ip?: string | null,
 ): Promise<ResetRequestResult> {
-  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).limit(1);
+  const [user] = await db.select().from(users).where(emailMatches(email.toLowerCase().trim())).limit(1);
 
   if (!user || user.disabledAt) {
     // Burn a comparable amount of time so response timing does not leak existence.
@@ -38,6 +39,20 @@ export async function requestReset(
       action: 'auth.password_reset_requested',
       ip: ip ?? null,
       detail: { known: false },
+    });
+    return { accepted: true, destination: null };
+  }
+
+  // An SSO-only account has no local second factor, so a reset would let whoever reads the
+  // mailbox set a password and then enrol *their own* authenticator at first sign-in — one
+  // factor in, MFA satisfied. Same response and same burnt time as an unknown address.
+  if (await isSsoOnlyAccount(user)) {
+    await hashPassword(`decoy-${email}`);
+    await audit({
+      action: 'auth.password_reset_requested',
+      userId: user.id,
+      ip: ip ?? null,
+      detail: { known: true, delivered: false, why: 'sso_only_account' },
     });
     return { accepted: true, destination: null };
   }
@@ -96,7 +111,7 @@ export async function completeReset(
   const problem = passwordProblem(newPassword);
   if (problem) return { ok: false, error: problem };
 
-  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).limit(1);
+  const [user] = await db.select().from(users).where(emailMatches(email.toLowerCase().trim())).limit(1);
   if (!user || user.disabledAt) {
     // Same opaque failure as a wrong code — still no enumeration.
     return { ok: false, error: 'That code is not valid.' };

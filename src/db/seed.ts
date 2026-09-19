@@ -6,17 +6,19 @@
  * secret that would then exist in a seed script (§11).
  */
 import { randomBytes } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { hashPassword } from '../auth/credentials.ts';
 import { pool } from './client.ts';
 import { db } from './client.ts';
 import { users } from './schema.ts';
 
 async function seed(): Promise<void> {
-  const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@example.test';
+  // Lowercased like every other write path. Rows seeded before this stored the address as
+  // typed; sign-in and SSO linking match case-insensitively so those keep working.
+  const email = (process.env.SEED_ADMIN_EMAIL ?? 'admin@example.test').trim().toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD ?? randomBytes(12).toString('base64url');
 
-  const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const [existing] = await db.select().from(users).where(sql`lower(${users.email}) = ${email}`).limit(1);
   if (existing) {
     console.log(`user already exists: ${email}`);
     return;

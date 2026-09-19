@@ -3,7 +3,7 @@
  * is stored, so a database read cannot mint a session.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import { env } from '../config/env.ts';
 import { db } from '../db/client.ts';
 import { sessions, users } from '../db/schema.ts';
@@ -102,7 +102,10 @@ export async function issueSsoSession(
 
 /**
  * Back-channel logout: end every live session matching the IdP's identity. `sid` is the
- * narrowest match and wins when present; otherwise issuer+subject, otherwise the user.
+ * narrowest match and is preferred — but a session whose ID token carried no `sid` was stored
+ * with `oidc_sid` NULL and can only be found by subject, so when the logout token names both,
+ * those rows are matched by subject too. Missing one leaves a session alive for up to twelve
+ * hours after the identity provider ended it. Falls back to subject, then to the user.
  */
 export async function revokeSessionsByIdentity(match: {
   issuer: string;
@@ -112,7 +115,12 @@ export async function revokeSessionsByIdentity(match: {
 }): Promise<number> {
   const live = and(isNull(sessions.revokedAt), gt(sessions.expiresAt, new Date()));
   const scope = match.sid
-    ? and(eq(sessions.oidcIssuer, match.issuer), eq(sessions.oidcSid, match.sid))
+    ? and(
+        eq(sessions.oidcIssuer, match.issuer),
+        match.subject
+          ? or(eq(sessions.oidcSid, match.sid), and(isNull(sessions.oidcSid), eq(sessions.oidcSubject, match.subject)))
+          : eq(sessions.oidcSid, match.sid),
+      )
     : match.subject
       ? and(eq(sessions.oidcIssuer, match.issuer), eq(sessions.oidcSubject, match.subject))
       : match.userId

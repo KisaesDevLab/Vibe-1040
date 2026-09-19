@@ -25,7 +25,7 @@ import type {
   UserAdapter,
   VibeUser,
 } from '@kisaesdevlab/vibe-auth';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { audit, type AuditAction } from '../audit/log.ts';
 import { hashPassword } from '../auth/credentials.ts';
 import { db } from '../db/client.ts';
@@ -53,6 +53,37 @@ export function resolveLoginEmail(identifier: string): string {
 /** The identifier Vibe Auth's local-login policy should judge: the username for break-glass. */
 export function policyIdentifier(email: string): string {
   return email === BREAKGLASS_EMAIL ? BREAKGLASS_USERNAME : email;
+}
+
+/**
+ * Case-insensitive match on the address. Not every stored row is lowercase — the seed wrote
+ * SEED_ADMIN_EMAIL as typed until P16 — so comparing a lowercased input to the raw column
+ * would silently miss those accounts. `email` must already be lowercased.
+ */
+export function emailMatches(email: string): SQL {
+  return sql`lower(${users.email}) = ${email}`;
+}
+
+/**
+ * An account that exists only because someone signed in through the identity provider: it
+ * has an SSO link and has never enrolled a local second factor.
+ *
+ * Such an account must not be able to bootstrap a local sign-in by itself. Its second factor
+ * lives at the IdP; locally it has none, and first-sign-in enrolment would hand one to
+ * whoever holds the password. With self-service reset, "whoever holds the password" means
+ * "whoever can read the mailbox" — one factor, defeating §11 for every just-in-time user,
+ * permanently, since none of them ever enrols here. So reset is refused for these accounts
+ * (`src/auth/password-reset.ts`). An admin can still give one a local password from
+ * Admin → Users, which is the same trust an admin already exercises creating any account.
+ */
+export async function isSsoOnlyAccount(user: {
+  id: string;
+  totpConfirmedAt: Date | null;
+  mfaEnrolledAt: Date | null;
+}): Promise<boolean> {
+  if (user.totpConfirmedAt !== null || user.mfaEnrolledAt !== null) return false;
+  const linked = await db.execute(sql`select 1 from auth_identities where user_id = ${user.id} limit 1`);
+  return linked.rows.length > 0;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -94,7 +125,7 @@ export const vibeAuthUsers: UserAdapter = {
   },
 
   async findByEmail(email) {
-    const [row] = await db.select().from(users).where(eq(users.email, email.trim().toLowerCase())).limit(1);
+    const [row] = await db.select().from(users).where(emailMatches(email.trim().toLowerCase())).limit(1);
     return row ? toVibeUser(row) : null;
   },
 
@@ -121,10 +152,38 @@ export const vibeAuthUsers: UserAdapter = {
   },
 
   async setRole(userId, role) {
-    await db
-      .update(users)
-      .set({ role: requireProductRole(role), updatedAt: new Date() })
-      .where(eq(users.id, userId));
+    const next = requireProductRole(role);
+
+    // Roles re-sync from the identity provider on every sign-in, including the first one of
+    // an existing local account linked by email. If that account is the firm's only working
+    // admin and its IdP groups map lower, syncing would leave nobody able to open
+    // Admin → Users or Admin → Authentication to undo it — the lockout the admin route's
+    // own `self_lockout` rule exists to prevent. Keep the role and say so. Break-glass does
+    // not count as "another admin": it is an emergency account, not someone at a desk.
+    if (next !== ADMIN_ROLE) {
+      const [target] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+      if (target?.role === ADMIN_ROLE) {
+        const others = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.role, ADMIN_ROLE), isNull(users.disabledAt), ne(users.id, userId), ne(users.email, BREAKGLASS_EMAIL)))
+          .limit(1);
+        if (others.length === 0) {
+          console.warn(
+            `[vibe-auth] refused to sync role ${next} onto user ${userId}: it is the last active admin. ` +
+              'Add the user to vibe-admin at the identity provider, or make another admin first.',
+          );
+          await audit({
+            action: 'vibe.auth.role.changed',
+            userId,
+            detail: { refused: true, from: ADMIN_ROLE, to: next, why: 'last_active_admin', note: 'role kept; supersedes the adjacent role.changed row' },
+          }).catch(() => undefined);
+          return;
+        }
+      }
+    }
+
+    await db.update(users).set({ role: next, updatedAt: new Date() }).where(eq(users.id, userId));
   },
 
   async createLocalUser(input: CreateLocalUserInput) {

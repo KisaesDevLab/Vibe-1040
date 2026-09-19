@@ -132,9 +132,25 @@ identity the first time that person signs in through the IdP, by email, case-ins
 and only when the IdP says the email is verified. After that the link is the IdP's subject id,
 so a later email change does not break it.
 
-A just-in-time account has a random password nobody knows and no local second factor. If the
-firm runs `both` and that person wants to sign in locally too, they use **Forgot your
-password?** and enrol a factor on that first local sign-in, like any new user.
+A just-in-time account has a random password nobody knows and no local second factor, and it
+**cannot use "Forgot your password?"**. Its second factor lives at the identity provider; here
+it has none, and the first local sign-in is where one gets enrolled — so a self-service reset
+would let whoever can read that mailbox set a password and then enrol *their own*
+authenticator. One factor in, MFA satisfied. The request is answered exactly like one for an
+unknown address and audited with `why: sso_only_account`.
+
+If the firm runs `both` and such a person should also be able to sign in locally, an admin sets
+a password for them under Admin → Users and hands it over; they enrol a factor on that first
+local sign-in. That is the same trust an admin already exercises when creating any account.
+An account that already has a local factor is unaffected and resets as before.
+
+**The last admin is never demoted by a role sync.** If the firm's only active admin signs in
+through the IdP while their groups map to `partner` or `staff`, the role is kept, a warning is
+logged, and a `vibe.auth.role.changed` row with `refused: true` is written. Put that person in
+`vibe-admin`, or make a second admin first. (The break-glass account does not count as one.)
+
+Likewise, while the mode is `oidc_only` the break-glass account cannot be disabled or demoted
+from Admin → Users (`409 breakglass_required`): the server will not start without it.
 
 ---
 
@@ -231,6 +247,8 @@ matcher is needed.
   your user-level `~/.npmrc` (never in the repo's), or
   `NODE_AUTH_TOKEN=$(gh auth token)` for a one-off. Docker:
   `NODE_AUTH_TOKEN=$(gh auth token) docker build --secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN .`
+- **Building with compose needs the token too**: `NODE_AUTH_TOKEN=$(gh auth token) docker compose build`.
+  `docker-compose.yml` passes it to the api and worker builds as a build secret.
 - The package lists Express as a required peer, so npm installs it beside Fastify. Nothing
   loads it; it is dead weight, reported upstream.
 
@@ -253,3 +271,5 @@ Postgres migrated to 0011 and skips itself, loudly, otherwise.
    an email address and rejects a dotless domain.
 5. **Vibe-Appliance edits are not in this change** (Q19); the manifest here is ready to copy.
 6. **Pinned `^1.0.4`**, not `^1.0.3`, for the broker-side `amr` fix above.
+7. **Role sync has a floor** and **SSO-only accounts cannot self-reset** — neither is in the
+   plan or the package; both came out of code review (above).

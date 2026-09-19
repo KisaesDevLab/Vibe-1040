@@ -42,7 +42,6 @@ import { audit } from '../audit/log.ts';
 import {
   SESSION_COOKIE,
   issueSsoSession,
-  resolveSession,
   revokeSession,
   revokeSessionsByIdentity,
   sessionCookieOptions,
@@ -67,8 +66,13 @@ const secretWrap: SecretWrap = {
   unwrap: async (wrapped) => open(Buffer.from(wrapped, 'base64')).toString('utf8'),
 };
 
-async function currentSession(req: unknown) {
-  const session = await resolveSession(asRequest(req).cookies[SESSION_COOKIE]);
+/**
+ * The session the global `attachUser` preHandler already resolved for this request. Reading
+ * it rather than querying again keeps a sign-out at one lookup instead of four, and means the
+ * adapter can never see a different session state than the rest of the request did.
+ */
+function currentSession(req: unknown) {
+  const session = asRequest(req).user;
   // A pre-MFA local session holds a valid cookie but has proven one factor. It must not be
   // able to read or change authentication settings, so to the package it is nobody.
   return session?.mfaSatisfied ? session : null;
@@ -114,17 +118,17 @@ export const vibeAuthSession: SessionAdapter = {
 
   async destroy(req, res) {
     // Any session, satisfied or not: signing out of a half-finished sign-in is legitimate.
-    const current = await resolveSession(asRequest(req).cookies[SESSION_COOKIE]);
+    const current = asRequest(req).user;
     if (current) await revokeSession(current.sessionId);
     void asReply(res).clearCookie(SESSION_COOKIE, sessionCookieOptions);
   },
 
   async currentUserId(req) {
-    return (await currentSession(req))?.id ?? null;
+    return currentSession(req)?.id ?? null;
   },
 
   async currentIdentity(req) {
-    const current = await currentSession(req);
+    const current = currentSession(req);
     if (!current?.sso) return null;
     const stored = await sessionOidcIdentity(current.sessionId);
     if (!stored) return null;
@@ -206,7 +210,9 @@ export async function registerVibeAuth(app: FastifyInstance): Promise<void> {
   // See (2) in the header. Refused before the engine sees it, so the engine never writes a
   // `vibe.auth.mfa.enforcement.disabled` row for something that did not happen.
   app.addHook('preHandler', async (req, reply) => {
-    if (req.method !== 'PUT' || req.url.split('?')[0] !== '/auth/settings') return;
+    // Compared after the same normalisation the engine applies (`new URL(...).pathname`), not
+    // on the raw request line: `/auth/x/../settings` reaches the engine as `/auth/settings`.
+    if (req.method !== 'PUT' || new URL(req.url, 'http://local').pathname !== '/auth/settings') return;
     const body = req.body as { requireMfaAmr?: unknown } | null | undefined;
     if (body && typeof body === 'object' && 'requireMfaAmr' in body && body.requireMfaAmr !== true) {
       return reply.code(409).send({

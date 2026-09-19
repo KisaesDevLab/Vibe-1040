@@ -15,6 +15,8 @@ import { changeOwnPassword, completeReset, passwordProblem, requestReset } from 
 import { satisfyMfa } from '../auth/session.ts';
 import { db } from '../db/client.ts';
 import { auditLog, notificationLog, users } from '../db/schema.ts';
+import { vibeAuth } from '../lib/vibeAuth.ts';
+import { BREAKGLASS_EMAIL } from '../lib/vibeAuthUsers.ts';
 import { normalizePhone, verifyEmail } from '../notify/channels.ts';
 import { retentionForecast, runRetention } from '../retention/purge.ts';
 import { readOnlyEnvironment } from '../settings/registry.ts';
@@ -174,6 +176,23 @@ export function registerAdminRoutes(app: FastifyInstance): void {
       return reply.code(400).send({
         error: 'self_lockout',
         message: 'You cannot disable or demote your own admin account. Ask another admin.',
+      });
+    }
+
+    // In `oidc_only` the break-glass account is the only local way in, and the server refuses
+    // to START without it active. Disabling it shows nothing until the next restart or
+    // upgrade, and then the whole appliance is down. Demoting it leaves an emergency account
+    // that cannot do anything in an emergency.
+    if (
+      target.email === BREAKGLASS_EMAIL &&
+      vibeAuth.mode === 'oidc_only' &&
+      (body.disabled === true || (body.role !== undefined && body.role !== 'admin'))
+    ) {
+      return reply.code(409).send({
+        error: 'breakglass_required',
+        message:
+          'This is the emergency sign-in account. While the firm signs in through single sign-on only, ' +
+          'it must stay an active admin — the app will not start without it. Change the sign-in mode first.',
       });
     }
 

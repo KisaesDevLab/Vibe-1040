@@ -37,7 +37,7 @@ import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
 import { hashTin, isPlausibleTin, normalizeTin } from '../identity/tin.ts';
 import { vibeAuth } from '../lib/vibeAuth.ts';
-import { BREAKGLASS_USERNAME, policyIdentifier, resolveLoginEmail } from '../lib/vibeAuthUsers.ts';
+import { BREAKGLASS_USERNAME, emailMatches, policyIdentifier, resolveLoginEmail } from '../lib/vibeAuthUsers.ts';
 import { ingestBundle, ingestBundlesPerFile, type IncomingFile, type IngestResult } from '../ingest/upload.ts';
 import { pipelineQueue, rasterQueue } from '../queue/queues.ts';
 import { bundleProgress, failedQueueJobs, queueExtractionForDocuments, requeueRouterJobs } from '../queue/pipeline.ts';
@@ -94,8 +94,11 @@ export function registerRoutes(app: FastifyInstance): void {
         password: z.string(),
       })
       .parse(req.body);
-    // Lowercased: every write path stores the address that way, and single sign-on links an
-    // existing account by it. Compared as typed, `Pat@firm.example` never matched.
+    // Matched case-insensitively, on both sides. The admin route and password reset store
+    // addresses lowercased, but the seed stores SEED_ADMIN_EMAIL exactly as the operator typed
+    // it — so lowercasing only what was typed would lock out a firm whose first admin is
+    // `Kurt@Firm.com`, and comparing as typed (the old behaviour) never matched `Pat@…`
+    // against a lowercased row. Single sign-on links existing accounts the same way.
     const email = resolveLoginEmail(body.email);
 
     // In `oidc_only` the local form is for the break-glass account alone (P16). Judged
@@ -109,7 +112,7 @@ export function registerRoutes(app: FastifyInstance): void {
       });
     }
 
-    const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    const [user] = await db.select().from(users).where(emailMatches(email)).limit(1);
 
     const ok = user && !user.disabledAt && (await verifyPassword(body.password, user.passwordHash));
     if (!ok || !user) {

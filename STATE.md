@@ -691,6 +691,21 @@ existing first-sign-in flow — TOTP needs no SMTP, SMS or IdP, which is exactly
 for. The operational cost is that the authenticator must be enrolled at provisioning, not
 discovered missing during an outage; `docs/sso.md` makes that a provisioning step.
 
+**Three holes closed after code review, same day, before merge.** (1) A just-in-time account
+never enrols a local factor, so in `both` mode self-service password reset plus first-sign-in
+enrolment let whoever reads the mailbox take the account with one factor. Reset is now refused
+for an account that has an SSO link and no local factor, indistinguishably from an unknown
+address; an admin can still set a password for one. This is the same §11 control as Q18 seen
+from the other side, and it is a behaviour a firm will notice, so it is recorded here rather
+than left in a commit. (2) Role sync would demote the firm's last active admin if their IdP
+groups mapped lower, with no one left to undo it; the user adapter now keeps the role and
+audits the refusal. (3) Break-glass could be disabled from Admin → Users in `oidc_only`, which
+surfaces as the appliance failing to start at the next restart; refused with 409. Also from
+review: sign-in, reset and SSO linking now match the address case-insensitively **on the
+stored side too** — the first version lowercased only what was typed, and the seed stores
+`SEED_ADMIN_EMAIL` as typed, so a firm whose admin is `Kurt@Firm.com` would have been locked
+out by the upgrade; and back-channel logout now finds a session stored without a `sid`.
+
 Where this departs from `Vibe-Auth/docs/integration-plans/vibe-1040.md`, and why: that plan
 assumed drizzle-kit migrations (this repo's are hand-written up/down SQL, so the package's
 tables are inlined into 0011 with a real down); it preferred password-only break-glass (above);

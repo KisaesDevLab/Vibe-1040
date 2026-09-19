@@ -57,23 +57,27 @@ export function Admin({ role, onError }: { role: string; onError: (m: string) =>
  *   factor; this app refuses that request (§11). It is always required.
  * - **The connection-test popup does not report back by itself.** Its result page uses an
  *   inline script, which this app's Content-Security-Policy blocks on purpose. The result is
- *   still recorded server-side, so the page is simply re-read whenever this window regains
- *   focus — which is what happens when the popup is closed.
+ *   still recorded server-side, so there is a button to re-read it. Deliberately a button and
+ *   not a reload on window focus: the page keeps the issuer, client id and secret being typed
+ *   in its own state, and an admin copying those from another window would lose them every
+ *   time they switched back.
  */
 function AuthenticationTab() {
   const [reload, setReload] = useState(0);
-  useEffect(() => {
-    const onFocus = () => setReload((n) => n + 1);
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, []);
 
   return (
     <div className="card">
       <p className="muted">
         Staff can sign in through the firm&rsquo;s identity provider instead of a local password.
         Vibe 1040 always requires proof of a second factor from the identity provider; that
-        requirement cannot be turned off here. Close the connection-test window to see its result.
+        requirement cannot be turned off here.
+      </p>
+      <p className="muted">
+        After a connection test, close its window and{' '}
+        <button className="link" onClick={() => setReload((n) => n + 1)}>
+          re-read the result
+        </button>
+        . This discards anything typed below that has not been saved.
       </p>
       <AuthSettingsPage key={reload} basePath="" productName="Vibe 1040" />
     </div>

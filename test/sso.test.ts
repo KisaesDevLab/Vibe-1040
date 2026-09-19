@@ -415,6 +415,118 @@ describe.skipIf(!dbAvailable)('single sign-on (P16)', () => {
       expect(await q(`select 1 from audit_log where action = 'vibe.auth.mfa.enforcement.disabled'`)).toHaveLength(0);
     });
 
+    it('cannot be talked past the second-factor lock with an un-normalised path', async () => {
+      // The engine routes on the normalised pathname, so the guard must too. NOTE: this pins the
+      // outcome, it does not prove the fix — the injected request is normalised before it
+      // reaches the hook, so it passed before the hook compared pathnames as well. Reproducing
+      // the bypass needs a raw socket (`curl --path-as-is`).
+      const adminId = await localUser(b, { email: `boss3@${DOMAIN}`, role: 'admin' });
+      const res = await b.app.inject({
+        method: 'PUT',
+        url: '/auth/x/../settings',
+        cookies: await localSession(b, adminId, true),
+        payload: { requireMfaAmr: false, mfaAck: true },
+      });
+      expect(res.statusCode).not.toBe(200);
+      expect(await q(`select 1 from audit_log where action = 'vibe.auth.mfa.enforcement.disabled'`)).toHaveLength(0);
+    });
+
+    it('signs in an account whose address was STORED in mixed case, and links it rather than duplicating it', async () => {
+      // What the seed wrote for SEED_ADMIN_EMAIL=Kurt@Firm.com before it lowercased. Lowercasing
+      // only the typed side would 401 this firm's only admin on upgrade.
+      const stored = `Kurt@${DOMAIN}`;
+      const userId = await localUser(b, { email: stored, role: 'admin', password: 'a long enough password' });
+      for (const typed of [stored, stored.toLowerCase(), stored.toUpperCase()]) {
+        const res = await b.app.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          payload: { email: typed, password: 'a long enough password' },
+        });
+        expect(res.statusCode, typed).toBe(200);
+      }
+
+      idp.user = person('kurt', { groups: ['vibe-admin'], roles: ['vibe-admin'] });
+      const { res, cookies } = await ssoSignIn(b);
+      expect(res.statusCode, res.body).toBe(302);
+      expect((await b.app.inject({ method: 'GET', url: '/api/me', cookies: cookies! })).json()).toMatchObject({ id: userId });
+      expect(await q(`select 1 from users where lower(email) = $1`, [stored.toLowerCase()])).toHaveLength(1);
+    });
+
+    it('refuses self-service password reset for an account that exists only through single sign-on', async () => {
+      // Otherwise the mailbox alone is enough: reset the password, sign in locally, and
+      // enrol your own authenticator at the first-sign-in prompt.
+      const jit = person('jit');
+      idp.user = jit;
+      expect((await ssoSignIn(b)).res.statusCode).toBe(302);
+
+      const known = await b.app.inject({ method: 'POST', url: '/api/auth/forgot', payload: { email: jit.email } });
+      const unknown = await b.app.inject({ method: 'POST', url: '/api/auth/forgot', payload: { email: `nobody@${DOMAIN}` } });
+      // No oracle: byte-identical to an address that does not exist.
+      expect(known.statusCode).toBe(200);
+      expect(known.body).toBe(unknown.body);
+
+      const [row] = await q<{ id: string }>(`select id from users where email = $1`, [jit.email]);
+      const [requested] = await auditRows('auth.password_reset_requested', `user_id = $2`, [row!.id]);
+      expect(requested?.detail).toMatchObject({ delivered: false, why: 'sso_only_account' });
+      expect(await q(`select 1 from otp_challenges where user_id = $1`, [row!.id])).toHaveLength(0);
+    });
+
+    it('still lets a linked account that HAS a local factor reset its password', async () => {
+      const email = `enrolled@${DOMAIN}`;
+      const userId = await localUser(b, { email, role: 'staff' });
+      await q(`update users set totp_secret = 'JBSWY3DPEHPK3PXP', totp_confirmed_at = now(), mfa_enrolled_at = now() where id = $1`, [userId]);
+      idp.user = person('enrolled');
+      expect((await ssoSignIn(b)).res.statusCode).toBe(302);
+
+      await b.app.inject({ method: 'POST', url: '/api/auth/forgot', payload: { email } });
+      const [requested] = await auditRows('auth.password_reset_requested', `user_id = $2`, [userId]);
+      expect(requested?.detail['why']).not.toBe('sso_only_account');
+    });
+
+    it('will not let a role sync demote the last active admin', async () => {
+      // The shared test database may hold other admins; park them for the length of this test.
+      const email = `onlyadmin@${DOMAIN}`;
+      const userId = await localUser(b, { email, role: 'admin' });
+      const parked = await q<{ id: string }>(
+        `update users set disabled_at = now() where role = 'admin' and disabled_at is null and id <> $1 returning id`,
+        [userId],
+      );
+      try {
+        idp.user = person('onlyadmin', { groups: ['vibe-staff'], roles: ['vibe-staff'] });
+        const { res, cookies } = await ssoSignIn(b);
+        expect(res.statusCode, res.body).toBe(302);
+        expect((await b.app.inject({ method: 'GET', url: '/api/me', cookies: cookies! })).json()).toMatchObject({ role: 'admin' });
+        const refusals = await q(
+          `select 1 from audit_log where action = 'vibe.auth.role.changed' and user_id = $1 and detail->>'refused' = 'true'`,
+          [userId],
+        );
+        expect(refusals).toHaveLength(1);
+      } finally {
+        if (parked.length) await q(`update users set disabled_at = null where id = any($1::uuid[])`, [parked.map((p) => p.id)]);
+      }
+
+      // With another admin around, the same sync goes through.
+      await localUser(b, { email: `secondadmin@${DOMAIN}`, role: 'admin' });
+      const again = await ssoSignIn(b);
+      expect((await b.app.inject({ method: 'GET', url: '/api/me', cookies: again.cookies! })).json()).toMatchObject({ role: 'staff' });
+    });
+
+    it('ends a session that was stored without a sid when the logout token carries one', async () => {
+      const ned = person('ned');
+      idp.user = ned;
+      const { cookies } = await ssoSignIn(b);
+      await q(`update sessions set oidc_sid = null where oidc_subject = $1`, [ned.sub]);
+
+      const logout = await b.app.inject({
+        method: 'POST',
+        url: '/auth/oidc/backchannel',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        payload: `logout_token=${encodeURIComponent(await idp.logoutToken({ sub: ned.sub, sid: 'some-sid-we-never-saw' }))}`,
+      });
+      expect(logout.statusCode, logout.body).toBeLessThan(300);
+      expect((await b.app.inject({ method: 'GET', url: '/api/me', cookies: cookies! })).statusCode).toBe(401);
+    });
+
     it('404s an unknown /auth path as JSON rather than serving the SPA shell', async () => {
       const res = await b.app.inject({ method: 'GET', url: '/auth/oidc/nope' });
       expect(res.statusCode).toBe(404);
@@ -532,6 +644,25 @@ describe.skipIf(!dbAvailable)('single sign-on (P16)', () => {
         expect(await auditRows('vibe.auth.breakglass.used', `user_id = $2`, [bg!.id])).toHaveLength(1);
         await q(`delete from audit_log where user_id = $1`, [bg!.id]);
         await q(`delete from sessions where user_id = $1`, [bg!.id]);
+      });
+
+      it('will not let an admin disable or demote break-glass while it is the only way in', async () => {
+        // The server refuses to START in oidc_only without it, so this would surface as the
+        // whole appliance failing to come up at the next restart.
+        const adminId = await localUser(b, { email: `tidy@${DOMAIN}`, role: 'admin' });
+        const cookies = await localSession(b, adminId, true);
+        const [bg] = await q<{ id: string }>(`select id from users where email = $1`, [`${BG_USER}@appliance.local`]);
+
+        for (const payload of [{ disabled: true }, { role: 'staff' }]) {
+          const res = await b.app.inject({ method: 'PATCH', url: `/api/admin/users/${bg!.id}`, cookies, payload });
+          expect(res.statusCode, JSON.stringify(payload)).toBe(409);
+          expect(res.json()).toMatchObject({ error: 'breakglass_required' });
+        }
+        const [row] = await q<{ role: string; disabled_at: Date | null }>(`select role, disabled_at from users where id = $1`, [bg!.id]);
+        expect(row).toMatchObject({ role: 'admin', disabled_at: null });
+        // Anything else about the account can still be edited.
+        const rename = await b.app.inject({ method: 'PATCH', url: `/api/admin/users/${bg!.id}`, cookies, payload: { displayName: 'Emergency access' } });
+        expect(rename.statusCode, rename.body).toBe(200);
       });
 
       it('single sign-on itself still works', async () => {
