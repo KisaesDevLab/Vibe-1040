@@ -179,11 +179,18 @@ describe.skipIf(!dbAvailable)('single sign-on (P16)', () => {
     afterAll(async () => b.close());
 
     it('reports single sign-on as available alongside the local form', async () => {
-      const res = await b.app.inject({ method: 'GET', url: '/auth/status' });
-      expect(res.statusCode).toBe(200);
-      const status = res.json<{ mode: string; oidc: { enabled: boolean; reachable: boolean } }>();
+      const read = async () => {
+        const res = await b.app.inject({ method: 'GET', url: '/auth/status' });
+        expect(res.statusCode).toBe(200);
+        return res.json<{ mode: string; oidc: { enabled: boolean; reachable: boolean } }>();
+      };
+      const status = await read();
       expect(status.mode).toBe('both');
-      expect(status.oidc).toMatchObject({ enabled: true, reachable: true });
+      expect(status.oidc.enabled).toBe(true);
+      // `start()` begins discovery in the background and returns, so `reachable` is false
+      // for a moment after boot. Asserting it straight away passed on a fast machine and
+      // failed on a CI runner; it becomes true, it does not start true.
+      await vi.waitFor(async () => expect((await read()).oidc.reachable).toBe(true), { timeout: 10_000, interval: 50 });
     });
 
     it('signs in a new user with amr proof: satisfied session, mapped role, amr on the audit row', async () => {
