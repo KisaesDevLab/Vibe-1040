@@ -8,16 +8,61 @@ do not infer progress from the commit log.
 
 ## Current position
 
-**Phase:** P0–P15 — **all phases implemented 2026-08-26**
+**Phase:** P0–P15 — **all phases implemented 2026-08-26**; **P16 (single sign-on) implemented
+2026-09-19** on branch `vibe-auth-integration`, not yet merged or released
 **Status:** code complete; **integration-unverified** (see below)
 **Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
-lands (QUESTIONS.md Q11).
+lands (QUESTIONS.md Q11). P16 cannot *exit* until it has been signed into from a real browser
+against a real Vibe Auth (below).
 
 Router integration was verified against Vibe-AI-Router **v0.0.24** on 2026-08-26. Four of
 the five assumed Router dependencies already exist; the region-pinning one does not exist
 at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
+
+**Verified by execution on 2026-09-19** (P16, single sign-on through Vibe Auth; carries
+**migration 0011**; `@kisaesdevlab/vibe-auth` 1.0.4):
+
+- 271 tests pass across 21 files (`npm test`). 28 are new, in `test/sso.test.ts` — the first
+  HTTP-level tests in the repo: the real server via `buildServer()` + `inject()`, the real
+  vibe-auth engine, the real database, and a fake identity provider
+  (`test/helpers/fake-idp.ts`) signing real tokens. They skip themselves, loudly, when the test
+  Postgres is not at 0011.
+- **The MFA gate (Q18) holds, and the tests that say so were checked by mutation.** A
+  password-only token, a token with no `amr`, and a password-only token with a stored "MFA not
+  required" setting are each refused with no session row and a failure audit row. With the
+  environment pin and the settings-store pin both removed, those three tests fail — on a 500
+  from the session adapter's own check, not on a sign-in, so the third layer holds alone.
+- The **built** server (`node dist/server.js`) was run on a real port against the fake IdP and
+  driven over real HTTP with `VIBE_OIDC_REQUIRE_MFA_AMR=false` deliberately set in its
+  environment: a token with a second factor signed in (`Set-Cookie … HttpOnly; SameSite=Strict`,
+  `/api/me` 200 with `sso: true`, `/api/bundles` 200), a password-only token was refused with
+  no cookie, sign-out ended the session, `/login/local` served the SPA and an unknown `/auth/`
+  path returned a JSON 404.
+- Migration 0011 ran forward, back, and forward again against the compose Postgres 17: three
+  tables and five `sessions` columns appear, disappear without residue, and reappear.
+- The break-glass CLI ran through the compiled adapter: `status` → `ensure` → `status` created an
+  active admin with `mfa_method = totp`, no secret, and a real scrypt hash.
+- The image builds with the registry token as a BuildKit secret. In the result: the CLI and
+  adapter are at the manifest's paths, the process user is `app`, no npmrc holds a credential,
+  and the token occurs **zero** times in `docker history` and in the full `docker save` stream.
+- `tsc --noEmit` clean; provider-leakage check clean; the UI type-checks and builds.
+- Two defects were found by running it and fixed before this entry: the Dockerfile's secret
+  mounts had been committed mangled and did not build, and the boot line reported the identity
+  provider "NOT reachable" on every healthy start.
+- **Still not verified — and these are P16's exit criteria, so the phase has not exited:**
+  1. **No real browser has signed in.** `SameSite=Strict` on the session cookie is argued to be
+     compatible with the redirect back from the IdP (the callback *sets* the cookie; nothing
+     needs to *send* one until the SPA's same-origin `/api/me`), and every piece of that is
+     tested, but the argument itself has only been made, not watched. If it fails, raise a
+     question before touching cookie policy.
+  2. **No real Vibe Auth.** Nothing has been registered with a broker, and no token has come
+     from authentik. In particular authentik's actual `amr` values for TOTP, WebAuthn and
+     static codes have not been observed against `amrSatisfiesMfa`.
+  3. The Authentication tab and the sign-in button have been compiled, not looked at.
+  4. CI has not run: whether `GITHUB_TOKEN` can read the package depends on a grant in the
+     package's settings (External dependencies, below).
 
 **Verified by execution on 2026-09-16** (pipeline review change set, released as v0.6.0;
 carries **migration 0007**):
@@ -333,7 +378,7 @@ what a model returns.
 | P13 | Retention and disposal | implemented | rasters purge earlier than sources; every disposal logged |
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
-| P16 | Single sign-on (Vibe Auth) | in progress | OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
+| P16 | Single sign-on (Vibe Auth) | implemented | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
 
 ---
 
@@ -872,6 +917,7 @@ The build is only as good as the fixture set. Track what exists.
 | **IRS-layout forms** (W-2, 1099-INT, -DIV, -R, -NEC, -MISC, 1098) | yes | `irs_*.pdf` — official fillable PDFs filled and flattened; Copy B only |
 | W-2 with three copies on one page | yes | `irs_w2_three_copies.pdf` — payroll-vendor layout, identical values ×3 |
 | Cover letter and blank page | yes | `cover_letter.pdf`, `blank_page.pdf` — the two pages that stalled every real bundle |
+| Fake identity provider (P16) | yes | `test/helpers/fake-idp.ts` — in-process OIDC provider signing real RS256 tokens; `user.amr` is driven per test. Not a document fixture: no taxpayer data, synthetic staff identities only. **A real authentik token has not been seen** |
 
 All fixtures must be synthetic or fully de-identified. Do not use live client documents as
 test fixtures.
