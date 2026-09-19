@@ -130,6 +130,36 @@ const schema = z.object({
 
   LICENSE_REQUIRED: bool.default('false'),
   LICENSE_SERVER_URL: z.string().url().default('https://licensing.kisaes.com'),
+
+  /**
+   * Single sign-on through Vibe Auth (P16). Declared here so the configuration surface is in
+   * one file, but **parsed by `@kisaesdevlab/vibe-auth`, not by this schema** — that package
+   * reads `process.env` itself, validates these (a bad value still fails boot, with its own
+   * message), and treats an empty value as unset, because the appliance clears a key by
+   * writing `KEY=` rather than deleting the line. Hence loose optional strings and none of
+   * this file's strict `bool`, which would throw on exactly that.
+   *
+   * `VIBE_AUTH_MODE` is `local` (default, SSO off) | `both` | `oidc_only`. The `VIBE_OIDC_*`
+   * block is written by the Vibe Auth broker when this app is registered. All of it can be
+   * overridden from Admin → Authentication, which is stored in `auth_settings`; the
+   * environment is the seed, as it is for every other firm setting.
+   *
+   * Absent on purpose: `VIBE_OIDC_REQUIRE_MFA_AMR`. It is forced on in `src/lib/vibeAuth.ts`
+   * and nothing in the environment can turn it off (§11, QUESTIONS.md Q18).
+   */
+  VIBE_AUTH_MODE: z.string().optional(),
+  VIBE_OIDC_ISSUER: z.string().optional(),
+  VIBE_OIDC_INTERNAL_BASE: z.string().optional(),
+  VIBE_OIDC_CLIENT_ID: z.string().optional(),
+  VIBE_OIDC_CLIENT_SECRET: z.string().optional(),
+  VIBE_OIDC_PUBLIC_URL: z.string().optional(),
+  VIBE_OIDC_IDP_NAME: z.string().optional(),
+  /**
+   * Read by nothing in this app. The appliance's identity script derives the URL it registers
+   * with the broker from this key in the product env, so it has to be one the template can
+   * carry. Declared so its presence is explained rather than mysterious.
+   */
+  ALLOWED_ORIGIN: z.string().optional(),
 });
 
 function load() {
