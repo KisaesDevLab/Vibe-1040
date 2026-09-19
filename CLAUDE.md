@@ -404,6 +404,16 @@ require written taxpayer consent — but only while processing stays inside the 
 - GLBA Safeguards obligations that land on this repo: MFA on staff accounts, encryption
   at rest and in transit, access logging, and a documented retention and disposal
   schedule with an enforcing job.
+- **MFA is mandatory and cannot be switched off; single sign-on does not change that**
+  (decided 2026-09-19, QUESTIONS.md Q18). Staff may sign in through Vibe Auth, and a second
+  factor performed by the firm's identity provider counts — but only on proof. An SSO session
+  is marked MFA-satisfied solely when the ID token's `amr` shows a second factor, a token
+  without it is refused rather than downgraded, and `amr` is written to the audit row. That
+  refusal is enforced in this app's session adapter as well as in the package configuration,
+  so no environment value or settings page can disable it. The break-glass account is a local
+  admin with an authenticator, never a password-only path. Do not add a way around
+  `requireUser`'s `mfa_satisfied_at` check, and do not mark a session satisfied anywhere but
+  the local second-factor verification and the `amr`-checked SSO adapter.
 - Rasterized page images are derived PII. Purge them on the retention schedule
   independently of the source PDFs.
 

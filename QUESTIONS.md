@@ -77,6 +77,37 @@ described accurately, and confirm the DigitalOcean DPA covers it.
 
 ## Non-blocking, working assumption recorded
 
+### Q19 — Who registers this app with Vibe Auth, and what about a broker on another box?
+**Raised:** 2026-09-19. **Working assumption:** the operator registers by hand until the
+appliance change lands; a remote broker is unsupported.
+
+P16 builds the app side of single sign-on. Two things it needs live outside this repo:
+
+1. **Appliance registration.** On the Vibe Appliance the console registers a product with the
+   Vibe Auth broker from the product's manifest `sso` block, and renders the `VIBE_OIDC_*` keys
+   into the product env. The vendored manifest (`Vibe-Appliance/console/manifests/vibe-1040.json`)
+   has no `sso` block and no `"requires": ["identity"]`, and the env template
+   (`env-templates/per-app/vibe-1040.env.tmpl`) has neither `VIBE_OIDC_REQUIRE_MFA_AMR=true` nor
+   the `ALLOWED_ORIGIN` key the identity script derives the registration base URL from. Those
+   edits were scoped out of P16 by decision (2026-09-19). Until they land, an appliance install
+   is registered the same way a standalone one is: `POST /vibe-auth/registrations` by the
+   operator, env block pasted by hand. `docs/sso.md` carries the procedure and the checklist of
+   appliance edits; `.appliance/manifest.json` in this repo already carries the `sso` block so
+   the appliance change is a copy.
+2. **A broker on a different host.** Vibe Auth records this as *not supported*
+   (`Vibe-Auth/docs/integration-plans/remote-broker.md`). The app side needs nothing — omit
+   `VIBE_OIDC_INTERNAL_BASE` and discovery goes to the public issuer — but back-channel logout
+   degrades when authentik cannot reach `vibe-1040:8240`, and then an IdP-side sign-out does not
+   end the session here until its 12-hour expiry. Accepted for now because every current
+   deployment co-locates the two; revisit if one does not.
+
+Neither blocks P16's code or its exit against a standalone Vibe Auth. The LAN-box check in the
+Vibe Auth plan's exit gate does wait on item 1.
+
+**A:**
+
+---
+
 ### Q13 — Is running without region enforcement acceptable for DigitalOcean-hosted open models?
 **Working assumption:** yes, pending Router R6. **Raised:** 2026-09-02.
 
@@ -377,3 +408,48 @@ P8 falls back entirely to multi-pass agreement as the confidence signal, per Q8.
 "confidence highlighting" therefore means "fields where passes disagreed," not a calibrated
 model score — the UI copy should say so rather than implying a confidence percentage. Cost
 model: at least 2× inference per field extraction.
+
+---
+
+### Q18 — May the identity provider's MFA stand in for this app's own second factor?
+**Gated:** P16. **Raised:** 2026-09-19.
+
+"MFA remains mandatory and cannot be switched off" is a locked decision (STATE.md, 2026-08-26,
+reaffirmed 2026-09-10 and in Q15), and MFA on staff accounts is a GLBA Safeguards obligation
+this repo owns (§11). `requireUser` enforces it structurally: a session is unusable until
+`sessions.mfa_satisfied_at` is set, and the only code that sets it is the local second-factor
+verification.
+
+Single sign-on through Vibe Auth collides with that. A user who signs in at the identity
+provider has no local factor — a just-in-time account has no TOTP secret at all — so an SSO
+session either arrives already satisfied or the user is deadlocked at an enrolment screen for a
+factor the IdP already performed. Vibe Auth's own plan for this product
+(`Vibe-Auth/docs/integration-plans/vibe-1040.md` §1.1) calls this "the design decision". It is
+raised here rather than implemented because it changes *who performs* a control this repo is
+answerable for.
+
+**A:** 2026-09-19 — **Yes, on proof, and never on trust.** An SSO session is marked
+MFA-satisfied only when the ID token's `amr` claim shows a second factor was performed at the
+IdP (`amrSatisfiesMfa` from `@kisaesdevlab/vibe-auth`: `mfa`, or a possession/inherence method
+alongside `pwd`). A token without it is **refused** — no session row is written — rather than
+downgraded to a local-factor prompt. This is enforced twice: `VIBE_OIDC_REQUIRE_MFA_AMR` is
+forced `true` in code for this product regardless of the environment, and the session adapter
+independently refuses, so the firm-facing "disable MFA enforcement" switch Vibe Auth offers
+other products cannot produce a session here even if someone sets it. The `amr` values are
+written to the audit row for every SSO sign-in, which is the evidence the control ran.
+
+The locked decision is unchanged: MFA is still mandatory and still cannot be switched off. What
+is new is that a second factor performed and attested by the firm's own identity provider
+counts as one.
+
+**Break-glass keeps a local second factor.** Vibe Auth's plan preferred treating the
+`vibe-breakglass` account as password-only (its D12) and marking its session satisfied at
+password login. **Declined** (operator decision, 2026-09-19): that is a single-factor
+administrator path into taxpayer data, which is precisely what the locked decision forbids.
+Break-glass is an ordinary local admin with `mfa_method = 'totp'`, enrolled through the existing
+first-sign-in flow. An authenticator needs no SMTP, no SMS and no IdP, so it works in exactly
+the outage break-glass exists for — provided it is enrolled when the account is provisioned,
+not during the outage. `docs/sso.md` says so in the provisioning step.
+
+Requires Vibe Auth broker **≥ 1.0.4**: before that release a sign-in that *enrolled* MFA at the
+IdP carried no MFA `amr`, so every user's first SSO sign-in would have been refused here.

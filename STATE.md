@@ -333,6 +333,7 @@ what a model returns.
 | P13 | Retention and disposal | implemented | rasters purge earlier than sources; every disposal logged |
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
+| P16 | Single sign-on (Vibe Auth) | in progress | OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
 
 ---
 
@@ -354,6 +355,9 @@ historical — read this table first.
 | DigitalOcean provider configured in the Router; `glm-5.3-flash` probed for vision; policies bound | P4, P7, P8 | **runbook step**, decided 2026-09-02 — see decision log |
 | Router OpenAPI spec published | P3 | **moot** — no spec exists; SDK is the contract (Q3) |
 | DigitalOcean DPA executed | before live client data | not started |
+| Vibe Auth client `@kisaesdevlab/vibe-auth` ≥ 1.0.4 on GitHub Packages | P16 | **published** — 1.0.0–1.0.4 listed 2026-09-19. Restricted package: installs need `read:packages`, and the package's *Manage Actions access* must grant this repo or CI's `GITHUB_TOKEN` gets a 403 |
+| Vibe Auth broker ≥ 1.0.4 deployed and this app registered with it | P16 exit | **operator step** — `docs/sso.md`. Before 1.0.4 an MFA-enrolling sign-in carried no MFA `amr` and would be refused here (Q18) |
+| Vibe-Appliance manifest `sso` block + env-template keys for `vibe-1040` | P16 LAN-box check | **not started, outside this repo** — scoped out 2026-09-19 (Q19); checklist in `docs/sso.md` |
 | WISP amendment drafted — must name unscrubbed page-image egress | P14 | **drafted** — `docs/wisp-amendment.md` names DigitalOcean-hosted open models, their retention terms, and the region gap (Q12, Q13) |
 
 ---
@@ -611,6 +615,44 @@ uploads come from inside the firm, and reprocessing exists if a bundle needs red
 Kurt's call, and the right one — he pushed back on the gate as unnecessary and the evidence
 agreed with him.
 *Affects:* P4, P7, P8, P10, §7.
+
+**2026-09-19 — Single sign-on through Vibe Auth. MFA stays mandatory; the identity provider may now perform it.** (P16, migration 0011)
+Staff can sign in through the suite identity service (Vibe Auth: bundled authentik plus a
+broker, OIDC authorization code with PKCE) using `@kisaesdevlab/vibe-auth`. Local sign-in is
+untouched and remains the default (`VIBE_AUTH_MODE=local`); `both` adds the SSO button and
+`oidc_only` hides the local form from everyone but the break-glass account. The session model
+is not redesigned — an SSO sign-in ends in the same `sessions` row and the same
+`v1040_session` cookie (`httpOnly`, `SameSite=Strict`, `Secure` per `SESSION_SECURE`) as a local
+one, and the package never sets a cookie of its own.
+
+**This amends how the locked MFA decision is satisfied, not whether it is** (Q18). `requireUser`
+still refuses any session without `mfa_satisfied_at`. An SSO session is marked satisfied only
+when the ID token's `amr` claim proves a second factor at the IdP; a token without that proof
+is refused outright and no session row is written. `VIBE_OIDC_REQUIRE_MFA_AMR` is forced `true`
+in code for this product, and the session adapter refuses independently, so the "disable MFA
+enforcement" switch Vibe Auth gives other products is inert here. `amr` is recorded on the audit
+row of every SSO sign-in. CLAUDE.md §11 amended to say so.
+
+**Break-glass keeps its second factor.** Vibe Auth's plan for this product preferred a
+password-only break-glass account. Declined: it is a single-factor administrator path into
+taxpayer data. `vibe-breakglass` is a local admin that enrols an authenticator through the
+existing first-sign-in flow — TOTP needs no SMTP, SMS or IdP, which is exactly the outage it is
+for. The operational cost is that the authenticator must be enrolled at provisioning, not
+discovered missing during an outage; `docs/sso.md` makes that a provisioning step.
+
+Where this departs from `Vibe-Auth/docs/integration-plans/vibe-1040.md`, and why: that plan
+assumed drizzle-kit migrations (this repo's are hand-written up/down SQL, so the package's
+tables are inlined into 0011 with a real down); it preferred password-only break-glass (above);
+and it included the Vibe-Appliance manifest and env-template edits, which were scoped out of
+this phase (Q19) — `.appliance/manifest.json` here carries the `sso` block ready to copy. Also
+fixed in passing because SSO account linking depends on it: `POST /api/auth/login` compared the
+submitted email case-sensitively while every write path lowercased it, so a mixed-case sign-in
+never matched.
+
+The package is the first dependency this repo takes from GitHub Packages, so installs now need
+a token with `read:packages` — locally, in CI, and as a BuildKit secret in three Dockerfile
+stages. It is never written to a layer or to the repo. Requires Vibe Auth broker ≥ 1.0.4 (Q18).
+*Affects:* P0 (auth, sessions, audit), P14 (GLBA posture, packaging), P16, §11, WISP.
 
 **2026-09-17 — Taxpayer recognition, review false positives, and foreign income on brokerage packages.** (v0.9.0, migration 0010)
 Three complaints from the first week of real packets, one change set.
