@@ -74,7 +74,8 @@ async function currentSession(req: unknown) {
   return session?.mfaSatisfied ? session : null;
 }
 
-const session: SessionAdapter = {
+/** Exported for the test that proves (3) in the header holds on its own. */
+export const vibeAuthSession: SessionAdapter = {
   async create(req, res, user: VibeUser, identity: SessionIdentity) {
     const request = asRequest(req);
     const amr = identity.amr ?? [];
@@ -174,7 +175,7 @@ export const vibeAuth: VibeAuth = createVibeAuth({
     roles: { roles: [...PRODUCT_ROLES], adminRole: ADMIN_ROLE },
   },
   users: vibeAuthUsers,
-  session,
+  session: vibeAuthSession,
   identities: stores.identities,
   settings: pinMfaRequirement(stores.settings),
   // Inert for this app — sessions are server-side and back-channel logout revokes the rows —

@@ -162,6 +162,7 @@ async function main(): Promise<void> {
   console.log(`[startup] listening on ${env.PORT}`);
 
   const shutdown = async (): Promise<void> => {
+    vibeAuth.stop();
     await app.close();
     await closeQueues();
     await pool.end();
