@@ -21,6 +21,34 @@ at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
 
+**Verified by execution on 2026-09-20** (P16 follow-up: break-glass guard, reset refusal and
+readiness check; no migration; same branch, still unmerged):
+
+- 290 tests pass across 21 files (`npm test`), none skipped — the compose Postgres was up and at
+  0011. 12 are new, in `test/sso.test.ts`: six tests run once in `local` and once in `both`,
+  the two modes the old guard did not cover. (The 2026-09-19 entry below says 271 / 28; the
+  code-review change set the same day took it to 278 / 35 and did not update that line.)
+- **Checked by mutation.** With the every-mode guard, the `set-password` refusal, the
+  reset-by-rule refusal and the authenticator check all switched off together, 11 of the 12 new tests
+  fail, and so does the existing `oidc_only` guard test. The twelfth pins behaviour that already
+  held — the users route writes no email — and is there so it cannot stop holding quietly.
+- The readiness command was run three ways: from source under `--experimental-strip-types`
+  (inside the suite, as a child process: a provisioned-but-unenrolled account, an absent one, and
+  an unreachable database — exit 0, 0 and 1, the last with nothing on stdout and no credential
+  on stderr); and **built**, `node dist/auth/breakglass-status.js` after `npm run build`, against
+  the test database, which printed the all-false JSON and exited 0.
+- `.appliance/manifest.json` with the new `sso.breakglassStatusCommand` was validated against
+  `../Vibe-Appliance/console/manifest.schema.json` with a full JSON Schema validator: one error,
+  and it is that key (`sso` is `additionalProperties: false` there). Nothing in this repo
+  validates the manifest. See the external-dependencies row.
+- `tsc --noEmit` clean; provider-leakage check clean. The UI was not touched and not rebuilt.
+- **Not verified:** the image was not rebuilt, so `dist/auth/breakglass-status.js` is in the
+  image by construction (`COPY --from=build /app/dist`) and has not been seen there, and the
+  `docker exec` line in `docs/sso.md` has not been run against a container. No authenticator was
+  enrolled by a person: `secondFactorEnrolled: true` was reached in tests by writing
+  `totp_confirmed_at`, not by scanning a QR code. Nothing on the appliance reads the new key.
+  **None of P16's three exit criteria below moved.**
+
 **Verified by execution on 2026-09-19** (P16, single sign-on through Vibe Auth; carries
 **migration 0011**; `@kisaesdevlab/vibe-auth` 1.0.4):
 
@@ -408,7 +436,7 @@ historical — read this table first.
 | DigitalOcean DPA executed | before live client data | not started |
 | Vibe Auth client `@kisaesdevlab/vibe-auth` ≥ 1.0.4 on GitHub Packages | P16 | **published** — 1.0.0–1.0.4 listed 2026-09-19. Restricted package: installs need `read:packages`. CI's `GITHUB_TOKEN` reads it today (confirmed by PR #1's run); if that ever 403s, the package's *Manage Actions access* no longer grants this repo |
 | Vibe Auth broker ≥ 1.0.4 deployed and this app registered with it | P16 exit | **operator step** — `docs/sso.md`. Before 1.0.4 an MFA-enrolling sign-in carried no MFA `amr` and would be refused here (Q18) |
-| Vibe-Appliance manifest `sso` block + env-template keys for `vibe-1040` | P16 LAN-box check | **not started, outside this repo** — scoped out 2026-09-19 (Q19); checklist in `docs/sso.md` |
+| Vibe-Appliance manifest `sso` block + env-template keys for `vibe-1040` | P16 LAN-box check | **not started, outside this repo** — scoped out 2026-09-19 (Q19); checklist in `docs/sso.md`. **Added 2026-09-20:** the block now carries `breakglassStatusCommand`, which the appliance schema rejects under strict validation (`sso` is `additionalProperties: false`) and `lib/identity.sh` does not read — the schema key and the status-pill / `oidc_only`-guard wiring are appliance work, item 1 of the same checklist |
 | WISP amendment drafted — must name unscrubbed page-image egress | P14 | **drafted** — `docs/wisp-amendment.md` names DigitalOcean-hosted open models, their retention terms, and the region gap (Q12, Q13) |
 
 ---
@@ -705,6 +733,25 @@ review: sign-in, reset and SSO linking now match the address case-insensitively 
 stored side too** — the first version lowercased only what was typed, and the seed stores
 `SEED_ADMIN_EMAIL` as typed, so a firm whose admin is `Kurt@Firm.com` would have been locked
 out by the upgrade; and back-channel logout now finds a session stored without a `sid`.
+
+**2026-09-20 — break-glass is protected in every mode, and "ready" now means the authenticator
+is enrolled.** From Vibe Auth's `docs/integration-plans/break-glass-and-rollout-risks.md`.
+(1) Hole (3) above was closed only for `oidc_only`. But the switch *into* `oidc_only` is gated
+on the appliance by a stored password string, so an account disabled or demoted in `local` or
+`both` would pass it. `409 breakglass_required` now applies in every mode; the message no longer
+says to change the mode first. (2) Admin → Users no longer sets the break-glass password
+(`409 breakglass_password_managed`): `breakglass rotate` is the one path that prints it once,
+audits it and keeps the appliance's stored copy true. (3) Self-service reset refused break-glass
+only because `appliance.local` is undeliverable; it is now refused by rule, with the uniform
+response and an audit row (`why: breakglass_account`). (4) Because this app does not exempt
+break-glass from the second factor, and the package's `ensure` creates it
+password-only, "a password is on file" says nothing about whether it would work. Readiness is
+`exists ∧ active ∧ admin ∧ secondFactorEnrolled`, the last meaning an enrolled **authenticator**
+and nothing else, at `GET /api/admin/breakglass/status` and `node dist/auth/breakglass-status.js`.
+This is how the locked decision above is *checked*, not a change to it. Left open, knowingly:
+an admin can still reset the account's factor or switch its method (both read as not ready), and
+the account can still change its own password while signed in, which leaves the stored copy
+stale. The unspecified choices in this change set are QUESTIONS.md Q20.
 
 Where this departs from `Vibe-Auth/docs/integration-plans/vibe-1040.md`, and why: that plan
 assumed drizzle-kit migrations (this repo's are hand-written up/down SQL, so the package's

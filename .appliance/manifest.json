@@ -61,6 +61,10 @@
       "breakglass",
       "ensure",
       "--json"
+    ],
+    "breakglassStatusCommand": [
+      "node",
+      "dist/auth/breakglass-status.js"
     ]
   },
   "dataOwner": "10001:10001",

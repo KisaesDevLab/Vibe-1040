@@ -77,6 +77,34 @@ described accurately, and confirm the DigitalOcean DPA covers it.
 
 ## Non-blocking, working assumption recorded
 
+### Q20 — How far should the app go in protecting the break-glass account from its own admins?
+**Raised:** 2026-09-20. **Working assumption:** block what strands the firm or falsifies the
+stored credential; report, rather than block, what an admin may legitimately need to do.
+
+The 2026-09-20 change set was asked to guard break-glass against disable, demote and re-address
+in every mode, refuse its self-service reset by rule, and report its readiness. Three adjacent
+choices were not specified and were made as follows — say if any should go the other way:
+
+1. **Admin → Users can no longer set the break-glass password** (`409
+   breakglass_password_managed`). Reason: the appliance keeps its own copy of that password, and
+   `breakglass rotate` is the only path that updates both. The cost is that a standalone operator
+   who loses the password needs `docker exec`, not the UI. *Not* blocked: the account changing
+   its own password while signed in, which drifts the stored copy the same way but needs the
+   current password and a second factor.
+2. **Readiness counts only an authenticator** as the second factor (`mfa_method = totp`,
+   `totp_confirmed_at` set). A break-glass account someone moved to SMS with a verified phone
+   would work and still read as not ready. Reason: the locked decision says "a local admin with
+   an authenticator", email can never work for `appliance.local`, and a false "not ready" is the
+   cheap direction to be wrong in.
+3. **An admin can still reset the account's factor or switch its method.** Both leave it unable
+   to pass the second factor until someone re-enrols, and both now show as not ready. Resetting
+   is the documented recovery for a lost authenticator, so it stays; switching the method could
+   reasonably be refused for this one account and is not.
+
+**A:**
+
+---
+
 ### Q19 — Who registers this app with Vibe Auth, and what about a broker on another box?
 **Raised:** 2026-09-19. **Working assumption:** the operator registers by hand until the
 appliance change lands; a remote broker is unsupported.

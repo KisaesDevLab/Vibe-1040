@@ -62,26 +62,80 @@ provider is down. That is the break-glass account: a local admin, username `vibe
 (stored under the email `vibe-breakglass@appliance.local`, because this app signs people in by
 email). **The app refuses to start in `oidc_only` without one.**
 
-Provision it inside the running container:
+Provisioning is three steps, and the account is not ready until all three are done.
+
+**1. Create it**, inside the running container:
 
 ```bash
 docker exec -i vibe-1040 node node_modules/@kisaesdevlab/vibe-auth/dist/cli.js breakglass ensure --json
 ```
 
 It prints the password **once**. Store it where the firm keeps emergency credentials.
-`breakglass rotate` issues a new one; `breakglass status` reports whether the account exists.
+`breakglass rotate` issues a new one; `breakglass status` reports whether the account exists —
+and nothing about its second factor, which that package knows nothing about.
 
-**Then enrol its authenticator — now, not during an outage.** Unlike the other Vibe products,
-this account is *not* exempt from the second factor. Go to `/login/local`, sign in as
-`vibe-breakglass` with that password, and complete the authenticator enrolment the same way
-the first admin did. An authenticator app needs no SMTP, no SMS and no identity provider, which
-is exactly the situation break-glass exists for — but only if the QR code was scanned while
-everything still worked. Keep the authenticator with the password.
+**2. Enrol its authenticator — immediately, as the very next thing, not during an outage.**
+Unlike the other Vibe products, this account is *not* exempt from the second factor. `ensure`
+creates it with a password and nothing else, so until a person has enrolled, the stored password
+opens an enrolment prompt for **whoever holds it** and nothing more. Go to `/login/local`, sign
+in as `vibe-breakglass` with that password, and complete the authenticator enrolment the same
+way the first admin did. An authenticator app needs no SMTP, no SMS and no identity provider,
+which is exactly the situation break-glass exists for — but only if the QR code was scanned
+while everything still worked. Keep the authenticator with the password.
+
+**3. Check that it is ready:**
+
+```bash
+docker exec vibe-1040 node dist/auth/breakglass-status.js
+```
+
+```json
+{"exists":true,"active":true,"admin":true,"secondFactorEnrolled":true,"ready":true}
+```
+
+One line of JSON on stdout. `ready` is true only when all four are: the account exists, is not
+disabled, has the `admin` role, and has an **authenticator** enrolled (`mfa_method = totp` with
+`totp_confirmed_at` set — an emailed code could never reach `appliance.local`, so another method
+counts as not enrolled). Straight after step 1 it reads `"secondFactorEnrolled":false,
+"ready":false`; that is the state that used to be reported as "ready" because a password was on
+file. The exit status says whether the question was answered, not what the answer was: `0` with
+the JSON, ready or not; `1` with a reason on stderr and nothing on stdout when it could not be
+determined (no database, bad environment). It reads no secret and prints none.
+
+The same five fields are at `GET /api/admin/breakglass/status` for a signed-in admin. The
+manifest names the command as `sso.breakglassStatusCommand` so the appliance console can show
+"break-glass NOT ready: authenticator not enrolled" rather than infer readiness from a stored
+password (the appliance does not read that key yet — see Registration below).
 
 Every break-glass sign-in writes `vibe.auth.breakglass.used`, which Vibe Sentinel alerts on
 (`SENT-V-AUTH-001`). If its authenticator is lost, any other admin can reset the factor under
-Admin → Users and it re-enrols at its next sign-in. There is deliberately no way to do that
-without a signed-in admin, so test the break-glass sign-in after provisioning it.
+Admin → Users and it re-enrols at its next sign-in — and until it has, the readiness check says
+so. There is deliberately no way to do that without a signed-in admin, so test the break-glass
+sign-in after provisioning it.
+
+### What the app will not let anyone do to it
+
+These hold in **every** sign-in mode — `local`, `both` and `oidc_only`:
+
+- **It cannot be disabled or demoted** from Admin → Users (`409 breakglass_required`). This used
+  to apply only while the mode was `oidc_only`, on the reasoning that the server will not start
+  in that mode without it. But the switch *into* `oidc_only` is checked, on the appliance, only
+  against a stored password string, so an account disabled while the mode was `both` would pass
+  that check and take the appliance down at the next restart. There is no mode to change to first.
+- **It cannot be re-addressed.** No route changes a user's email.
+- **Its password is not set from Admin → Users** (`409 breakglass_password_managed`). Use
+  `breakglass rotate` — on the appliance, `sudo vibe identity rotate-breakglass vibe-1040` —
+  which prints the new password once, audits `vibe.auth.breakglass.rotated`, and keeps the
+  appliance's stored copy in step. A password set in the UI leaves the one in the firm's safe
+  silently wrong.
+- **It cannot use "Forgot your password?"**, by rule rather than because `appliance.local`
+  happens to be undeliverable. The request is answered exactly like one for an unknown address
+  and audited with `why: breakglass_account`.
+
+Not blocked: renaming it; resetting its second factor (above — the readiness check then says
+not ready until it re-enrols); and the account changing its *own* password while signed in,
+which needs the current password and a second factor but does leave the stored copy stale, so
+run `breakglass rotate` afterwards.
 
 ---
 
@@ -149,8 +203,9 @@ through the IdP while their groups map to `partner` or `staff`, the role is kept
 logged, and a `vibe.auth.role.changed` row with `refused: true` is written. Put that person in
 `vibe-admin`, or make a second admin first. (The break-glass account does not count as one.)
 
-Likewise, while the mode is `oidc_only` the break-glass account cannot be disabled or demoted
-from Admin → Users (`409 breakglass_required`): the server will not start without it.
+Likewise the break-glass account cannot be disabled or demoted from Admin → Users
+(`409 breakglass_required`) — in every mode, not only `oidc_only`. See "What the app will not
+let anyone do to it" above.
 
 ---
 
@@ -166,15 +221,24 @@ Appliance follow-up checklist (in `Vibe-Appliance`, not this repo):
 
 1. `console/manifests/vibe-1040.json` — copy `"requires": ["identity"]`, the `sso` block and the
    `ALLOWED_ORIGIN` env entry from this repo's `.appliance/manifest.json`. Run `npm test` in
-   `console/` (manifest validation).
+   `console/` (manifest validation). **The `sso` block here carries `breakglassStatusCommand`,
+   which the appliance's `console/manifest.schema.json` does not know yet, and that schema sets
+   `additionalProperties: false` on `sso`** — so add the key to the schema (an argv array, same
+   shape as `breakglassCommand`) in the same change. Checked 2026-09-20 against the appliance's
+   schema with a full JSON Schema validator: this manifest's only error is that key. Nothing at
+   the appliance's runtime enforces the schema and `lib/identity.sh` reads named keys only, so an
+   appliance that has not learned the key ignores it; a strict validation run rejects it. Then have
+   `lib/identity.sh` run it in `breakglassService` for its status pill and its `oidc_only` guard,
+   in place of "a password string is stored".
 2. `env-templates/per-app/vibe-1040.env.tmpl` — add `ALLOWED_ORIGIN=@ALLOWED_ORIGIN@`. The
    identity script derives the URL it registers from that key. (`VIBE_OIDC_REQUIRE_MFA_AMR=true`
    may be added for legibility; the app forces it regardless.)
-3. Confirm the break-glass command resolves in the shipped image:
-   `docker run --rm --entrypoint sh ghcr.io/kisaesdevlab/vibe-1040:<tag> -c 'ls node_modules/@kisaesdevlab/vibe-auth/dist/cli.js'`
+3. Confirm both break-glass commands resolve in the shipped image:
+   `docker run --rm --entrypoint sh ghcr.io/kisaesdevlab/vibe-1040:<tag> -c 'ls node_modules/@kisaesdevlab/vibe-auth/dist/cli.js dist/auth/breakglass-status.js'`
 4. On the host: `sudo vibe identity register vibe-1040`. A rebuilt image alone does not
    re-register.
-5. Sign in at `http://<ip>:5177/` in `both`, then `oidc_only` with break-glass at `/login/local`.
+5. Sign in at `http://<ip>:5177/` in `both`; enrol the break-glass authenticator at
+   `/login/local` and see the readiness check say `"ready":true`; only then `oidc_only`.
 
 ### By hand (standalone, or the appliance until the above lands)
 
@@ -273,3 +337,6 @@ Postgres migrated to 0011 and skips itself, loudly, otherwise.
 6. **Pinned `^1.0.4`**, not `^1.0.3`, for the broker-side `amr` fix above.
 7. **Role sync has a floor** and **SSO-only accounts cannot self-reset** — neither is in the
    plan or the package; both came out of code review (above).
+8. **Break-glass is guarded in every mode, cannot self-reset, and has a readiness check of this
+   app's own** — the package's `breakglass status` cannot see a second factor it does not know
+   exists. From Vibe Auth's `break-glass-and-rollout-risks.md`.
