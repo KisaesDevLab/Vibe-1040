@@ -583,6 +583,167 @@ describe.skipIf(!dbAvailable)('single sign-on (P16)', () => {
     });
   });
 
+  // The guard used to apply in `oidc_only` alone. But the switch INTO `oidc_only` is gated,
+  // outside this app, only by a stored password string — so an account disabled or demoted
+  // in `local` or `both` sailed through it. These run in the two modes the old guard skipped.
+  describe.each(['local', 'both'] as const)('the break-glass account in mode "%s"', (mode) => {
+    const BG_USER = `bgm-${mode}-${RUN}`;
+    const BG_EMAIL = `${BG_USER}@appliance.local`;
+    let b: Booted;
+    let bgId: string;
+    let cookies: Record<string, string>;
+
+    beforeAll(async () => {
+      b = await boot(idp, { VIBE_AUTH_MODE: mode, VIBE_BREAKGLASS_USERNAME: BG_USER });
+      const bg = await b.users.vibeAuthUsers.createLocalUser({
+        username: BG_USER,
+        email: 'ignored@example.test',
+        name: 'Break glass',
+        role: 'admin',
+        password: 'break glass in case of fire',
+      });
+      bgId = bg.id;
+      cookies = await localSession(b, await localUser(b, { email: `keeper-${mode}@${DOMAIN}`, role: 'admin' }), true);
+    });
+    afterAll(async () => {
+      await b.close();
+      await q(`delete from audit_log where user_id = $1`, [bgId]);
+      await q(`delete from otp_challenges where user_id = $1`, [bgId]);
+      await q(`delete from sessions where user_id = $1`, [bgId]);
+      await q(`delete from users where id = $1`, [bgId]);
+    });
+
+    it('cannot be disabled or demoted, and is not told that changing the mode would help', async () => {
+      for (const payload of [{ disabled: true }, { role: 'staff' }, { role: 'partner' }]) {
+        const res = await b.app.inject({ method: 'PATCH', url: `/api/admin/users/${bgId}`, cookies, payload });
+        expect(res.statusCode, JSON.stringify(payload)).toBe(409);
+        expect(res.json()).toMatchObject({ error: 'breakglass_required' });
+        expect(res.json<{ message: string }>().message).not.toMatch(/change the sign-in mode/i);
+      }
+      const [row] = await q<{ role: string; disabled_at: Date | null }>(`select role, disabled_at from users where id = $1`, [bgId]);
+      expect(row).toMatchObject({ role: 'admin', disabled_at: null });
+    });
+
+    it('cannot be re-addressed: the users route writes no email, whatever it is sent', async () => {
+      const res = await b.app.inject({
+        method: 'PATCH',
+        url: `/api/admin/users/${bgId}`,
+        cookies,
+        payload: { email: `moved@${DOMAIN}`, displayName: 'Emergency access' },
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      const [row] = await q<{ email: string; display_name: string }>(`select email, display_name from users where id = $1`, [bgId]);
+      expect(row).toMatchObject({ email: BG_EMAIL, display_name: 'Emergency access' });
+    });
+
+    it('does not take a password from Admin → Users, which would leave the stored one wrong', async () => {
+      const [before] = await q<{ password_hash: string }>(`select password_hash from users where id = $1`, [bgId]);
+      const res = await b.app.inject({
+        method: 'POST',
+        url: `/api/admin/users/${bgId}/set-password`,
+        cookies,
+        payload: { password: 'an admin chose this one instead' },
+      });
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toMatchObject({ error: 'breakglass_password_managed' });
+      const [after] = await q<{ password_hash: string }>(`select password_hash from users where id = $1`, [bgId]);
+      expect(after!.password_hash).toBe(before!.password_hash);
+    });
+
+    it('is refused self-service password reset by rule, indistinguishably from an unknown address', async () => {
+      const known = await b.app.inject({ method: 'POST', url: '/api/auth/forgot', payload: { email: BG_EMAIL } });
+      const unknown = await b.app.inject({ method: 'POST', url: '/api/auth/forgot', payload: { email: `nobody@${DOMAIN}` } });
+      expect(known.statusCode).toBe(200);
+      expect(known.body).toBe(unknown.body);
+
+      // By rule — not because nothing happens to be configured to deliver to that domain.
+      const [requested] = await auditRows('auth.password_reset_requested', `user_id = $2`, [bgId]);
+      expect(requested?.detail).toMatchObject({ known: true, delivered: false, why: 'breakglass_account' });
+      expect(await q(`select 1 from otp_challenges where user_id = $1`, [bgId])).toHaveLength(0);
+
+      // And the second half of the flow answers like a wrong code, whatever code it is given.
+      const [before] = await q<{ password_hash: string }>(`select password_hash from users where id = $1`, [bgId]);
+      const reset = await b.app.inject({
+        method: 'POST',
+        url: '/api/auth/reset',
+        payload: { email: BG_EMAIL, code: '123456', password: 'whoever reads the mailbox' },
+      });
+      expect(reset.statusCode).toBe(400);
+      expect(reset.json()).toMatchObject({ error: 'reset_failed', message: 'That code is not valid.' });
+      const [failed] = await auditRows('auth.password_reset_failed', `user_id = $2`, [bgId]);
+      expect(failed?.detail).toMatchObject({ reason: 'breakglass_account' });
+      const [after] = await q<{ password_hash: string }>(`select password_hash from users where id = $1`, [bgId]);
+      expect(after!.password_hash).toBe(before!.password_hash);
+    });
+
+    it('reports readiness to admins only, and is not ready until an authenticator is enrolled', async () => {
+      const url = '/api/admin/breakglass/status';
+      expect((await b.app.inject({ method: 'GET', url })).statusCode).toBe(401);
+      const staff = await localSession(b, await localUser(b, { email: `staff-${mode}@${DOMAIN}`, role: 'staff' }), true);
+      expect((await b.app.inject({ method: 'GET', url, cookies: staff })).statusCode).toBe(403);
+      const preMfa = await localSession(b, await localUser(b, { email: `premfa-${mode}@${DOMAIN}`, role: 'admin' }), false);
+      expect((await b.app.inject({ method: 'GET', url, cookies: preMfa })).statusCode).toBe(403);
+
+      const read = async () => {
+        const res = await b.app.inject({ method: 'GET', url, cookies });
+        expect(res.statusCode, res.body).toBe(200);
+        return res.json<Record<string, unknown>>();
+      };
+
+      // As `breakglass ensure` leaves it: a password and nothing else. This is the state the
+      // appliance used to call "ready".
+      expect(await read()).toEqual({ exists: true, active: true, admin: true, secondFactorEnrolled: false, ready: false });
+
+      await q(`update users set totp_secret = 'JBSWY3DPEHPK3PXP', totp_confirmed_at = now(), mfa_enrolled_at = now() where id = $1`, [bgId]);
+      const enrolled = await read();
+      // Five booleans and nothing else: no id, no address, no hash, no TOTP secret.
+      expect(enrolled).toEqual({ exists: true, active: true, admin: true, secondFactorEnrolled: true, ready: true });
+
+      // The routes refuse to produce these states; a hand edit or an older version can.
+      await q(`update users set disabled_at = now() where id = $1`, [bgId]);
+      expect(await read()).toMatchObject({ active: false, ready: false });
+      await q(`update users set disabled_at = null, role = 'staff' where id = $1`, [bgId]);
+      expect(await read()).toMatchObject({ active: true, admin: false, ready: false });
+      // An emailed code to an undeliverable address is not a factor anyone can use.
+      await q(`update users set role = 'admin', mfa_method = 'email' where id = $1`, [bgId]);
+      expect(await read()).toMatchObject({ admin: true, secondFactorEnrolled: false, ready: false });
+
+      await q(
+        `update users set mfa_method = 'totp', totp_secret = null, totp_confirmed_at = null, mfa_enrolled_at = null where id = $1`,
+        [bgId],
+      );
+    });
+
+    it('prints the same answer from the command the appliance runs, and no secret', async () => {
+      const { execFile } = await import('node:child_process');
+      const run = (env: Record<string, string>) =>
+        new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
+          execFile(
+            process.execPath,
+            ['--experimental-strip-types', '--no-warnings', 'src/auth/breakglass-status.ts'],
+            { env: { ...process.env, ...env } },
+            (err, stdout, stderr) => resolve({ code: err ? Number(err.code ?? 1) : 0, stdout, stderr }),
+          );
+        });
+
+      const mine = await run({ VIBE_BREAKGLASS_USERNAME: BG_USER });
+      expect(mine.code, mine.stderr).toBe(0);
+      expect(mine.stdout.trim().split('\n')).toHaveLength(1);
+      expect(JSON.parse(mine.stdout)).toEqual({ exists: true, active: true, admin: true, secondFactorEnrolled: false, ready: false });
+
+      // Not ready is an answer, not a failure: still exit 0.
+      const nobody = await run({ VIBE_BREAKGLASS_USERNAME: `absent-${RUN}` });
+      expect(nobody.code, nobody.stderr).toBe(0);
+      expect(JSON.parse(nobody.stdout)).toEqual({ exists: false, active: false, admin: false, secondFactorEnrolled: false, ready: false });
+
+      // Could not be determined IS a failure: exit 1, and nothing on stdout to be misread.
+      const noDb = await run({ DATABASE_URL: 'postgres://nobody:not-a-real-password@127.0.0.1:1/none' });
+      expect(noDb.code).toBe(1);
+      expect(noDb.stdout).toBe('');
+      expect(noDb.stderr).not.toContain('not-a-real-password');
+    }, 30_000);
+  });
+
   describe('mode "oidc_only"', () => {
     const BG_USER = `bg-${RUN}`;
     const BG_PASSWORD = 'break glass in case of fire';

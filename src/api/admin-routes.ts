@@ -15,8 +15,7 @@ import { changeOwnPassword, completeReset, passwordProblem, requestReset } from 
 import { satisfyMfa } from '../auth/session.ts';
 import { db } from '../db/client.ts';
 import { auditLog, notificationLog, users } from '../db/schema.ts';
-import { vibeAuth } from '../lib/vibeAuth.ts';
-import { BREAKGLASS_EMAIL } from '../lib/vibeAuthUsers.ts';
+import { breakglassStatus, isBreakglassEmail } from '../lib/vibeAuthUsers.ts';
 import { normalizePhone, verifyEmail } from '../notify/channels.ts';
 import { retentionForecast, runRetention } from '../retention/purge.ts';
 import { readOnlyEnvironment } from '../settings/registry.ts';
@@ -179,20 +178,21 @@ export function registerAdminRoutes(app: FastifyInstance): void {
       });
     }
 
-    // In `oidc_only` the break-glass account is the only local way in, and the server refuses
-    // to START without it active. Disabling it shows nothing until the next restart or
-    // upgrade, and then the whole appliance is down. Demoting it leaves an emergency account
-    // that cannot do anything in an emergency.
-    if (
-      target.email === BREAKGLASS_EMAIL &&
-      vibeAuth.mode === 'oidc_only' &&
-      (body.disabled === true || (body.role !== undefined && body.role !== 'admin'))
-    ) {
+    // The break-glass account must stay an active admin in EVERY sign-in mode, not only in
+    // `oidc_only`. In `oidc_only` it is the only local way in and the server refuses to START
+    // without it — disabling it shows nothing until the next restart or upgrade, and then the
+    // whole appliance is down. But guarding only there left the door open one step earlier:
+    // disable or demote it in `local` or `both`, and the later switch to `oidc_only` is gated,
+    // outside this app, by nothing better than a stored password string — which is still on
+    // file. So "change the sign-in mode first" was never the way out; there is not one here.
+    // Its address cannot be changed either: no route in this file writes `users.email`.
+    if (isBreakglassEmail(target.email) && (body.disabled === true || (body.role !== undefined && body.role !== 'admin'))) {
       return reply.code(409).send({
         error: 'breakglass_required',
         message:
-          'This is the emergency sign-in account. While the firm signs in through single sign-on only, ' +
-          'it must stay an active admin — the app will not start without it. Change the sign-in mode first.',
+          'This is the emergency sign-in account. It must stay an active admin in every sign-in mode: ' +
+          'it is the only way in when the identity provider is down, and the app will not start in ' +
+          'single-sign-on-only mode without it.',
       });
     }
 
@@ -265,6 +265,21 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     const problem = passwordProblem(body.password);
     if (problem) return reply.code(400).send({ error: 'weak_password', message: problem });
 
+    // The break-glass password is issued by the CLI, which prints it once, audits
+    // `vibe.auth.breakglass.rotated`, and — on the appliance — is what keeps the stored
+    // emergency credential in step with the account. Set it here instead and the copy in the
+    // firm's safe is silently wrong, which is found out during the outage.
+    const [target] = await db.select({ email: users.email }).from(users).where(eq(users.id, id)).limit(1);
+    if (target && isBreakglassEmail(target.email)) {
+      return reply.code(409).send({
+        error: 'breakglass_password_managed',
+        message:
+          "The emergency sign-in account's password is not set here. Issue a new one with `breakglass rotate` " +
+          '(on the Vibe Appliance: `sudo vibe identity rotate-breakglass vibe-1040`), which prints it once and ' +
+          'keeps the stored emergency credential in step.',
+      });
+    }
+
     await db
       .update(users)
       .set({ passwordHash: await hashPassword(body.password), updatedAt: new Date() })
@@ -279,6 +294,17 @@ export function registerAdminRoutes(app: FastifyInstance): void {
       detail: {},
     });
     return { ok: true };
+  });
+
+  /**
+   * Whether the break-glass account would work in an outage: exists, active, admin, and —
+   * the one that gets forgotten — has its authenticator enrolled. Read-only; no secrets. The
+   * same answer is available without a session from `dist/auth/breakglass-status.js`.
+   */
+  app.get('/api/admin/breakglass/status', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin']);
+    if (!user) return;
+    return breakglassStatus();
   });
 
   // ── audit ──────────────────────────────────────────────────────────────────

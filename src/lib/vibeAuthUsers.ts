@@ -86,6 +86,54 @@ export async function isSsoOnlyAccount(user: {
   return linked.rows.length > 0;
 }
 
+/** Whether an address is the break-glass account's. Stored lowercase; compared that way. */
+export function isBreakglassEmail(email: string): boolean {
+  return email.trim().toLowerCase() === BREAKGLASS_EMAIL;
+}
+
+/**
+ * Whether the break-glass account would actually work in an outage.
+ *
+ * "A password is on file somewhere" is not that. The package's `breakglass ensure` creates
+ * the account with a password and **no second factor**, and this app does not exempt it from
+ * one (Q18): until a person has signed in at /login/local and scanned the QR code, the stored
+ * password opens an enrolment prompt — for whoever holds it — and nothing else. So readiness
+ * is four facts, and the fourth is the one that gets forgotten.
+ *
+ * `secondFactorEnrolled` means an **authenticator**, specifically. It is the only factor that
+ * needs no SMTP, no SMS gateway and no identity provider, and the account's address is
+ * undeliverable on purpose, so an emailed code could never arrive. An account switched to
+ * another method reports `false` rather than a "ready" nobody has tested.
+ *
+ * Read-only, and carries no secret: not the password hash, not the TOTP secret, not an id.
+ */
+export interface BreakglassStatus {
+  exists: boolean;
+  active: boolean;
+  admin: boolean;
+  secondFactorEnrolled: boolean;
+  ready: boolean;
+}
+
+export async function breakglassStatus(): Promise<BreakglassStatus> {
+  const [row] = await db
+    .select({
+      role: users.role,
+      disabledAt: users.disabledAt,
+      mfaMethod: users.mfaMethod,
+      totpConfirmedAt: users.totpConfirmedAt,
+    })
+    .from(users)
+    .where(emailMatches(BREAKGLASS_EMAIL))
+    .limit(1);
+
+  const exists = row !== undefined;
+  const active = exists && row.disabledAt === null;
+  const admin = exists && row.role === ADMIN_ROLE;
+  const secondFactorEnrolled = exists && row.mfaMethod === 'totp' && row.totpConfirmedAt !== null;
+  return { exists, active, admin, secondFactorEnrolled, ready: exists && active && admin && secondFactorEnrolled };
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isProductRole(role: string): role is ProductRole {
