@@ -13,6 +13,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
 import { db } from '../db/client.ts';
 import { sessions, users } from '../db/schema.ts';
+import { emailMatches, isBreakglassEmail, isSsoOnlyAccount } from '../lib/vibeAuthUsers.ts';
 import { setting } from '../settings/store.ts';
 import { hashPassword } from './credentials.ts';
 import { issueCode, verifyCode } from './otp.ts';
@@ -29,7 +30,7 @@ export async function requestReset(
   email: string,
   ip?: string | null,
 ): Promise<ResetRequestResult> {
-  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).limit(1);
+  const [user] = await db.select().from(users).where(emailMatches(email.toLowerCase().trim())).limit(1);
 
   if (!user || user.disabledAt) {
     // Burn a comparable amount of time so response timing does not leak existence.
@@ -38,6 +39,38 @@ export async function requestReset(
       action: 'auth.password_reset_requested',
       ip: ip ?? null,
       detail: { known: false },
+    });
+    return { accepted: true, destination: null };
+  }
+
+  // The break-glass account never resets itself, by rule. Until now it was refused only by
+  // accident — its `appliance.local` address is undeliverable — and an accident is not a
+  // control: a firm that renames the account, or a relay that accepts the domain, would have
+  // turned the emergency admin into something a mailbox can take over. Until a person enrols
+  // its authenticator it has no second factor either, so a reset would be the whole sign-in.
+  // Its password comes from `breakglass rotate`. Same response, same burnt time as an unknown
+  // address.
+  if (isBreakglassEmail(user.email)) {
+    await hashPassword(`decoy-${email}`);
+    await audit({
+      action: 'auth.password_reset_requested',
+      userId: user.id,
+      ip: ip ?? null,
+      detail: { known: true, delivered: false, why: 'breakglass_account' },
+    });
+    return { accepted: true, destination: null };
+  }
+
+  // An SSO-only account has no local second factor, so a reset would let whoever reads the
+  // mailbox set a password and then enrol *their own* authenticator at first sign-in — one
+  // factor in, MFA satisfied. Same response and same burnt time as an unknown address.
+  if (await isSsoOnlyAccount(user)) {
+    await hashPassword(`decoy-${email}`);
+    await audit({
+      action: 'auth.password_reset_requested',
+      userId: user.id,
+      ip: ip ?? null,
+      detail: { known: true, delivered: false, why: 'sso_only_account' },
     });
     return { accepted: true, destination: null };
   }
@@ -96,9 +129,21 @@ export async function completeReset(
   const problem = passwordProblem(newPassword);
   if (problem) return { ok: false, error: problem };
 
-  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).limit(1);
+  const [user] = await db.select().from(users).where(emailMatches(email.toLowerCase().trim())).limit(1);
   if (!user || user.disabledAt) {
     // Same opaque failure as a wrong code — still no enumeration.
+    return { ok: false, error: 'That code is not valid.' };
+  }
+
+  // Refused by rule, as in `requestReset` — which never issues this account a code, so this
+  // only matters for one issued before that rule existed. Same opaque failure as a wrong code.
+  if (isBreakglassEmail(user.email)) {
+    await audit({
+      action: 'auth.password_reset_failed',
+      userId: user.id,
+      ip: ip ?? null,
+      detail: { reason: 'breakglass_account' },
+    });
     return { ok: false, error: 'That code is not valid.' };
   }
 

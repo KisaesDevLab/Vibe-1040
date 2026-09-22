@@ -24,11 +24,35 @@ jobs:
   # Never publish an image whose tests do not pass. A tag is not a reason to skip the gate.
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    # Same database as ci.yml, for the same reason: the database-backed tests skip themselves
+    # without one, a skip is green, and this job is the gate in front of a published image. The
+    # tests that prove the MFA gate on single sign-on (§11, Q18) must run here, not only on PRs.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: vibe1040
+          POSTGRES_PASSWORD: vibe1040
+          POSTGRES_DB: vibe1040_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vibe1040 -d vibe1040_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          # @kisaesdevlab/vibe-auth lives on GitHub Packages, which wants a token even to read.
+          # This writes a runner-level npmrc that expands NODE_AUTH_TOKEN at install time.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@kisaesdevlab'
       - run: node scripts/check-provider-leakage.mjs
       - uses: actions/checkout@v5
         with:
@@ -36,8 +60,28 @@ jobs:
           path: .router
           sparse-checkout: packages/sdk
       - run: node scripts/install-deps.mjs --sdk .router/packages/sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run typecheck
-      - run: npm test
+      - name: Migrate the test database (up, down, up)
+        run: npm run db:migrate && npm run db:rollback && npm run db:migrate
+        env:
+          DATABASE_URL: postgres://vibe1040:vibe1040@localhost:5432/vibe1040_test
+          REDIS_URL: redis://localhost:6379
+          VIBE_AI_ROUTER_URL: http://vibe-ai-router:8220
+          VIBE_AI_TOKEN: test-token-not-a-real-credential
+          ROUTER_REQUIRE_US_REGION: 'false'
+          TIN_HASH_SALT: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+          SESSION_SECRET: CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=
+          STORAGE_ENCRYPTION_KEY: CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=
+      - name: Test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.log
+          if grep -E "test database unavailable" test-output.log; then
+            echo "::error::database-backed tests skipped — refusing to publish an image whose MFA-gate tests did not run"
+            exit 1
+          fi
 
   publish:
     needs: verify
@@ -90,6 +134,10 @@ jobs:
         with:
           context: .
           push: true
+          # The registry token for @kisaesdevlab/vibe-auth, as a BuildKit secret: mounted for
+          # the install steps only, never an ARG or ENV, so it is in no layer and no history.
+          secrets: |
+            NODE_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           tags: ${{ steps.meta-api.outputs.tags }}
           labels: ${{ steps.meta-api.outputs.labels }}
           cache-from: type=gha

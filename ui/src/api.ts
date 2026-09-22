@@ -40,7 +40,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  me: () => request<{ id: string; email: string; displayName: string; role: string }>('/api/me'),
+  me: () => request<{ id: string; email: string; displayName: string; role: string; sso: boolean }>('/api/me'),
 
   login: (email: string, password: string) =>
     request<{ mfaRequired: boolean; method: 'totp' | 'email' | 'sms'; enrolled: boolean; needsTotpEnrolment: boolean }>(

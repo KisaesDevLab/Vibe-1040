@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { LoginPanel } from '@kisaesdevlab/vibe-auth/react';
 import { api, formatCents } from './api';
 import { FieldEditor } from './components/FieldEditor';
 import { PageOverlay } from './components/PageOverlay';
@@ -19,11 +20,19 @@ import type {
   WorksheetRow,
 } from './types';
 
-type View = 'login' | 'mfa' | 'forgot' | 'bundles' | 'review' | 'admin';
+type View = 'login' | 'login-local' | 'mfa' | 'forgot' | 'bundles' | 'review' | 'admin';
+
+/**
+ * The break-glass sign-in (P16). This app has no router, so the one URL that matters is read
+ * off the location: when the firm runs single sign-on only, the local form is hidden from
+ * everyone and this path is how the emergency account reaches it.
+ */
+const BREAKGLASS_PATH = '/login/local';
+const signInView = (): View => (window.location.pathname === BREAKGLASS_PATH ? 'login-local' : 'login');
 
 export default function App() {
-  const [view, setView] = useState<View>('login');
-  const [me, setMe] = useState<{ displayName: string; role: string } | null>(null);
+  const [view, setView] = useState<View>(signInView);
+  const [me, setMe] = useState<{ displayName: string; role: string; sso: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,7 +42,7 @@ export default function App() {
         setMe(u);
         setView('bundles');
       })
-      .catch(() => setView('login'));
+      .catch(() => setView(signInView()));
   }, []);
 
   return (
@@ -51,6 +60,14 @@ export default function App() {
             <span className="who">{me.displayName}</span>
             <button
               onClick={() => {
+                // A session born at the identity provider is ended through Vibe Auth, so its
+                // sign-out is audited under the same name as its sign-in. `local=1` ends this
+                // app's session only: signing out of Vibe 1040 should not sign the user out
+                // of every other Vibe product they have open.
+                if (me.sso) {
+                  window.location.assign('/auth/oidc/logout?local=1');
+                  return;
+                }
                 void api.logout().then(() => {
                   setMe(null);
                   setView('login');
@@ -65,8 +82,13 @@ export default function App() {
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
-      {view === 'login' && (
-        <Login onNext={() => setView('mfa')} onForgot={() => setView('forgot')} onError={setError} />
+      {(view === 'login' || view === 'login-local') && (
+        <Login
+          breakglass={view === 'login-local'}
+          onNext={() => setView('mfa')}
+          onForgot={() => setView('forgot')}
+          onError={setError}
+        />
       )}
       {view === 'forgot' && <Forgot onDone={() => setView('login')} onError={setError} />}
       {view === 'mfa' && (
@@ -83,7 +105,7 @@ export default function App() {
       )}
       {view === 'bundles' && <BundleList onOpen={() => setView('review')} onError={setError} />}
       {view === 'review' && <Review onBack={() => setView('bundles')} onError={setError} />}
-      {view === 'admin' && <Admin onError={setError} />}
+      {view === 'admin' && <Admin role={me?.role ?? 'staff'} onError={setError} />}
     </div>
   );
 }
@@ -91,10 +113,12 @@ export default function App() {
 // ── auth ─────────────────────────────────────────────────────────────────────
 
 function Login({
+  breakglass,
   onNext,
   onForgot,
   onError,
 }: {
+  breakglass: boolean;
   onNext: () => void;
   onForgot: () => void;
   onError: (m: string) => void;
@@ -105,21 +129,41 @@ function Login({
 
   return (
     <div className="centered card">
-      <h1>Sign in</h1>
-      <p className="muted">
-        Staff access only. A second factor is always required. An authenticator app needs
-        nothing set up by the firm, so you can enrol one on this sign-in.
-      </p>
-      <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-      <input
-        placeholder="password"
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') void go(); }}
-      />
-      <button onClick={() => void go()}>Continue</button>
-      <button className="link" onClick={onForgot}>Forgot your password?</button>
+      <h1>{breakglass ? 'Emergency sign in' : 'Sign in'}</h1>
+      {/*
+        LoginPanel reads /auth/status. With single sign-on off it renders the form below and
+        nothing else, so a firm that never turns SSO on sees exactly what it saw before. In
+        `both` it adds the identity-provider button; in `oidc_only` it hides the form, except
+        on the break-glass path.
+      */}
+      <LoginPanel
+        basePath=""
+        returnTo="/"
+        breakglass={breakglass}
+        classNames={{ root: 'sso-panel', button: 'button sso-button', divider: 'sso-divider muted', note: 'muted sso-note' }}
+      >
+        <p className="muted">
+          {breakglass
+            ? 'For the emergency account, when single sign-on is unavailable. A second factor is ' +
+              'still required: this account uses an authenticator app like any other.'
+            : 'Staff access only. A second factor is always required. An authenticator app needs ' +
+              'nothing set up by the firm, so you can enrol one on this sign-in.'}
+        </p>
+        <input
+          placeholder={breakglass ? 'username' : 'email'}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          placeholder="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') void go(); }}
+        />
+        <button onClick={() => void go()}>Continue</button>
+        {!breakglass && <button className="link" onClick={onForgot}>Forgot your password?</button>}
+      </LoginPanel>
     </div>
   );
 }

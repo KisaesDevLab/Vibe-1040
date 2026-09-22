@@ -8,16 +8,95 @@ do not infer progress from the commit log.
 
 ## Current position
 
-**Phase:** P0–P15 — **all phases implemented 2026-08-26**
+**Phase:** P0–P15 — **all phases implemented 2026-08-26**; **P16 (single sign-on) implemented
+2026-09-19** on branch `vibe-auth-integration`, not yet merged or released
 **Status:** code complete; **integration-unverified** (see below)
 **Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
-lands (QUESTIONS.md Q11).
+lands (QUESTIONS.md Q11). P16 cannot *exit* until it has been signed into from a real browser
+against a real Vibe Auth (below).
 
 Router integration was verified against Vibe-AI-Router **v0.0.24** on 2026-08-26. Four of
 the five assumed Router dependencies already exist; the region-pinning one does not exist
 at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
+
+**Verified by execution on 2026-09-20** (P16 follow-up: break-glass guard, reset refusal and
+readiness check; no migration; same branch, still unmerged):
+
+- 290 tests pass across 21 files (`npm test`), none skipped — the compose Postgres was up and at
+  0011. 12 are new, in `test/sso.test.ts`: six tests run once in `local` and once in `both`,
+  the two modes the old guard did not cover. (The 2026-09-19 entry below says 271 / 28; the
+  code-review change set the same day took it to 278 / 35 and did not update that line.)
+- **Checked by mutation.** With the every-mode guard, the `set-password` refusal, the
+  reset-by-rule refusal and the authenticator check all switched off together, 11 of the 12 new tests
+  fail, and so does the existing `oidc_only` guard test. The twelfth pins behaviour that already
+  held — the users route writes no email — and is there so it cannot stop holding quietly.
+- The readiness command was run three ways: from source under `--experimental-strip-types`
+  (inside the suite, as a child process: a provisioned-but-unenrolled account, an absent one, and
+  an unreachable database — exit 0, 0 and 1, the last with nothing on stdout and no credential
+  on stderr); and **built**, `node dist/auth/breakglass-status.js` after `npm run build`, against
+  the test database, which printed the all-false JSON and exited 0.
+- `.appliance/manifest.json` with the new `sso.breakglassStatusCommand` was validated against
+  `../Vibe-Appliance/console/manifest.schema.json` with a full JSON Schema validator: one error,
+  and it is that key (`sso` is `additionalProperties: false` there). Nothing in this repo
+  validates the manifest. See the external-dependencies row.
+- `tsc --noEmit` clean; provider-leakage check clean. The UI was not touched and not rebuilt.
+- **Not verified:** the image was not rebuilt, so `dist/auth/breakglass-status.js` is in the
+  image by construction (`COPY --from=build /app/dist`) and has not been seen there, and the
+  `docker exec` line in `docs/sso.md` has not been run against a container. No authenticator was
+  enrolled by a person: `secondFactorEnrolled: true` was reached in tests by writing
+  `totp_confirmed_at`, not by scanning a QR code. Nothing on the appliance reads the new key.
+  **None of P16's three exit criteria below moved.**
+
+**Verified by execution on 2026-09-19** (P16, single sign-on through Vibe Auth; carries
+**migration 0011**; `@kisaesdevlab/vibe-auth` 1.0.4):
+
+- 271 tests pass across 21 files (`npm test`). 28 are new, in `test/sso.test.ts` — the first
+  HTTP-level tests in the repo: the real server via `buildServer()` + `inject()`, the real
+  vibe-auth engine, the real database, and a fake identity provider
+  (`test/helpers/fake-idp.ts`) signing real tokens. They skip themselves, loudly, when the test
+  Postgres is not at 0011.
+- **The MFA gate (Q18) holds, and the tests that say so were checked by mutation.** A
+  password-only token, a token with no `amr`, and a password-only token with a stored "MFA not
+  required" setting are each refused with no session row and a failure audit row. With the
+  environment pin and the settings-store pin both removed, those three tests fail — on a 500
+  from the session adapter's own check, not on a sign-in, so the third layer holds alone.
+- The **built** server (`node dist/server.js`) was run on a real port against the fake IdP and
+  driven over real HTTP with `VIBE_OIDC_REQUIRE_MFA_AMR=false` deliberately set in its
+  environment: a token with a second factor signed in (`Set-Cookie … HttpOnly; SameSite=Strict`,
+  `/api/me` 200 with `sso: true`, `/api/bundles` 200), a password-only token was refused with
+  no cookie, sign-out ended the session, `/login/local` served the SPA and an unknown `/auth/`
+  path returned a JSON 404.
+- Migration 0011 ran forward, back, and forward again against the compose Postgres 17: three
+  tables and five `sessions` columns appear, disappear without residue, and reappear.
+- The break-glass CLI ran through the compiled adapter: `status` → `ensure` → `status` created an
+  active admin with `mfa_method = totp`, no secret, and a real scrypt hash.
+- The image builds with the registry token as a BuildKit secret. In the result: the CLI and
+  adapter are at the manifest's paths, the process user is `app`, no npmrc holds a credential,
+  and the token occurs **zero** times in `docker history` and in the full `docker save` stream.
+- `tsc --noEmit` clean; provider-leakage check clean; the UI type-checks and builds.
+- Two defects were found by running it and fixed before this entry: the Dockerfile's secret
+  mounts had been committed mangled and did not build, and the boot line reported the identity
+  provider "NOT reachable" on every healthy start.
+- **Still not verified — and these are P16's exit criteria, so the phase has not exited:**
+  1. **No real browser has signed in.** `SameSite=Strict` on the session cookie is argued to be
+     compatible with the redirect back from the IdP (the callback *sets* the cookie; nothing
+     needs to *send* one until the SPA's same-origin `/api/me`), and every piece of that is
+     tested, but the argument itself has only been made, not watched. If it fails, raise a
+     question before touching cookie policy.
+  2. **No real Vibe Auth.** Nothing has been registered with a broker, and no token has come
+     from authentik. In particular authentik's actual `amr` values for TOTP, WebAuthn and
+     static codes have not been observed against `amrSatisfiesMfa`.
+  3. The Authentication tab and the sign-in button have been compiled, not looked at.
+- **CI (added the same day, PR #1):** green, and for the first time it *runs* the
+  database-backed tests rather than skipping them. The first CI run of this work passed with
+  36 tests skipped — every SSO test and every pipeline hand-off test — because the workflow had
+  no Postgres and a skipped test is green. The build job now has a Postgres 17 service, migrates
+  up, down and up, and fails if the suite reports the database unavailable: 271 of 271 ran.
+  That run also confirmed `GITHUB_TOKEN` can read the package, and exposed a race in one new
+  test (it asserted the IdP reachable straight after `start()`, which discovers in the
+  background) that a fast local machine had been winning.
 
 **Verified by execution on 2026-09-16** (pipeline review change set, released as v0.6.0;
 carries **migration 0007**):
@@ -333,6 +412,7 @@ what a model returns.
 | P13 | Retention and disposal | implemented | rasters purge earlier than sources; every disposal logged |
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
+| P16 | Single sign-on (Vibe Auth) | implemented | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
 
 ---
 
@@ -354,6 +434,9 @@ historical — read this table first.
 | DigitalOcean provider configured in the Router; `glm-5.3-flash` probed for vision; policies bound | P4, P7, P8 | **runbook step**, decided 2026-09-02 — see decision log |
 | Router OpenAPI spec published | P3 | **moot** — no spec exists; SDK is the contract (Q3) |
 | DigitalOcean DPA executed | before live client data | not started |
+| Vibe Auth client `@kisaesdevlab/vibe-auth` ≥ 1.0.4 on GitHub Packages | P16 | **published** — 1.0.0–1.0.4 listed 2026-09-19. Restricted package: installs need `read:packages`. CI's `GITHUB_TOKEN` reads it today (confirmed by PR #1's run); if that ever 403s, the package's *Manage Actions access* no longer grants this repo |
+| Vibe Auth broker ≥ 1.0.4 deployed and this app registered with it | P16 exit | **operator step** — `docs/sso.md`. Before 1.0.4 an MFA-enrolling sign-in carried no MFA `amr` and would be refused here (Q18) |
+| Vibe-Appliance manifest `sso` block + env-template keys for `vibe-1040` | P16 LAN-box check | **not started, outside this repo** — scoped out 2026-09-19 (Q19); checklist in `docs/sso.md`. **Added 2026-09-20:** the block now carries `breakglassStatusCommand`, which the appliance schema rejects under strict validation (`sso` is `additionalProperties: false`) and `lib/identity.sh` does not read — the schema key and the status-pill / `oidc_only`-guard wiring are appliance work, item 1 of the same checklist |
 | WISP amendment drafted — must name unscrubbed page-image egress | P14 | **drafted** — `docs/wisp-amendment.md` names DigitalOcean-hosted open models, their retention terms, and the region gap (Q12, Q13) |
 
 ---
@@ -612,6 +695,78 @@ Kurt's call, and the right one — he pushed back on the gate as unnecessary and
 agreed with him.
 *Affects:* P4, P7, P8, P10, §7.
 
+**2026-09-19 — Single sign-on through Vibe Auth. MFA stays mandatory; the identity provider may now perform it.** (P16, migration 0011)
+Staff can sign in through the suite identity service (Vibe Auth: bundled authentik plus a
+broker, OIDC authorization code with PKCE) using `@kisaesdevlab/vibe-auth`. Local sign-in is
+untouched and remains the default (`VIBE_AUTH_MODE=local`); `both` adds the SSO button and
+`oidc_only` hides the local form from everyone but the break-glass account. The session model
+is not redesigned — an SSO sign-in ends in the same `sessions` row and the same
+`v1040_session` cookie (`httpOnly`, `SameSite=Strict`, `Secure` per `SESSION_SECURE`) as a local
+one, and the package never sets a cookie of its own.
+
+**This amends how the locked MFA decision is satisfied, not whether it is** (Q18). `requireUser`
+still refuses any session without `mfa_satisfied_at`. An SSO session is marked satisfied only
+when the ID token's `amr` claim proves a second factor at the IdP; a token without that proof
+is refused outright and no session row is written. `VIBE_OIDC_REQUIRE_MFA_AMR` is forced `true`
+in code for this product, and the session adapter refuses independently, so the "disable MFA
+enforcement" switch Vibe Auth gives other products is inert here. `amr` is recorded on the audit
+row of every SSO sign-in. CLAUDE.md §11 amended to say so.
+
+**Break-glass keeps its second factor.** Vibe Auth's plan for this product preferred a
+password-only break-glass account. Declined: it is a single-factor administrator path into
+taxpayer data. `vibe-breakglass` is a local admin that enrols an authenticator through the
+existing first-sign-in flow — TOTP needs no SMTP, SMS or IdP, which is exactly the outage it is
+for. The operational cost is that the authenticator must be enrolled at provisioning, not
+discovered missing during an outage; `docs/sso.md` makes that a provisioning step.
+
+**Three holes closed after code review, same day, before merge.** (1) A just-in-time account
+never enrols a local factor, so in `both` mode self-service password reset plus first-sign-in
+enrolment let whoever reads the mailbox take the account with one factor. Reset is now refused
+for an account that has an SSO link and no local factor, indistinguishably from an unknown
+address; an admin can still set a password for one. This is the same §11 control as Q18 seen
+from the other side, and it is a behaviour a firm will notice, so it is recorded here rather
+than left in a commit. (2) Role sync would demote the firm's last active admin if their IdP
+groups mapped lower, with no one left to undo it; the user adapter now keeps the role and
+audits the refusal. (3) Break-glass could be disabled from Admin → Users in `oidc_only`, which
+surfaces as the appliance failing to start at the next restart; refused with 409. Also from
+review: sign-in, reset and SSO linking now match the address case-insensitively **on the
+stored side too** — the first version lowercased only what was typed, and the seed stores
+`SEED_ADMIN_EMAIL` as typed, so a firm whose admin is `Kurt@Firm.com` would have been locked
+out by the upgrade; and back-channel logout now finds a session stored without a `sid`.
+
+**2026-09-20 — break-glass is protected in every mode, and "ready" now means the authenticator
+is enrolled.** From Vibe Auth's `docs/integration-plans/break-glass-and-rollout-risks.md`.
+(1) Hole (3) above was closed only for `oidc_only`. But the switch *into* `oidc_only` is gated
+on the appliance by a stored password string, so an account disabled or demoted in `local` or
+`both` would pass it. `409 breakglass_required` now applies in every mode; the message no longer
+says to change the mode first. (2) Admin → Users no longer sets the break-glass password
+(`409 breakglass_password_managed`): `breakglass rotate` is the one path that prints it once,
+audits it and keeps the appliance's stored copy true. (3) Self-service reset refused break-glass
+only because `appliance.local` is undeliverable; it is now refused by rule, with the uniform
+response and an audit row (`why: breakglass_account`). (4) Because this app does not exempt
+break-glass from the second factor, and the package's `ensure` creates it
+password-only, "a password is on file" says nothing about whether it would work. Readiness is
+`exists ∧ active ∧ admin ∧ secondFactorEnrolled`, the last meaning an enrolled **authenticator**
+and nothing else, at `GET /api/admin/breakglass/status` and `node dist/auth/breakglass-status.js`.
+This is how the locked decision above is *checked*, not a change to it. Left open, knowingly:
+an admin can still reset the account's factor or switch its method (both read as not ready), and
+the account can still change its own password while signed in, which leaves the stored copy
+stale. The unspecified choices in this change set are QUESTIONS.md Q20.
+
+Where this departs from `Vibe-Auth/docs/integration-plans/vibe-1040.md`, and why: that plan
+assumed drizzle-kit migrations (this repo's are hand-written up/down SQL, so the package's
+tables are inlined into 0011 with a real down); it preferred password-only break-glass (above);
+and it included the Vibe-Appliance manifest and env-template edits, which were scoped out of
+this phase (Q19) — `.appliance/manifest.json` here carries the `sso` block ready to copy. Also
+fixed in passing because SSO account linking depends on it: `POST /api/auth/login` compared the
+submitted email case-sensitively while every write path lowercased it, so a mixed-case sign-in
+never matched.
+
+The package is the first dependency this repo takes from GitHub Packages, so installs now need
+a token with `read:packages` — locally, in CI, and as a BuildKit secret in three Dockerfile
+stages. It is never written to a layer or to the repo. Requires Vibe Auth broker ≥ 1.0.4 (Q18).
+*Affects:* P0 (auth, sessions, audit), P14 (GLBA posture, packaging), P16, §11, WISP.
+
 **2026-09-17 — Taxpayer recognition, review false positives, and foreign income on brokerage packages.** (v0.9.0, migration 0010)
 Three complaints from the first week of real packets, one change set.
 
@@ -830,6 +985,7 @@ The build is only as good as the fixture set. Track what exists.
 | **IRS-layout forms** (W-2, 1099-INT, -DIV, -R, -NEC, -MISC, 1098) | yes | `irs_*.pdf` — official fillable PDFs filled and flattened; Copy B only |
 | W-2 with three copies on one page | yes | `irs_w2_three_copies.pdf` — payroll-vendor layout, identical values ×3 |
 | Cover letter and blank page | yes | `cover_letter.pdf`, `blank_page.pdf` — the two pages that stalled every real bundle |
+| Fake identity provider (P16) | yes | `test/helpers/fake-idp.ts` — in-process OIDC provider signing real RS256 tokens; `user.amr` is driven per test. Not a document fixture: no taxpayer data, synthetic staff identities only. **A real authentik token has not been seen** |
 
 All fixtures must be synthetic or fully de-identified. Do not use live client documents as
 test fixtures.

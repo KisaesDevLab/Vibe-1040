@@ -4,6 +4,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # @kisaesdevlab/vibe-auth comes from GitHub Packages; the Dockerfile requires this.
+      #   NODE_AUTH_TOKEN=$(gh auth token) docker compose build
+      secrets:
+        - NODE_AUTH_TOKEN
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
@@ -26,6 +30,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      secrets:
+        - NODE_AUTH_TOKEN
     restart: unless-stopped
     command: ["node", "dist/queue/worker.js"]
     depends_on:
@@ -88,3 +94,9 @@ networks:
   # The router lives on the shared suite network. It is never reached via Caddy.
   vibe-suite:
     external: true
+
+# Build-time only: read from the environment of whoever runs `docker compose build`, mounted
+# for the npm install steps, and written to no image layer. Needs read:packages.
+secrets:
+  NODE_AUTH_TOKEN:
+    environment: NODE_AUTH_TOKEN

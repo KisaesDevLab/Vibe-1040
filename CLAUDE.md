@@ -10,8 +10,17 @@ image path.
 
 ## 0. Start here
 
-**This repo currently contains no code.** It is four planning documents plus this file,
-with no commits on `main`. The build has not started.
+**This is a built, released application, not a plan.** P0–P15 are implemented and shipping
+as versioned GHCR images: a Fastify API that also serves the React review UI (`src/`, `ui/`),
+a BullMQ pipeline worker, and a Python rasterization sidecar (`sidecar/`), over Postgres and
+Redis. P16 (single sign-on) is the most recent phase. Do not read a version or a phase status
+off this file — it went stale once already, saying "no code" through nine releases. **STATE.md
+has the current position**, including which phases are implemented but have not *exited*
+because their exit criteria have not been demonstrably met.
+
+"Implemented" and "verified" are different claims in this repo and STATE.md keeps them apart:
+each change set records what was verified by execution and, separately, what was not. Keep
+doing that. A phase whose exit criteria were reasoned about but not run has not exited.
 
 Read in this order before doing anything:
 
@@ -19,7 +28,7 @@ Read in this order before doing anything:
    phase ledger, external dependencies, locked decisions, known risks, fixture inventory.
    Do not infer progress from the commit log. Update it at the close of every phase and
    whenever a blocking condition changes.
-2. **PHASES.md** — P0 through P15, each with its dependency, deliverable, and exit
+2. **PHASES.md** — P0 through P16, each with its dependency, deliverable, and exit
    criteria. A phase is not complete until its exit criteria are demonstrably met.
 3. **QUESTIONS.md** — open items. Blocking questions halt the phase they gate; non-blocking
    ones carry a recorded working assumption. Answer with `**A:**` and a date, then move to
@@ -27,23 +36,38 @@ Read in this order before doing anything:
 4. **vibe-ai-router-PHASES-addendum.md** — R1–R5, work that belongs to the Vibe AI Router
    repo, not this one. **Largely historical as of 2026-08-26** — most of it already shipped
    or turned out not to be Router work. STATE.md's External dependencies table supersedes
-   it. Only region pinning (R5) is still real, and it gates P14.
+   it. Only region pinning is still real (the addendum's R5, filed in the Router repo as
+   R6), and it gates P14's exit.
+5. **docs/** — `runbook.md` (provisioning, Router policy binding), `sso.md` (single sign-on,
+   break-glass, registration with Vibe Auth), `wisp-amendment.md`, `line-mapping-review.md`.
+
+Sibling repositories are usually checked out beside this one (`../Vibe-AI-Router`,
+`../Vibe-Auth`, `../Vibe-Appliance`, `../trial-balance-app`) and sometimes hold documents
+addressed to this repo — Vibe Auth has a plan for it. Read them, and verify what they say
+about this codebase before acting on it; that plan was wrong about how migrations work here.
 
 Working rules:
 
 - **Raise, do not guess.** Anything ambiguous or out of scope becomes a QUESTIONS.md entry
   rather than an implementation choice. §2 boundaries specifically require this.
-- **P0 is blocked on Q1** (stack confirmation). P0–P6 are Router-independent and can run
-  while the Router addendum is in flight; P7 is the first hard gate on external work.
 - Decisions in STATE.md's "Decisions locked" are settled. Changing one requires an entry
-  in the decision log, not a silent implementation choice.
+  in the decision log, not a silent implementation choice. That includes changing *how* a
+  locked decision is satisfied — see Q18, where single sign-on changed who performs the
+  mandatory second factor.
+- Migrations are hand-written `NNNN_name.up.sql` / `.down.sql` pairs in
+  `src/db/migrations`, mirrored by hand in `src/db/schema.ts`, and must run forward **and
+  back**. `drizzle-kit generate` exists in `package.json` and its output is not what runs.
+- No TypeScript parameter properties or enums in `src/`: `npm run dev`, the worker and the
+  migration scripts run under `--experimental-strip-types`, which rejects them, so they would
+  work in the built image and fail in development.
 - Conventional commits.
 
 ## Commands
 
 ```bash
+node scripts/install-deps.mjs        # NOT `npm install` — see below
 npm run typecheck                    # tsc --noEmit (strict, exactOptionalPropertyTypes)
-npm run lint                         # eslint .
+npm run lint                         # eslint . — known broken: no eslint.config.* was ever committed
 npm test                             # vitest run — test/**/*.test.ts
 npx vitest run test/layout.test.ts   # one file
 npm run build                        # tsc + copy migrations into dist/
@@ -52,6 +76,18 @@ npm run dev | worker                 # API and queue worker, --experimental-stri
 npm run accuracy -- <bundleId>       # score a processed bundle against fixture ground truth
 npm run check:providers              # provider-leakage grep; must stay clean
 ```
+
+Installing takes two first-party packages that plain `npm install` cannot fetch.
+`@kisaes/vibe-ai-client` is on no registry: `scripts/install-deps.mjs` installs everything
+else and links the SDK from `vendor/sdk` or a sibling `../Vibe-AI-Router` checkout.
+`@kisaesdevlab/vibe-auth` is on GitHub Packages, which needs a token with `read:packages`
+even to read: keep `//npm.pkg.github.com/:_authToken=…` in your user-level `~/.npmrc`, never
+in the repo's `.npmrc` (scope line only). The UI is its own package — `cd ui && npm install`.
+Docker takes the token as a BuildKit secret: `docker build --secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN .`
+
+The tests that touch the database (`test/pipeline.test.ts`, `test/sso.test.ts`) need the
+Postgres from `docker-compose.dev.yml` with `vibe1040_test` migrated; they skip themselves,
+loudly, when it is not there — so a green run with skips has not tested those paths.
 
 Sidecar: `cd sidecar && pip install -r requirements.txt && python -m py_compile worker.py`.
 
@@ -404,6 +440,16 @@ require written taxpayer consent — but only while processing stays inside the 
 - GLBA Safeguards obligations that land on this repo: MFA on staff accounts, encryption
   at rest and in transit, access logging, and a documented retention and disposal
   schedule with an enforcing job.
+- **MFA is mandatory and cannot be switched off; single sign-on does not change that**
+  (decided 2026-09-19, QUESTIONS.md Q18). Staff may sign in through Vibe Auth, and a second
+  factor performed by the firm's identity provider counts — but only on proof. An SSO session
+  is marked MFA-satisfied solely when the ID token's `amr` shows a second factor, a token
+  without it is refused rather than downgraded, and `amr` is written to the audit row. That
+  refusal is enforced in this app's session adapter as well as in the package configuration,
+  so no environment value or settings page can disable it. The break-glass account is a local
+  admin with an authenticator, never a password-only path. Do not add a way around
+  `requireUser`'s `mfa_satisfied_at` check, and do not mark a session satisfied anywhere but
+  the local second-factor verification and the `amr`-checked SSO adapter.
 - Rasterized page images are derived PII. Purge them on the retention schedule
   independently of the source PDFs.
 

@@ -20,6 +20,7 @@ import { registerRoutes } from './api/routes.ts';
 import { attachUser } from './api/middleware.ts';
 import { env } from './config/env.ts';
 import { pool } from './db/client.ts';
+import { registerVibeAuth, vibeAuth } from './lib/vibeAuth.ts';
 import { closeQueues } from './queue/queues.ts';
 import {
   assertUsRegionPinning,
@@ -47,6 +48,11 @@ export async function buildServer() {
 
   app.addHook('preHandler', attachUser);
 
+  // Single sign-on (P16): /auth/*. After the cookie plugin, because the session adapter sets
+  // the same cookie a local sign-in does; before the app's routes, per Vibe Auth's mounting
+  // rule. `attachUser` runs on these routes too and is harmless — it only reads.
+  await registerVibeAuth(app);
+
   // Security headers. The review UI is same-origin only; page rasters must never be
   // embeddable or cacheable anywhere but the reviewer's tab.
   app.addHook('onSend', async (_req, reply) => {
@@ -65,7 +71,11 @@ export async function buildServer() {
   const uiDir = join(here, '..', 'ui', 'dist');
   await app.register(staticFiles, { root: uiDir, prefix: '/', wildcard: false });
   app.setNotFoundHandler((req, reply) => {
-    if (req.url.startsWith('/api/')) return reply.code(404).send({ error: 'not found' });
+    // /auth/ is the OIDC surface. A mistyped callback path must be a 404, not the SPA shell —
+    // an identity provider handed `index.html` with a 200 reports success for a failure.
+    if (req.url.startsWith('/api/') || req.url.startsWith('/auth/')) {
+      return reply.code(404).send({ error: 'not found' });
+    }
     return reply.sendFile('index.html');
   });
 
@@ -133,11 +143,30 @@ async function main(): Promise<void> {
     );
   }
 
+  // Single sign-on. Discovery failure is not fatal — an unreachable identity provider leaves
+  // local sign-in working and the engine retries in the background. The one thing that does
+  // throw, and should, is `oidc_only` with no usable break-glass account: that combination
+  // locks every administrator out the first time the IdP is down.
+  await vibeAuth.start();
+  const sso = vibeAuth.status();
+  // Says nothing about whether the identity provider answered: `start()` begins discovery in
+  // the background and returns, so at this point it never has. The engine logs the outcome
+  // itself ("identity provider discovered", or an `idp.unreachable` audit row), and
+  // /auth/status reports it live.
+  console.log(
+    `[startup] sign-in mode: ${sso.mode}` +
+      (sso.oidc.enabled
+        ? ` — single sign-on via ${sso.oidc.idpName} at ${sso.oidc.issuer ?? '(issuer unset)'}; ` +
+          'SSO sessions require proof of a second factor (amr), which cannot be disabled here'
+        : ' — single sign-on off'),
+  );
+
   const app = await buildServer();
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
   console.log(`[startup] listening on ${env.PORT}`);
 
   const shutdown = async (): Promise<void> => {
+    vibeAuth.stop();
     await app.close();
     await closeQueues();
     await pool.end();
