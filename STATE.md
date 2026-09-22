@@ -9,7 +9,8 @@ do not infer progress from the commit log.
 ## Current position
 
 **Phase:** P0–P15 — **all phases implemented 2026-08-26**; **P16 (single sign-on) implemented
-2026-09-19** on branch `vibe-auth-integration`, not yet merged or released
+2026-09-19**, merged to main 2026-09-22 (PR #1, merge `84c3918`) and **released as v0.10.0**
+the same day so the appliance can register against a real image
 **Status:** code complete; **integration-unverified** (see below)
 **Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
 lands (QUESTIONS.md Q11). P16 cannot *exit* until it has been signed into from a real browser
@@ -22,7 +23,7 @@ at all. See External dependencies below and QUESTIONS.md Q11.
 ### What "code complete" means here, precisely
 
 **Verified by execution on 2026-09-20** (P16 follow-up: break-glass guard, reset refusal and
-readiness check; no migration; same branch, still unmerged):
+readiness check; no migration; same branch, merged 2026-09-22):
 
 - 290 tests pass across 21 files (`npm test`), none skipped — the compose Postgres was up and at
   0011. 12 are new, in `test/sso.test.ts`: six tests run once in `local` and once in `both`,
@@ -179,6 +180,15 @@ the host):
 - Retention job runs and logs; dry-run mode works.
 - Server starts in **degraded mode** when the router is unreachable and says so at
   `/health`, rather than refusing to boot.
+
+**Released 2026-09-22 as v0.10.0** — single sign-on through Vibe Auth (P16), merged from
+`vibe-auth-integration` (PR #1, merge `84c3918`). Released before the Vibe-Appliance manifest
+change on purpose: Vibe Auth's findings for this repo note that `lib/identity.sh` trusts a
+manifest's `sso.capable` without probing the image, so a manifest that lands first would show
+"registered" against v0.9.0, which ignores every `VIBE_OIDC_*` line. **Carries migration
+0011.** Needs a broker ≥ 1.0.4. With `VIBE_AUTH_MODE` unset the app behaves as v0.9.0 did.
+**P16 has not exited** — this release is what makes its exit criteria testable on the LAN box,
+and none of them has moved; see Current position. Images tagged `0.10.0` / `0.10`.
 
 **Released 2026-09-17 as v0.9.0** — taxpayer recognition (identity name field, spaced and
 bare TINs, masked-number hints), quieter field review with **Looks right**, code-letter money
@@ -412,7 +422,7 @@ what a model returns.
 | P13 | Retention and disposal | implemented | rasters purge earlier than sources; every disposal logged |
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
-| P16 | Single sign-on (Vibe Auth) | implemented | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
+| P16 | Single sign-on (Vibe Auth) | implemented, released v0.10.0 (2026-09-22) | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
 
 ---
 
@@ -436,7 +446,7 @@ historical — read this table first.
 | DigitalOcean DPA executed | before live client data | not started |
 | Vibe Auth client `@kisaesdevlab/vibe-auth` ≥ 1.0.4 on GitHub Packages | P16 | **published** — 1.0.0–1.0.4 listed 2026-09-19. Restricted package: installs need `read:packages`. CI's `GITHUB_TOKEN` reads it today (confirmed by PR #1's run); if that ever 403s, the package's *Manage Actions access* no longer grants this repo |
 | Vibe Auth broker ≥ 1.0.4 deployed and this app registered with it | P16 exit | **operator step** — `docs/sso.md`. Before 1.0.4 an MFA-enrolling sign-in carried no MFA `amr` and would be refused here (Q18) |
-| Vibe-Appliance manifest `sso` block + env-template keys for `vibe-1040` | P16 LAN-box check | **not started, outside this repo** — scoped out 2026-09-19 (Q19); checklist in `docs/sso.md`. **Added 2026-09-20:** the block now carries `breakglassStatusCommand`, which the appliance schema rejects under strict validation (`sso` is `additionalProperties: false`) and `lib/identity.sh` does not read — the schema key and the status-pill / `oidc_only`-guard wiring are appliance work, item 1 of the same checklist |
+| Vibe-Appliance manifest `sso` block + env-template keys for `vibe-1040` | P16 LAN-box check | **not started, outside this repo** — scoped out 2026-09-19 (Q19); checklist in `docs/sso.md`. **Unblocked 2026-09-22:** v0.10.0 is published, so the manifest change may now land without the release-ordering hazard in Vibe Auth's findings. **Added 2026-09-20:** the block now carries `breakglassStatusCommand`, which the appliance schema rejects under strict validation (`sso` is `additionalProperties: false`) and `lib/identity.sh` does not read — the schema key and the status-pill / `oidc_only`-guard wiring are appliance work, item 1 of the same checklist |
 | WISP amendment drafted — must name unscrubbed page-image egress | P14 | **drafted** — `docs/wisp-amendment.md` names DigitalOcean-hosted open models, their retention terms, and the region gap (Q12, Q13) |
 
 ---
