@@ -19,7 +19,7 @@ import {
   type TaskClassKey,
 } from './task-classes.ts';
 
-export const APP_VERSION = '0.9.0';
+export const APP_VERSION = '0.10.0';
 
 export const ai = new VibeAiClient({
   baseUrl: env.VIBE_AI_ROUTER_URL,
