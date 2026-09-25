@@ -649,11 +649,43 @@ export function registerRoutes(app: FastifyInstance): void {
       /** The engine's own vocabularies, served so the UI cannot hardcode codes it refuses. */
       filingStatuses: file?.filingStatuses ?? [],
       relationships: file?.preparerInputs?.dependents.relationships ?? [],
+      /**
+       * The entry surface renders the fields this file declares rather than a list held in the
+       * component, so a column added to the map cannot end up with nowhere to type it. Money is
+       * flagged because a money control is a different control, not because the name ends in
+       * `Cents`.
+       */
+      scheduleAFields: [
+        ...(file?.preparerInputs?.scheduleA.fields ?? []).map((f) => ({
+          column: f.column,
+          label: f.label,
+          group: f.group ?? null,
+          money: f.money,
+        })),
+        ...(file?.preparerInputs?.scheduleA.flags ?? []).map((f) => ({
+          column: f.column,
+          label: f.label,
+          group: f.group ?? null,
+          money: false,
+        })),
+      ],
+      dependentFields: (file?.preparerInputs?.dependents.fields ?? []).map((f) => ({
+        column: f.column,
+        label: f.label,
+        required: f.engineRequired,
+        money: f.money,
+      })),
       activityKinds: (file?.preparerInputs?.activities ?? []).map((a) => ({
         kind: a.kind,
         label: a.label,
         accountingMethods: a.accountingMethods,
         propertyTypes: a.propertyTypes,
+        fields: a.fields.map((f) => ({
+          column: f.column,
+          label: f.label,
+          required: f.engineRequired,
+          money: f.money,
+        })),
         requires: a.fields.filter((f) => f.engineRequired).map((f) => f.column),
       })),
       /**

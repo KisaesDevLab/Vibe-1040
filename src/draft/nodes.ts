@@ -230,6 +230,17 @@ const preparerField = z
     /** The column on the draft-input table this comes from. */
     column: z.string(),
     nodeField: z.string(),
+    /**
+     * What a preparer reads on the entry surface, as the printed form words it.
+     *
+     * Data rather than code for the same reason the filing statuses are. The UI renders the
+     * fields this file declares, so a label held in the component instead would mean a column
+     * added here has no label there — and a field with no label does not get rendered, which
+     * is a figure a preparer cannot enter and will not know is missing.
+     */
+    label: z.string().min(1),
+    /** A heading to group under, as the form does: `Taxes you paid`, `Gifts to charity`. */
+    group: z.string().optional(),
     engineRequired: z.boolean().default(false),
     /** Stored as integer cents here, sent as dollars at the boundary. */
     money: z.boolean().default(false),

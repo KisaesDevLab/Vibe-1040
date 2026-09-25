@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, formatCents } from '../api.ts';
-import type { DraftReturn, DraftVerdict } from '../types.ts';
+import type { DraftInputs, DraftReturn, DraftVerdict } from '../types.ts';
+import { PreparerInputs } from './PreparerInputs.tsx';
 
 /**
  * The draft return panel (P17, CLAUDE.md §14).
@@ -13,7 +14,9 @@ import type { DraftReturn, DraftVerdict } from '../types.ts';
  *    nothing is better.
  *  - The reviewer **states the filing status** before anything computes. No document carries
  *    it, so the app must not infer one — and making it a required first step puts the
- *    determination where §11 requires it.
+ *    determination where §11 requires it. Since P18 it is stored on the bundle with the rest of
+ *    the preparer's inputs rather than typed per draft: one mechanism, so a preparer cannot
+ *    compute one draft under a status the record disagrees with.
  *  - **Omissions are open by default**, above the figures, because a withheld document leaves
  *    no mark on them: the line it would have fed is absent, and every computed total is a
  *    confident number regardless. The same treatment Judgment Required gets.
@@ -49,9 +52,10 @@ export function DraftReturnPanel({
     filingStatuses: { code: string; label: string }[];
     filingStatusYear: number | null;
   } | null>(null);
-  const [filingStatus, setFilingStatus] = useState('');
   const [draft, setDraft] = useState<DraftReturn | null>(null);
   const [busy, setBusy] = useState(false);
+  const [inputs, setInputs] = useState<DraftInputs | null>(null);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     api
@@ -62,15 +66,23 @@ export function DraftReturnPanel({
       );
   }, [taxYear]);
 
+  // The stored inputs, for the summary and for whether a draft can be computed at all. Read
+  // even when the panel has a draft already, because a draft goes stale the moment an input
+  // changes and the reviewer is the one who has to know that.
+  const readInputs = () => {
+    api.draftInputs(bundleId).then(setInputs).catch(() => setInputs(null));
+  };
+  useEffect(readInputs, [bundleId]);
+
   // Not enabled here, or the engine is not up: show nothing at all rather than a dead
   // control. This is an optional checking aid and its absence is not an error state.
   if (!status?.enabled || !status.engine?.ok) return null;
 
   const compute = () => {
-    if (!filingStatus) return;
+    if (!inputs?.filingStatus) return;
     setBusy(true);
     api
-      .computeDraftReturn(bundleId, filingStatus)
+      .computeDraftReturn(bundleId)
       .then(setDraft)
       .catch((err: Error) => onError(err.message))
       .finally(() => setBusy(false));
@@ -102,27 +114,69 @@ export function DraftReturnPanel({
         </p>
       )}
 
-      {!draft && status.filingStatuses.length > 0 && (
+      {/*
+        What the preparer has stated, and a way in. This is a summary rather than the entry
+        surface: the entry surface is a full-width sheet, because this pane is about 290px and a
+        money form does not fit in it — the lesson from the first browser render of the
+        comparison table, which broke every label one word per line.
+      */}
+      {status.filingStatuses.length > 0 && (
         <div className="draft-start">
-          <label>
-            Filing status
-            <select value={filingStatus} onChange={(e) => setFilingStatus(e.target.value)}>
-              <option value="">Choose…</option>
-              {status.filingStatuses.map((f) => (
-                <option key={f.code} value={f.code}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="draft-hint">
-            No source document says what the filing status is, so you have to. Nothing computes
-            until you do.
-          </p>
-          <button type="button" onClick={compute} disabled={!filingStatus || busy}>
-            {busy ? 'Computing…' : 'Compute draft return'}
+          <div className="draft-inputs-summary">
+            <div>
+              <span className="muted">Filing status</span>{' '}
+              {inputs?.filingStatus ? (
+                inputs.filingStatuses.find((f) => f.code === inputs.filingStatus)?.label ??
+                inputs.filingStatus
+              ) : (
+                <strong>not stated</strong>
+              )}
+            </div>
+            <div>
+              <span className="muted">Dependents</span> {inputs?.dependents.length ?? 0}
+            </div>
+            <div>
+              <span className="muted">Itemised lines</span>{' '}
+              {inputs?.scheduleA
+                ? Object.values(inputs.scheduleA).filter((v) => v !== null).length
+                : 0}
+            </div>
+            <div>
+              <span className="muted">Businesses and rentals</span>{' '}
+              {inputs?.activities.length ?? 0}
+            </div>
+          </div>
+          <button type="button" onClick={() => setEditing(true)}>
+            Preparer inputs…
+          </button>
+          {!inputs?.filingStatus && (
+            <p className="draft-hint">
+              No source document says what the filing status is, so you have to. Nothing computes
+              until you do.
+            </p>
+          )}
+          <button type="button" onClick={compute} disabled={!inputs?.filingStatus || busy}>
+            {busy
+              ? 'Computing…'
+              : draft
+                ? 'Recompute with these inputs'
+                : 'Compute draft return'}
           </button>
         </div>
+      )}
+
+      {editing && (
+        <PreparerInputs
+          bundleId={bundleId}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            readInputs();
+            // A stored draft is now a draft of different inputs. Drop it rather than leave
+            // figures on screen that no longer follow from what the record says.
+            setDraft(null);
+          }}
+          onError={onError}
+        />
       )}
 
       {draft && (

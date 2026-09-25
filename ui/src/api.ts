@@ -2,7 +2,10 @@ import type {
   AuditRow,
   Bundle,
   CheckRow,
+  DraftActivity,
+  DraftDependent,
   DraftEngineReadiness,
+  DraftInputs,
   DraftReturn,
   StoredDraftReturn,
   DocumentRow,
@@ -315,10 +318,74 @@ Proceed and discard them?`)) return { ok: false };
    * document carries it — that is the preparer making a determination, not the app inferring
    * one from a pile of forms (§11).
    */
-  computeDraftReturn: (bundleId: string, filingStatus: string) =>
+  /**
+   * Compute a draft return from the bundle's stored preparer inputs (P18).
+   *
+   * No filing status on the wire: it lives on the stored record, so one draft cannot be computed
+   * under a status the record disagrees with. The server layers any per-request override on top,
+   * and nothing in the UI sends one.
+   */
+  computeDraftReturn: (bundleId: string) =>
     request<DraftReturn>(`/api/bundles/${bundleId}/draft-return`, {
       method: 'POST',
-      body: JSON.stringify({ filingStatus }),
+      body: JSON.stringify({}),
+    }),
+
+  // ── preparer-supplied draft inputs (P18) ───────────────────────────────────
+  //
+  // Money is cents on the wire, as everywhere else. A key left out of a PATCH leaves the stored
+  // figure alone; `null` clears it. Both reach the engine as absent, but only one of them
+  // forgets what a preparer typed, so the two are never collapsed here either.
+
+  draftInputs: (bundleId: string) => request<DraftInputs>(`/api/bundles/${bundleId}/draft-inputs`),
+
+  saveDraftInputRoot: (
+    bundleId: string,
+    values: Partial<Pick<DraftInputs, 'filingStatus' | 'taxpayerAge65OrOlder' | 'spouseAge65OrOlder' | 'taxpayerBlind' | 'spouseBlind'>>,
+  ) =>
+    request<DraftInputs>(`/api/bundles/${bundleId}/draft-inputs`, {
+      method: 'PATCH',
+      body: JSON.stringify(values),
+    }),
+
+  addDependent: (bundleId: string, values: Omit<DraftDependent, 'id'>) =>
+    request<{ id: string }>(`/api/bundles/${bundleId}/draft-inputs/dependents`, {
+      method: 'POST',
+      body: JSON.stringify(values),
+    }),
+
+  updateDependent: (bundleId: string, dependentId: string, values: Partial<Omit<DraftDependent, 'id'>>) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/draft-inputs/dependents/${dependentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(values),
+    }),
+
+  removeDependent: (bundleId: string, dependentId: string) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/draft-inputs/dependents/${dependentId}`, {
+      method: 'DELETE',
+    }),
+
+  saveScheduleA: (bundleId: string, values: Record<string, number | boolean | null>) =>
+    request<DraftInputs>(`/api/bundles/${bundleId}/draft-inputs/schedule-a`, {
+      method: 'PUT',
+      body: JSON.stringify(values),
+    }),
+
+  addActivity: (bundleId: string, values: Omit<DraftActivity, 'id'>) =>
+    request<{ id: string }>(`/api/bundles/${bundleId}/draft-inputs/activities`, {
+      method: 'POST',
+      body: JSON.stringify(values),
+    }),
+
+  updateActivity: (bundleId: string, activityId: string, values: Partial<Omit<DraftActivity, 'id'>>) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/draft-inputs/activities/${activityId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(values),
+    }),
+
+  removeActivity: (bundleId: string, activityId: string) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/draft-inputs/activities/${activityId}`, {
+      method: 'DELETE',
     }),
 
   /** The most recent stored draft return, or null when none has been computed. */

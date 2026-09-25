@@ -1747,56 +1747,68 @@
         {
           "column": "firstName",
           "nodeField": "first_name",
+          "label": "First name",
           "engineRequired": true
         },
         {
           "column": "lastName",
           "nodeField": "last_name",
+          "label": "Last name",
           "engineRequired": true
         },
         {
           "column": "middleInitial",
-          "nodeField": "middle_initial"
+          "nodeField": "middle_initial",
+          "label": "Middle initial"
         },
         {
           "column": "dob",
           "nodeField": "dob",
+          "label": "Date of birth",
           "engineRequired": true
         },
         {
           "column": "relationship",
           "nodeField": "relationship",
+          "label": "Relationship to the taxpayer",
           "engineRequired": true
         },
         {
           "column": "monthsInHome",
           "nodeField": "months_in_home",
+          "label": "Months lived in the taxpayer’s home",
           "engineRequired": true,
           "numeric": true
         },
         {
           "column": "qualifyingChildForCtc",
-          "nodeField": "qualifying_child_for_ctc"
+          "nodeField": "qualifying_child_for_ctc",
+          "label": "Qualifying child for the child tax credit"
         },
         {
           "column": "disabled",
-          "nodeField": "disabled"
+          "nodeField": "disabled",
+          "label": "Permanently and totally disabled"
         },
         {
           "column": "fullTimeStudent",
-          "nodeField": "full_time_student"
+          "nodeField": "full_time_student",
+          "label": "Full-time student"
         },
         {
           "column": "taxpayerProvidedOverHalfSupport",
-          "nodeField": "taxpayer_provided_over_half_support"
+          "nodeField": "taxpayer_provided_over_half_support",
+          "label": "Taxpayer provided over half of their support"
         },
         {
           "column": "dependentOnAnotherReturn",
-          "nodeField": "dependent_on_another_return"
+          "nodeField": "dependent_on_another_return",
+          "label": "Claimed as a dependent on another return"
         },
         {
           "column": "grossIncomeCents",
           "nodeField": "gross_income",
+          "label": "Gross income",
           "money": true
         }
       ],
@@ -1858,11 +1870,15 @@
         {
           "column": "medicalCents",
           "nodeField": "line_1_medical",
+          "label": "1. Medical and dental expenses",
+          "group": "Medical and dental",
           "money": true
         },
         {
           "column": "stateIncomeTaxCents",
           "nodeField": "line_5a_state_income_tax",
+          "label": "5a. State and local income taxes",
+          "group": "Taxes you paid",
           "supersedes": [
             {
               "formType": "W-2",
@@ -1882,26 +1898,36 @@
         {
           "column": "salesTaxCents",
           "nodeField": "line_5a_sales_tax",
+          "label": "5a. State and local general sales taxes",
+          "group": "Taxes you paid",
           "money": true
         },
         {
           "column": "realEstateTaxCents",
           "nodeField": "line_5b_real_estate_tax",
+          "label": "5b. State and local real estate taxes",
+          "group": "Taxes you paid",
           "money": true
         },
         {
           "column": "personalPropertyTaxCents",
           "nodeField": "line_5c_personal_property_tax",
+          "label": "5c. State and local personal property taxes",
+          "group": "Taxes you paid",
           "money": true
         },
         {
           "column": "otherTaxesCents",
           "nodeField": "line_6_other_taxes",
+          "label": "6. Other taxes",
+          "group": "Taxes you paid",
           "money": true
         },
         {
           "column": "mortgageInterest1098Cents",
           "nodeField": "line_8a_mortgage_interest_1098",
+          "label": "8a. Home mortgage interest reported on Form 1098",
+          "group": "Interest you paid",
           "supersedes": [
             {
               "formType": "1098",
@@ -1915,52 +1941,72 @@
         {
           "column": "mortgageInterestNo1098Cents",
           "nodeField": "line_8b_mortgage_interest_no_1098",
+          "label": "8b. Home mortgage interest not reported on Form 1098",
+          "group": "Interest you paid",
           "money": true
         },
         {
           "column": "pointsNo1098Cents",
           "nodeField": "line_8c_points_no_1098",
+          "label": "8c. Points not reported on Form 1098",
+          "group": "Interest you paid",
           "money": true
         },
         {
           "column": "investmentInterestCents",
           "nodeField": "line_9_investment_interest",
+          "label": "9. Investment interest",
+          "group": "Interest you paid",
           "money": true
         },
         {
           "column": "cashContributionsCents",
           "nodeField": "line_11_cash_contributions",
+          "label": "11. Gifts by cash or check",
+          "group": "Gifts to charity",
           "money": true
         },
         {
           "column": "noncashContributionsCents",
           "nodeField": "line_12_noncash_contributions",
+          "label": "12. Gifts other than by cash or check",
+          "group": "Gifts to charity",
           "money": true
         },
         {
           "column": "contributionCarryoverCents",
           "nodeField": "line_13_contribution_carryover",
+          "label": "13. Carryover from prior year",
+          "group": "Gifts to charity",
           "money": true
         },
         {
           "column": "casualtyTheftLossCents",
           "nodeField": "line_15_casualty_theft_loss",
+          "label": "15. Casualty and theft losses",
+          "group": "Casualty and theft",
           "money": true
         },
         {
           "column": "otherDeductionsCents",
           "nodeField": "line_16_other_deductions",
+          "label": "16. Other itemized deductions",
+          "group": "Other",
           "money": true
         }
       ],
       "flags": [
         {
           "column": "forceItemized",
-          "nodeField": "force_itemized"
+          "nodeField": "force_itemized",
+          "label": "Itemise even if the standard deduction is larger",
+          "group": "Election"
         },
         {
           "column": "forceStandard",
-          "nodeField": "force_standard"
+          "nodeField": "force_standard",
+          "label": "Take the standard deduction even if itemising is larger",
+          "group": "Election"
         }
       ]
     },
@@ -1976,32 +2022,38 @@
           {
             "column": "description",
             "nodeField": "line_a_principal_business",
+            "label": "A. Principal business or profession",
             "engineRequired": true
           },
           {
             "column": "activityCode",
             "nodeField": "line_b_business_code",
+            "label": "B. Business code",
             "engineRequired": true
           },
           {
             "column": "accountingMethod",
             "nodeField": "line_f_accounting_method",
+            "label": "F. Accounting method",
             "engineRequired": true
           },
           {
             "column": "materialParticipation",
             "nodeField": "line_g_material_participation",
+            "label": "G. Materially participated in this business",
             "engineRequired": true
           },
           {
             "column": "grossCents",
             "nodeField": "line_1_gross_receipts",
+            "label": "1. Gross receipts or sales",
             "engineRequired": true,
             "money": true
           },
           {
             "column": "expensesCents",
             "nodeField": "line_27b_other_expenses",
+            "label": "Total expenses",
             "money": true
           }
         ],
@@ -2034,29 +2086,34 @@
           {
             "column": "description",
             "nodeField": "property_description",
+            "label": "Property description",
             "engineRequired": true
           },
           {
             "column": "propertyType",
             "nodeField": "property_type",
+            "label": "Type of property",
             "engineRequired": true,
             "numeric": true
           },
           {
             "column": "fairRentalDays",
             "nodeField": "fair_rental_days",
+            "label": "Fair rental days",
             "engineRequired": true,
             "numeric": true
           },
           {
             "column": "personalUseDays",
             "nodeField": "personal_use_days",
+            "label": "Personal use days",
             "engineRequired": true,
             "numeric": true
           },
           {
             "column": "grossCents",
             "nodeField": "rent_income",
+            "label": "3. Rents received",
             "engineRequired": true,
             "money": true
           }

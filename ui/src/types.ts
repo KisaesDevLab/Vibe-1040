@@ -333,3 +333,101 @@ export interface DraftEngineReadiness {
   error: string | null;
 }
 
+
+// ── preparer-supplied draft inputs (P18, CLAUDE.md §14) ──────────────────────
+
+/**
+ * Every money figure is cents and every one is nullable, end to end. `null` means the preparer
+ * has not stated it, which is not zero (§5) — and for a determination it means "not stated",
+ * which is not "no" (§9). Nothing in this file may default one to the other.
+ */
+export interface DraftDependent {
+  id: string;
+  firstName: string;
+  lastName: string;
+  middleInitial: string | null;
+  /** `YYYY-MM-DD`. No identification number is held for a dependent, ever (§7). */
+  dob: string;
+  relationship: string;
+  monthsInHome: number;
+  qualifyingChildForCtc: boolean | null;
+  disabled: boolean | null;
+  fullTimeStudent: boolean | null;
+  taxpayerProvidedOverHalfSupport: boolean | null;
+  dependentOnAnotherReturn: boolean | null;
+  grossIncomeCents: number | null;
+}
+
+export interface DraftActivity {
+  id: string;
+  kind: string;
+  description: string;
+  activityCode: string | null;
+  accountingMethod: string | null;
+  materialParticipation: boolean | null;
+  propertyType: string | null;
+  fairRentalDays: number | null;
+  personalUseDays: number | null;
+  grossCents: number | null;
+  expensesCents: number | null;
+  expensesDescription: string | null;
+}
+
+export type DraftScheduleA = Record<string, number | boolean | null>;
+
+/** A field descriptor served from the node map, so a column added there has a place to type it. */
+export interface DraftInputField {
+  column: string;
+  label: string;
+  required: boolean;
+  money: boolean;
+}
+
+export interface DraftActivityKind {
+  kind: string;
+  label: string;
+  accountingMethods: { code: string; label: string }[];
+  propertyTypes: { code: string; label: string }[];
+  fields: DraftInputField[];
+  /** Columns the engine refuses the node without. Shown as required at the point of entry. */
+  requires: string[];
+}
+
+/**
+ * An itemised line a document in this bundle already feeds, and with what.
+ *
+ * The engine uses the document's figure and discards a typed one silently, so the app sends one
+ * side and records the other as an omission. Which means typing into one of these boxes is an
+ * override rather than an addition, and the surface has to say so before the typing, not after.
+ */
+export interface DraftDocumentBackedLine {
+  column: string;
+  nodeField: string;
+  sources: {
+    documentId: string | null;
+    documentLabel: string;
+    formType: string;
+    fieldKey: string;
+    cents: number;
+  }[];
+}
+
+export interface DraftInputs {
+  filingStatus: string | null;
+  taxpayerAge65OrOlder: boolean | null;
+  spouseAge65OrOlder: boolean | null;
+  taxpayerBlind: boolean | null;
+  spouseBlind: boolean | null;
+  dependents: DraftDependent[];
+  scheduleA: DraftScheduleA | null;
+  activities: DraftActivity[];
+  updatedAt: string | null;
+  filingStatuses: { code: string; label: string }[];
+  relationships: { code: string; label: string; note?: string }[];
+  scheduleAFields: { column: string; label: string; group: string | null; money: boolean }[];
+  dependentFields: DraftInputField[];
+  activityKinds: DraftActivityKind[];
+  /** An activity this engine release refuses, with the measured reason. Offered, not hidden. */
+  unsupportedActivities: { kind: string; label: string; reason: string; detail: string }[];
+  documentBacked: DraftDocumentBackedLine[];
+}
