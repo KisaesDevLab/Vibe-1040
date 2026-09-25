@@ -75,6 +75,97 @@ described accurately, and confirm the DigitalOcean DPA covers it.
 
 ---
 
+### Q21 — Does the §7216 position survive a locally computed draft return?
+**Gates:** P17 exit, and live client data through the draft return. **Raised:** 2026-09-25.
+
+`docs/wisp-amendment.md:98` states the firm's position in one sentence: "Because the system
+performs data capture and makes no substantive determinations, the processing is intended to
+fall within the auxiliary service provider treatment of Treas. Reg. §301.7216-2(d), which
+does not require separate written taxpayer consent." CLAUDE.md §11 says the same thing, and
+so does §2's "Not a tax calculation engine".
+
+P17 computes a draft Form 1040 from the extracted amounts. The decision to build it is
+recorded (STATE.md decision log, 2026-09-25) and §2 has been narrowed rather than deleted,
+but **the WISP sentence as written is now inaccurate and has to be revised by whoever owns
+the WISP** — the same person as Q12.
+
+The argument for the position surviving, which needs confirming rather than assuming:
+
+1. §301.7216-2(d) governs **disclosure to a service provider**. OpenTax is a deterministic
+   binary running on the appliance. It makes no network call, holds no credential, and
+   discloses nothing to anybody. The set of third parties that see taxpayer data is
+   unchanged by P17, so the -2(d) analysis of the Router's providers is untouched.
+2. The *characterization* claim is what changes. The app still refuses every §9 judgment
+   call — every `judgmentRequired` field that is populated withholds its whole document from
+   the engine, and an SSA-1099 is therefore withheld every time, because the taxable portion
+   of social security is exactly the determination §11 forbids. What the engine does compute
+   is arithmetic over amounts a human has accepted, on inputs the preparer has stated.
+3. Filing status, dependents, blindness and age over 65 come from the reviewer, not from
+   inference. The app never reads a filing status off a pile of forms.
+
+Three things to settle:
+
+- Does the revised WISP language need to distinguish "computes arithmetic from stated inputs"
+  from "makes a substantive determination", and is that distinction one the firm is willing
+  to defend?
+- Is a draft return, marked advisory and incomplete, a "tax return preparation" activity that
+  changes anything about the §7216 posture, or is it a worksheet with more arithmetic on it?
+- Does the engine's presence need naming in the WISP's service-provider section at all, given
+  that it is software on the appliance rather than a service provider? §3 currently lists
+  parties that receive data; OpenTax receives none.
+
+Until this is answered, `DRAFT_RETURN_ENABLED` stays off in any deployment holding live
+client data, and P17 has not exited.
+
+**A:**
+
+---
+
+### Q22 — What does relicensing this app AGPL v3 actually oblige, and who can still license it?
+**Gates:** publishing this repository, and §13 productization. **Raised:** 2026-09-25.
+
+`package.json` declared `BUSL-1.1` with no licence text ever committed. On 2026-09-25 it was
+relicensed to `AGPL-3.0-only` and the AGPL text added as `LICENSE`, so that OpenTax — verbatim
+AGPL v3 with no linking or classpath exception — can be used without ambiguity. Kisaes owns
+this repository's copyright outright, so the relicensing itself needs nobody's permission.
+Three consequences do need deciding.
+
+**1. Corresponding Source has to include the first-party packages.** AGPL §1 requires the
+source of "all the source code needed to generate, install, and … run the object code",
+including shared libraries the work is specifically designed to require. Two of those are not
+publicly available: `@kisaes/vibe-ai-client`, which is on no registry and is linked out of a
+sibling checkout by `scripts/install-deps.mjs`, and `@kisaesdevlab/vibe-auth`, which is on
+GitHub Packages and needs a `read:packages` token even to read. Both are Kisaes's to license,
+but the decision belongs to those repositories, not this one, and both would have to be
+conveyable to anyone this app is conveyed to.
+
+**2. AGPL does not require a public repository.** §13's network clause obliges offering
+Corresponding Source to users who interact with the program remotely over a network — the
+firm's own staff, today. It does not oblige publication to the world. That matters because
+STATE.md keeps this repository and both GHCR images private on a specific ground:
+`docs/wisp-amendment.md` "documents the firm's compliance posture and an accepted exposure,
+which is not something to publish." Staying private and offering source on request is
+compliant. Going public is a separate, deliberate decision, and it should not be taken
+without first moving or sanitising the WISP amendment and `docs/sso.md`.
+
+**3. A proprietary licence for the combined work is no longer Kisaes's alone to grant.**
+Kisaes can dual-license its own code — AGPL plus a commercial licence — exactly as Filed
+does. It cannot offer a proprietary licence for a work that *incorporates* AGPL OpenTax code
+without a commercial licence from Filed (`otta@filed.com`; the Alliance's framing is "open
+products use it free, closed products pay for it"). §13 says internal Kisaes use first,
+licensed Vibe product later, so this is a real fork in the road.
+
+The build is arranged to keep that road open rather than to close it: OpenTax is invoked as a
+**separate process over JSON, never in-process**, it is a severable optional service rather
+than a dependency of the app, and with `DRAFT_RETURN_ENABLED` unset the app contains and ships
+no OpenTax code at all. Whether that severability is enough is a question for a lawyer, not
+for this file. Do not move the integration in-process, and do not vendor the engine's source
+into `src/`, without answering this first.
+
+**A:**
+
+---
+
 ## Non-blocking, working assumption recorded
 
 ### Q20 — How far should the app go in protecting the break-glass account from its own admins?

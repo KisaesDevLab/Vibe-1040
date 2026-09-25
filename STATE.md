@@ -10,17 +10,52 @@ do not infer progress from the commit log.
 
 **Phase:** P0–P15 — **all phases implemented 2026-08-26**; **P16 (single sign-on) implemented
 2026-09-19**, merged to main 2026-09-22 (PR #1, merge `84c3918`) and **released as v0.10.0**
-the same day so the appliance can register against a real image
-**Status:** code complete; **integration-unverified** (see below)
+the same day so the appliance can register against a real image. **P17 (draft return via
+OpenTax) — stage 1 implemented 2026-09-25**; stages 2 and 3 not started.
+**Status:** P0–P16 code complete and **integration-unverified** (see below); P17 part-built.
 **Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
 lands (QUESTIONS.md Q11). P16 cannot *exit* until it has been signed into from a real browser
-against a real Vibe Auth (below).
+against a real Vibe Auth (below). P17 cannot *exit* until Q21 is answered and the fixture
+harness has scored; `DRAFT_RETURN_ENABLED` stays off wherever there is live client data.
 
 Router integration was verified against Vibe-AI-Router **v0.0.24** on 2026-08-26. Four of
 the five assumed Router dependencies already exist; the region-pinning one does not exist
 at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
+
+**Verified by execution on 2026-09-25** (P17 stage 1: the translator. No migration; no engine):
+
+- `npx vitest run`: **270 pass across 21 files, 55 skipped across 2**, of which **35 passing
+  are new** — `test/draft-nodes.test.ts` (14) and `test/draft-translate.test.ts` (21). Nothing
+  regressed. The 55 skips are the database-backed files and are read as a gap, not a pass;
+  see "Not verified" below.
+- **The blank-is-not-zero guard was checked by mutation.** With the guard switched off to
+  zero-fill instead of withholding, exactly three tests fail: the optional blank box, the
+  engine-required blank box, and the partially-read 1095-A year. Restored, all 21 pass. This is
+  the one place in the build where §5 could be destroyed silently, so it is pinned that way
+  rather than argued.
+- The shipped node map is complete and self-consistent, demonstrated rather than asserted: all
+  **28** registered form types declared (15 mapped, 13 unmappable-with-a-reason), every field of
+  every mapped form accounted for exactly once, no engine field targeted twice, and every
+  `sensitive: 'tin'` field `ignored` with reason `tin_withheld`. Six separate load-time refusals
+  are tested by mutating a loaded map: a dropped field, an unknown field key, a dropped form
+  type, a form both mapped and unmappable, two boxes aimed at one engine field, and a missing
+  year.
+- `tsc --noEmit` reports **no errors in `src/draft/`, `src/api/routes.ts` or
+  `src/worksheet/generate.ts`**; `npm run check:providers` is clean.
+- `loadMappedDocuments` was extracted from `buildModelForBundle` so the worksheet and the draft
+  return resolve a bundle's documents through one path and cannot disagree about which documents
+  it holds. P12's tests still pass unchanged.
+- **Not verified, and none of it is small:** no OpenTax binary has been run, so **no draft
+  return has ever been computed** — stage 1 deliberately stops at the engine's door. The
+  `draft-input` route has not been exercised over HTTP; it type-checks and its gate wiring is
+  read, not run. **`npm test` could not be run in full**: `@kisaesdevlab/vibe-auth` needs a
+  `read:packages` token that was not available, so 55 tests skipped (every `pipeline.test.ts` and
+  `sso.test.ts` case) for want of the compose Postgres, and `tsc` still reports implicit-`any`
+  errors in `src/lib/vibeAuth*.ts` from the absent package's missing types. A green run with
+  skips has not tested those paths. **P17 has not exited and neither of its gates has moved.**
+
 
 **Verified by execution on 2026-09-20** (P16 follow-up: break-glass guard, reset refusal and
 readiness check; no migration; same branch, merged 2026-09-22):
@@ -412,7 +447,7 @@ what a model returns.
 | P3 | Router SDK integration | implemented | SDK client, error taxonomy, parking, leakage check verified |
 | P4 | Page classification and bundle splitting | implemented | v1040_page_classify + grouping + consolidated containers; classifier model recorded (0003) |
 | P5 | Identity resolution | implemented | salted HMAC TIN, ITIN-aware, human confirmation gate |
-| P6 | Form schema registry | implemented | **27 form schemas**; all fields nullable; validated at load |
+| P6 | Form schema registry | implemented | **28 form schemas** (27 for TY2025 plus a TY2024 1098); all fields nullable; validated at load |
 | P7 | Layout pass | implemented | 0–1000 scale requested; convention detected per page and recorded; spans immutable, model recorded; values-only retry on truncation |
 | P8 | Field-binding extraction | implemented | multi-pass agreement (only signal per Q4); no-span forces review |
 | P9 | Arithmetic reconciliation gate | implemented | every §6 check; gate has one door and no bypass |
@@ -423,6 +458,7 @@ what a model returns.
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
 | P16 | Single sign-on (Vibe Auth) | implemented, released v0.10.0 (2026-09-22) | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
+| P17 | Draft return (OpenTax) | **stage 1 implemented 2026-09-25** | translator + node map + `draft-input` export. Stages 2 (engine) and 3 (surfaces, harness) not started. **Cannot exit** until Q21 is answered and the fixture harness has actually scored — see Current position |
 
 ---
 
@@ -447,6 +483,9 @@ historical — read this table first.
 | Vibe Auth client `@kisaesdevlab/vibe-auth` ≥ 1.0.4 on GitHub Packages | P16 | **published** — 1.0.0–1.0.4 listed 2026-09-19. Restricted package: installs need `read:packages`. CI's `GITHUB_TOKEN` reads it today (confirmed by PR #1's run); if that ever 403s, the package's *Manage Actions access* no longer grants this repo |
 | Vibe Auth broker ≥ 1.0.4 deployed and this app registered with it | P16 exit | **operator step** — `docs/sso.md`. Before 1.0.4 an MFA-enrolling sign-in carried no MFA `amr` and would be refused here (Q18) |
 | Vibe-Appliance manifest `sso` block + env-template keys for `vibe-1040` | P16 LAN-box check | **not started, outside this repo** — scoped out 2026-09-19 (Q19); checklist in `docs/sso.md`. **Unblocked 2026-09-22:** v0.10.0 is published, so the manifest change may now land without the release-ordering hazard in Vibe Auth's findings. **Added 2026-09-20:** the block now carries `breakglassStatusCommand`, which the appliance schema rejects under strict validation (`sso` is `additionalProperties: false`) and `lib/identity.sh` does not read — the schema key and the status-pill / `oidc_only`-guard wiring are appliance work, item 1 of the same checklist |
+| OpenTax engine, pinned version, verified by checksum | P17 stages 2–3 | **not started** — `filedcom/opentax`, AGPL v3, launched 2026-09-22 by the Open Tax Technology Alliance. A `deno compile` single binary, so it needs a glibc base and cannot live in this repo's Alpine runtime image. Young and largely AI-maintained: pin the release and verify the SHA-256, never `install.sh \| sh` into latest |
+| A revised WISP §4, signed off by whoever owns the WISP | P17 exit, and live client data | **not started** — Q21. The current wording ("makes no substantive determinations") is what the §7216 position rests on and is no longer accurate. `DRAFT_RETURN_ENABLED` stays off until it is revised |
+| Corresponding Source conveyable for `@kisaes/vibe-ai-client` and `@kisaesdevlab/vibe-auth` | publishing, §13 productization | **not started, sibling-repo decisions** — Q22. Neither is publicly available today; AGPL §1 requires both to reach anyone this app is conveyed to |
 | WISP amendment drafted — must name unscrubbed page-image egress | P14 | **drafted** — `docs/wisp-amendment.md` names DigitalOcean-hosted open models, their retention terms, and the region gap (Q12, Q13) |
 
 ---
@@ -471,7 +510,10 @@ requires an explicit decision entry below, not a silent implementation choice.
 - TIN stored as salted hash plus last four plaintext. No plaintext SSN in the database.
 - All form types in v1; K-1s boxes-as-printed only, sequenced last.
 - Single firm. Internal first, productize later.
-- No return ingestion, no diff engine, no tax calculation.
+- No return ingestion, no diff engine. No tax calculation **by this app** — amended 2026-09-25
+  to permit a separate, deterministic, locally-run engine as a checking aid (§14, P17). The app
+  itself still computes no tax and decides no characterization question.
+- AGPL-3.0-only since 2026-09-25, relicensed from BUSL-1.1 (Q22).
 
 ---
 
@@ -479,6 +521,82 @@ requires an explicit decision entry below, not a silent implementation choice.
 
 Append here when a locked decision changes or a significant implementation choice is made
 that future phases depend on. Date, decision, reason, phases affected.
+
+**2026-09-25 — A draft return, computed locally by OpenTax. §2's "not a tax calculation engine"
+is narrowed, not repealed; this app is relicensed AGPL v3.** (P17 stage 1)
+
+The Open Tax Technology Alliance published OpenTax on 2026-09-22: a deterministic federal 1040
+engine, AGPL v3, a single binary, 186 registered nodes and 131 input types, TY2025, no account
+and no cloud. Fed the amounts this app already extracts it turns §1's eyeball comparison into an
+arithmetic one, and run against the fixture bundles it becomes the end-to-end accuracy
+instrument this build has never had. Kurt's call, on three questions put to him explicitly.
+
+**What changed in the boundaries, and what did not.** §2 now says the app computes no tax *of
+its own* and may hand what it read to a separate, deterministic, locally-run engine. §11's
+data-capture sentence is amended. Three boundaries are untouched and were checked rather than
+assumed: the prepared return is still never ingested and no MeF XML is parsed **or emitted**, so
+this is not a diff engine and not a filing product; `src/draft/compare.ts` compares the app's own
+two derivations of the same documents, which is internal consistency checking; and every §9
+judgment call is still refused rather than answered.
+
+**The §7216 analysis, which is the part worth recording.** The engine runs on the appliance,
+holds no credential and makes no network call, so **the set of third parties that see taxpayer
+data is unchanged** and §301.7216-2(d)'s disclosure analysis of the Router's providers is
+untouched. What changes is the *characterization* claim. The app still decides nothing: a
+populated `judgmentRequired` field withholds its whole document, which means an SSA-1099 is
+withheld every single time — box 3 is always printed, and the taxable portion of social security
+is precisely what §11 forbids computing. Filing status, dependents and the age and blindness
+flags come from the **reviewer**, never inferred from a pile of forms; that is the preparer making
+a determination, in the right place. But `docs/wisp-amendment.md` §4 now says something untrue
+about this app, so it must be revised and signed off before live client data — **QUESTIONS.md
+Q21, and `DRAFT_RETURN_ENABLED` stays off until then.**
+
+**The omissions contract is the design.** A draft from a documents-only bundle can never be a
+return, and one that looks authoritative while silently missing half a taxpayer's position would
+be worse than none. So incompleteness is an enumerated output. Six rules produce it (§14); the
+first matters most. The boundary into a calculation engine is the one place in this build where
+§5 could be destroyed silently, because engines want numbers and a blank is not a number. A null
+is never sent as zero: the box is left off, and where the engine requires it the **whole document
+is withheld** rather than zero-filled. A partially read 1095-A year is not padded with
+zero-premium months, which would report a month of no coverage as a month of no premium. **That
+guard was checked by mutation** — switched off, three tests fail and say why.
+
+**Relicensed AGPL-3.0-only, from BUSL-1.1.** `package.json` declared BUSL-1.1 and no licence text
+had ever been committed; the AGPL text is now `LICENSE`. This makes the integration unambiguous
+rather than arguable, and it is the Alliance's own framing — open products use it free, closed
+products pay. Two consequences are open in Q22 and neither blocks the build. Corresponding Source
+has to cover `@kisaes/vibe-ai-client` and `@kisaesdevlab/vibe-auth`, which are sibling-repo
+decisions. And a proprietary licence for the *combined* work is no longer Kisaes's alone to grant,
+which is why the engine is invoked as a separate process over JSON and stays a severable optional
+service — with the flag unset, no OpenTax code is present at all. The AGPL obliges offering source
+to network users, **not** a public repository, so this repo stays private while
+`docs/wisp-amendment.md` lives in it.
+
+**Sequenced now rather than after the accuracy run, deliberately.** Extraction accuracy has never
+been measured and the accuracy run is still blocked on the Router. Building a tax computation on
+unmeasured numbers is a real objection, and the answer is to invert it: the translator is a pure
+function testable with no engine, no Router and no database, and a wrong total is far easier to
+spot on a 1040 line than in a field map. Values flagged for review or citing no span never reach
+the engine, so an unchecked number cannot quietly feed a computed line. P17's exit criteria
+require the harness to have actually scored and a person to have checked a draft line by line.
+
+**Two findings from writing the node map**, both of which would have been silent guesses:
+
+1. **The engine's field names are not derivable by convention.** Its catalogue calls the first
+   money box `box1_wages` on `w2`, `box1` on `f1099int`, `box1_oid` on `f1099oid` and
+   `box_1_unemployment` on `f1099g`. Every pair is written out in data and checked at load.
+2. **Its `w2g` node numbers boxes differently from the 2025 W-2G revision this app reads** — its
+   `box2` is a wager type where the form's box 2 is a date. Mapping by number would have moved a
+   date into a wager type. Those boxes are `ignored` with the reason recorded, not guessed.
+
+**And three form types the engine cannot take**, recorded because each is a real limit rather than
+an oversight: 1099-B, because the engine's node is per-lot and this app extracts Form 8949 section
+subtotals only (§8); 1098-T, 1099-S, 1099-SA, 1099-Q, 1099-LTC, 5498 and 5498-SA, for which it
+has no input node; and every K-1 plus SSA-1042S, which have nodes that are deliberately not used
+because §8 keeps them as printed. All 28 registered form types are declared either mapped or
+unmappable-with-a-reason, and the loader refuses a map where one is missing.
+
+*Affects:* P6, P9, P10, P12, P17, §2, §5, §9, §11, §13, §14, WISP.
 
 **2026-08-26 — Router integration verified against v0.0.24; §3 rewritten.**
 The spec was written against assumptions that no longer hold. There is no OpenAPI spec (an
@@ -969,6 +1087,10 @@ and remains deferred.
 | Classifier misfires now block, and section splitting depends on the classifier reading the 8949 heading | P4, P9 | Text-layer pre-classification cross-checks native pages and logs disagreement; measure on the IRS-layout fixtures |
 | Base64 inflation pushes request bodies past Router limits during season | P7 | Largely retired — Router default is 10 MiB vs ~800 KB/page. Still measure encoded sizes at P2 exit and confirm the deployed value |
 | K-1 renderings differ across UltraTax, CCH, Lacerte | P15 | Three-rendering fixture requirement in P15 exit criteria |
+| **A draft return computed from a documents-only bundle is structurally incomplete, and looks authoritative** | P17 | Incompleteness is a first-class enumerated output (`omissions[]`, §14), not a footnote: filing status comes from the reviewer, every §9 judgment item withholds its whole document, and `complete` is false whenever anything was withheld. Every computed figure is labelled advisory |
+| **The engine is three days old, largely AI-maintained, and its arithmetic is unverified here** | P17 | Pin the version and checksum the binary. P17 cannot exit until `npm run draft` has scored the fixture bundles and a person has checked a draft line by line. An engine bug is a wrong number on a 1040 line, which is the loudest place it could surface — that is the argument for the harness, not against it |
+| A draft return is built on extraction accuracy that has never been measured | P7, P8, P17 | Accepted 2026-09-25 and inverted deliberately: the draft return is the accuracy instrument (P17 stage 3). Values flagged for review or citing no span never reach the engine, so an unchecked number cannot silently feed a computed line |
+| Relicensing to AGPL forecloses a proprietary licence for the combined work | P17, §13 | Q22. The engine is a separate process and a severable optional service; with the flag unset no OpenTax code is present at all. Do not move it in-process or vendor its source |
 | Powered-off GPU droplets still bill if the Router ever provisions one | Router-side | Not this repo's concern, but flag to Router work |
 
 ---

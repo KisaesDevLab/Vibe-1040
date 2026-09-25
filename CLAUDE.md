@@ -107,13 +107,23 @@ and raise a QUESTIONS.md entry before adding anything in these directions.
 
 - **Not a diff engine.** The app never ingests the prepared return. No MeF XML parsing,
   no UltraTax / Lacerte / CCH / GoSystem export ingestion, no automated reconciliation
-  against a return. The human does the comparison.
+  against a return. The human does the comparison. **This is unchanged by P17**: the draft
+  return compares the app's own two derivations of the same source documents — what the
+  worksheet reports against what the engine computes — which is internal consistency
+  checking. Nothing is ever read out of a prepared return, and the app emits no MeF XML.
 - **Not a client portal.** Upload is staff-only, from inside the firm. No client accounts,
   no client-facing auth, no consent-collection UI, no E2EE intake. Vibe Connect owns that
   surface; this app does not duplicate it.
-- **Not a tax calculation engine.** The app does not compute taxable Social Security, does
-  not apply the §121 exclusion, does not compute QBI. It reports what the documents say
-  and, where a box does not map cleanly to a line, it says so and stops.
+- **Not a tax calculation engine of its own, and never a decider.** The app computes no tax
+  itself: there is no taxable-Social-Security worksheet, no §121 exclusion, no QBI
+  calculation anywhere in `src/`. It reports what the documents say and, where a box does not
+  map cleanly to a line, it says so and stops.
+  **Amended 2026-09-25 (§14, P17, STATE.md decision log).** It may hand the amounts it read
+  to a separate, deterministic, locally-run engine and show that engine's computed lines
+  beside its own reported totals, as a checking aid. That is a narrowing, not a repeal: every
+  §9 judgment call is still withheld rather than answered, the engine is a severable optional
+  process and not a library, and no characterization logic is written here. Read §14 before
+  touching any of it.
 - **Not multi-tenant.** Single firm per deployment.
 - **Not a model host.** All inference goes through Vibe AI Router. This app holds no
   provider credentials of any kind.
@@ -415,10 +425,20 @@ says and does not attempt the deduction.
 
 ## 11. Compliance posture
 
-The app performs data capture only and makes no substantive determinations about filing
-status, income characterization, deductions, or credits. That keeps inference within the
-auxiliary service provider treatment under Treas. Reg. §301.7216-2(d), which does not
-require written taxpayer consent — but only while processing stays inside the US.
+The app performs data capture and makes no substantive determinations about filing status,
+income characterization, deductions, or credits. That keeps inference within the auxiliary
+service provider treatment under Treas. Reg. §301.7216-2(d), which does not require written
+taxpayer consent — but only while processing stays inside the US.
+
+**Amended 2026-09-25, and not yet settled.** §14's draft return computes arithmetic over
+amounts a human has accepted, from inputs the preparer has stated. It still decides nothing:
+a populated field the schema marks `judgmentRequired` withholds its whole document from the
+engine, so an SSA-1099 never reaches it and the taxable portion of social security is never
+computed here. The engine runs on the appliance and discloses nothing to anyone, so the set of
+third parties seeing taxpayer data is unchanged. **But the sentence above is the sentence the
+WISP rests on, and `docs/wisp-amendment.md` §4 has to be revised by whoever owns the WISP
+before this runs against live client data — QUESTIONS.md Q21.** Until Q21 is answered,
+`DRAFT_RETURN_ENABLED` stays off wherever there is live client data.
 
 - The Router must enforce US-region pinning for any task class this app calls. This app
   asserts at startup that the Router reports a US-pinned policy for `v1040_page_classify`,
@@ -472,6 +492,16 @@ wire contract and drift silently.
 
 Internal Kisaes use first, licensed Vibe product later. Build single-firm, but:
 
+**Licensed AGPL-3.0-only since 2026-09-25**, relicensed from BUSL-1.1 so the OpenTax engine
+(verbatim AGPL v3, no linking exception) can be used without ambiguity. Two things follow and
+neither is settled — see QUESTIONS.md Q22. Conveying Corresponding Source has to cover
+`@kisaes/vibe-ai-client` and `@kisaesdevlab/vibe-auth`, which are sibling-repo decisions. And
+a proprietary licence for a work that *incorporates* OpenTax is no longer Kisaes's alone to
+grant, which is why the engine is invoked as a separate process and stays severable: **do not
+move it in-process and do not vendor its source into `src/`.** The AGPL obliges offering source
+to those who use the service over a network; it does not oblige a public repository, and this
+one stays private while `docs/wisp-amendment.md` lives in it.
+
 - Keep firm-specific configuration in config, not in code.
 - Stub the licensing.kisaes.com check at the same integration point the other appliances
   use, feature-flagged off.
@@ -479,3 +509,80 @@ Internal Kisaes use first, licensed Vibe product later. Build single-firm, but:
   T&B or the Filer sentinel instead of deriving identity from the bundle.
 
 Do not build multi-tenancy now.
+
+## 14. Draft return (P17)
+
+**Decided 2026-09-25.** The app can hand the amounts it read to
+[OpenTax](https://opentax.filed.com/) — a deterministic, open-source federal 1040 engine that
+runs as a single binary on the appliance — and show the computed lines beside the worksheet's
+own reported totals. It turns §1's eyeball comparison into an arithmetic one without ingesting
+the prepared return.
+
+Why this is not a repeal of §2: the engine holds no credentials, makes no network call and
+sees no third party, so nothing about the §7216 disclosure analysis changes; the app itself
+still computes no tax and still decides nothing; and everything §9 sends to Judgment Required
+is withheld from the engine rather than guessed at.
+
+**Off by default, behind `DRAFT_RETURN_ENABLED`.** It is an environment key, not a
+`firm_settings` row, and renders read-only in Admin → Settings with its reason — it changes
+what the app computes about a taxpayer, which is not a click. **It stays off wherever there is
+live client data until QUESTIONS.md Q21 is answered.**
+
+### The omissions contract
+
+**An incomplete draft return is an enumerated fact, not a footnote.** A draft computed from a
+source-document bundle can never be a return, and pretending otherwise is the one failure mode
+that would make this worse than nothing. `src/draft/translate.ts` therefore emits, beside the
+nodes it can send, every reason something could not be sent. Six rules produce it, and none of
+them may be softened to make a draft look more complete:
+
+1. **A blank is never a zero.** `null` reaching a calculation engine as `0` would destroy the
+   distinction §5 exists to preserve. A blank box is left off the payload; where the engine
+   requires the field, the **whole document is withheld** rather than zero-filled. A partially
+   read 1095-A year is not padded with zero-premium months. A zero the form actually printed is
+   sent, because that is a value.
+2. **A value no human has accepted does not feed a computation.** A mapped field flagged for
+   review, or citing no span, withholds its document (§4, §6).
+3. **A judgment call is never made here.** A *populated* field the schema marks
+   `judgmentRequired` withholds its document, and an `allJudgmentRequired` form type never
+   reaches the engine at all. Applied per document by content, this is §9 exactly: an SSA-1099
+   always prints box 3, so it is always withheld, because the taxable portion of social
+   security is not this app's to compute. Every K-1 and the SSA-1042S are withheld by §8.
+4. **A negative amount is withheld**, because nearly every money field in the engine's
+   catalogue is declared non-negative and the alternative is a silent absolute value.
+5. **What the bundle cannot know is listed every time** — filing status, dependents, itemised
+   deductions, estimated payments, basis, carryovers, prior-year AGI. Filing status and the
+   age/blindness flags come from the **reviewer**, never from inference over a pile of forms.
+   That is the preparer making the determination, which is the right place for it.
+6. **One door.** A draft return goes through `assertWorksheetAllowed` (`src/reconcile/gate.ts`),
+   the same gate as the worksheet, so a bundle with an undispositioned hard failure gets no
+   draft return either. Do not add a `force` flag; the gate deliberately has none.
+
+### The node map is data
+
+`data/opentax-nodes/<year>.json`, loaded and validated by `src/draft/nodes.ts`. A new season is
+a data change, exactly as for `data/line-mappings`. The engine's field names are **not**
+derivable by convention — its catalogue calls the first money box `box1_wages` on `w2`, `box1`
+on `f1099int`, `box1_oid` on `f1099oid` and `box_1_unemployment` on `f1099g` — so every pair is
+written out and checked.
+
+Two load-time rules carry the weight, and both exist because a quietly missing number is the
+failure this whole app is built to prevent:
+
+- **Every registered form type is declared**, either mapped or explicitly `unmappable` with a
+  reason a preparer can read. A form type nobody thought about fails at startup.
+- **Every field of a mapped form type is accounted for exactly once**, in `fields`,
+  `codeGroups`, `monthlyArrays` or `ignored`. A TIN is always `ignored` with reason
+  `tin_withheld` and is never forwarded (§7).
+
+### Boundaries that stay
+
+- **The engine is a separate process over JSON, never a library.** That is the arm's-length
+  reading of its AGPL licence and it keeps the integration severable (§13, QUESTIONS.md Q22).
+  Do not move it in-process. Do not vendor its source into `src/`.
+- **Pin the version and verify the binary by checksum.** It is a young, largely
+  AI-maintained engine; `install.sh | sh` into a floating latest is not acceptable here.
+- **No MeF XML and no filing.** The engine can emit MeF XML and a filled PDF; this app uses
+  neither. No transmission, no acknowledgements, no EFIN or ERO surface.
+- **Every computed figure is labelled advisory**, with the engine and its version named, and a
+  draft return is never presented as a finished return.
