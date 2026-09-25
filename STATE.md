@@ -13,9 +13,13 @@ do not infer progress from the commit log.
 the same day so the appliance can register against a real image. **P17 (draft return via
 OpenTax) — implemented 2026-09-25**, all three stages, carrying migration 0012. **P18
 (preparer-supplied inputs) — implemented 2026-09-25**, carrying migration 0013. Both merged
-to main 2026-09-25 (PR #2, merge `67283c1`). **v0.11.0 is prepared but NOT released** — see
-*The v0.11.0 release, and the P0 defect it exposed* below. Nothing is on GHCR for it and the tag
-is not pushed; the version in `package.json` is the only thing that says 0.11.0.
+to main 2026-09-25 (PR #2, merge `67283c1`). **v0.11.0 images are published** as of 2026-09-25
+(release run 28, on merge `6c86717`) — the appliance, the sidecar and, for the first time, the
+OpenTax engine image, each at `0.11.0` and `latest`, all six manifests verified anonymously
+pullable. **The git tag `v0.11.0` is not pushed**: the push returns 403 from an agent session, so
+the release was dispatched by hand and carries no floating `0.11` tag. See *The v0.11.0 release,
+and the P0 defect it exposed* below — it took two attempts, and the first one's failure was the
+most serious finding of the pass.
 **Status:** P0–P16 code complete and **integration-unverified**; P17 code complete and
 **scored against the real engine v2.0.4** — 13 of 13 comparable lines agree (see below); P18
 code complete and **driven end to end in a browser against that engine and a real database**.
@@ -115,10 +119,11 @@ the UI, against a real Postgres at 0013. `npm run lint` clean in both packages.
 
 ### The v0.11.0 release, and the P0 defect it exposed
 
-**v0.11.0 is not released.** Recorded here because the line above once said it was, and a version
-nobody can pull is worse than an unreleased one.
+**Released on the second attempt** (run 28, 2026-09-25, on `6c86717`), and worth recording at
+length because the first attempt's failure was not about v0.11.0 at all — it was the oldest
+defect in the build finally surfacing.
 
-Three things stand between the merge and the release, and the first is the reason the other two
+Three things stood between the merge and the release, and the first is the reason the other two
 were found:
 
 1. **The appliance image has never once been built from the tested dependency tree.** The release
@@ -137,10 +142,21 @@ were found:
    now reads `package.json` and asserts the two agree, which is the cheap half of that bargain.
    `package-lock.json` had the same drift, plus a `BUSL-1.1` licence field four days after the
    AGPL relicense.
-3. **The tag push and the GHCR visibility flip need a human.** `git push origin v0.11.0` returns
-   **403** from this session — annotated and lightweight both, with the proxy reporting zero
-   GitHub failures, so it is an org policy denial and not a network fault. The `vibe-1040-opentax`
-   package also needs its visibility set the first time it is published. Neither is worked around.
+3. **The tag push needs a human; the GHCR visibility flip turned out not to.** `git push origin
+   v0.11.0` returns **403** from an agent session — annotated and lightweight both, with the proxy
+   reporting zero GitHub failures, so it is an org policy denial and not a network fault. Not
+   worked around: run 28 was dispatched by hand with `tag: 0.11.0`, which is why the images carry
+   `0.11.0` and `latest` but **no floating `0.11`** tag, and why no git tag points at `6c86717`.
+   Push the tag when convenient; the images are already there and a tag push would rebuild them.
+   The visibility flip was **predicted and did not happen** — `vibe-1040-opentax` published
+   anonymously pullable on its first push, and all six manifests were verified by an
+   unauthenticated GHCR token request rather than by reading the workflow's own gate.
+
+**What run 28 proves and what it does not.** All three images build, the engine image reports the
+pinned 2.0.4 when run, and the anonymous-pullability gate passes — so an operator following
+`docs/runbook.md` no longer gets `manifest unknown` for the service the release is about. It does
+**not** prove the appliance boots against a real Router, Vibe Auth or Postgres: nothing here has
+ever run the published image. That is still the integration check P0–P16 have never had.
 `npm run check:providers` clean. No fixture-manifest drift.
 
 **Still not verified, and none of it is small.** The extraction accuracy run still needs the
@@ -890,7 +906,7 @@ what a model returns.
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
 | P16 | Single sign-on (Vibe Auth) | implemented, released v0.10.0 (2026-09-22) | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
-| P17 | Draft return (OpenTax) | **implemented, scored against engine v2.0.4 and rendered in a browser, 2026-09-25**; carries migration 0012 | translator, node map, sidecar, comparison, workbook sheet, UI panel, harness. `npm run draft -- --truth` is 13/13 against the real engine. The panel has now been looked at, which found three defects no test caught (dead filing-status control, unreadable table in a 290px aside, `(§9)..`) — all fixed and regression-tested. **Cannot exit**: Q21 unanswered, the Dockerfile unbuilt, and no person has hand-checked a draft line by line. See Current position |
+| P17 | Draft return (OpenTax) | **implemented, scored against engine v2.0.4 and rendered in a browser, 2026-09-25**; carries migration 0012 | translator, node map, sidecar, comparison, workbook sheet, UI panel, harness. `npm run draft -- --truth` is 13/13 against the real engine. The panel has now been looked at, which found three defects no test caught (dead filing-status control, unreadable table in a 290px aside, `(§9)..`) — all fixed and regression-tested. `opentax/Dockerfile` is no longer unbuilt: CI builds it and the v0.11.0 release publishes `vibe-1040-opentax`, which reports the pinned 2.0.4 when run. **Cannot exit**: Q21 unanswered, and no person has hand-checked a draft line by line. See Current position |
 | P18 | Preparer-supplied inputs (dependents, Schedule A, C/E/F summaries) | **implemented and driven in a browser, 2026-09-25**; carries migration 0013 | `draft_inputs` and three child tables, CRUD routes, audit on every mutation, a full-width entry sheet, and the `superseded_by_preparer` override (Q24). Filing status moved off the per-draft request onto the stored record. Found and fixed two silent losses the phase itself created: the child tax credit was computed and shown nowhere (the node map declared no such line), and a money box read `15000` above a warning reading `12,844.00`. **Cannot exit**: Q21 covers this scope now and is unanswered, and no person has hand-checked a draft built from preparer inputs |
 
 ---
