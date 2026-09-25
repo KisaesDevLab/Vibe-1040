@@ -492,6 +492,22 @@ before this runs against live client data — QUESTIONS.md Q21.** Until Q21 is a
   the local second-factor verification and the `amr`-checked SSO adapter.
 - Rasterized page images are derived PII. Purge them on the retention schedule
   independently of the source PDFs.
+- **What may and may not be a settings row** (amended 2026-09-25, Q26). Most of what was
+  environment-only is now an audited setting — see §14. Five keys are not, and the two reasons
+  are different in kind, so do not collapse them:
+  - **`ROUTER_REQUIRE_US_REGION`** is the one control this section names. It is asserted at
+    startup and fails closed, so a page served by an already-running process cannot honestly
+    offer to relax it. Environment, deliberately.
+  - **`VIBE_AI_ROUTER_URL`, `STORAGE_DRIVER`, `TIN_HASH_SALT`, `STORAGE_ENCRYPTION_KEY`** would
+    destroy or leak the firm's own data. The router URL is a one-field exfiltration channel for
+    every page image; the salt orphans every taxpayer record (§7); the blob key makes every
+    stored document undecryptable and **cannot be a setting at all**, because the secrets in
+    `firm_settings` are encrypted with it. These need a migration path, never a switch.
+
+  A setting that only takes effect at boot declares `restartRequired` and the UI badges it as
+  pending. Do not make one of those read live: `extraction.attach_page_image` and
+  `extraction.ocr_fallback_enabled` decide which task classes get **registered** at startup, and
+  a live read would have the app calling a class this process never declared.
 
 ## 12. Stack
 
@@ -543,10 +559,22 @@ sees no third party, so nothing about the §7216 disclosure analysis changes; th
 still computes no tax and still decides nothing; and everything §9 sends to Judgment Required
 is withheld from the engine rather than guessed at.
 
-**Off by default, behind `DRAFT_RETURN_ENABLED`.** It is an environment key, not a
-`firm_settings` row, and renders read-only in Admin → Settings with its reason — it changes
-what the app computes about a taxpayer, which is not a click. **It stays off wherever there is
-live client data until QUESTIONS.md Q21 is answered.**
+**Off by default, and now an audited setting rather than an environment key.** Amended
+2026-09-25 (Q26, STATE.md decision log): it is a `firm_settings` row an admin switches in
+Admin → Settings → Engine and pipeline. `DRAFT_RETURN_ENABLED` survives as the **seed** for a
+deployment that has never set it, so an existing `.env` keeps behaving exactly as it did.
+
+The old rule said this "is not a click". That was the wrong conclusion from the right concern:
+what the concern actually wanted was a *record*, and an environment key does not produce one —
+it produces an operator editing a file over SSH with nothing to show who did it. So turning it
+on takes a typed acknowledgement naming the open question, the audit row records that the admin
+was told and proceeded, and the setting's provenance ("changed by X on Y") renders beside the
+switch. Switching it back **off** asks nothing, deliberately: friction on the safe direction is
+how a dangerous state gets left in place.
+
+**It stays off wherever there is live client data until QUESTIONS.md Q21 is answered** —
+unchanged, and now the thing the acknowledgement says out loud. **Kurt's call, 2026-09-25, was
+to ship the switch ahead of Q21 deliberately**; that is recorded rather than implied.
 
 ### The omissions contract
 

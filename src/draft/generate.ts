@@ -11,7 +11,6 @@
  */
 import { desc, eq } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
-import { env } from '../config/env.ts';
 import { db } from '../db/client.ts';
 import {
   draftReturnLines,
@@ -34,9 +33,9 @@ import { buildDraftInput, type DraftOmission, type DraftParams } from './transla
 export class DraftReturnDisabledError extends Error {
   constructor() {
     super(
-      'the draft return is not enabled for this deployment. It is an environment key ' +
-        '(DRAFT_RETURN_ENABLED) because it changes what the app computes about a taxpayer, and ' +
-        'it must stay off wherever there is live client data until QUESTIONS.md Q21 is answered.',
+      'the draft return is switched off for this firm. An admin can turn it on in ' +
+        'Admin → Settings → Engine and pipeline; the change is audited, because it changes ' +
+        'what the app computes about a taxpayer.',
     );
     this.name = 'DraftReturnDisabledError';
   }
@@ -84,7 +83,7 @@ export async function generateDraftReturn(
   userId: string,
   params: DraftParams = {},
 ): Promise<DraftReturnResult> {
-  if (!env.DRAFT_RETURN_ENABLED) throw new DraftReturnDisabledError();
+  if (!(await setting<boolean>('draft.return_enabled'))) throw new DraftReturnDisabledError();
 
   // Same gate, same order, no bypass.
   await assertWorksheetAllowed(bundleId);
@@ -138,8 +137,9 @@ export async function generateDraftReturn(
     if (reported !== bare(file.engine.pinnedVersion)) {
       disagrees.push(`the ${file.version} node map was written against ${file.engine.pinnedVersion}`);
     }
-    if (reported !== bare(env.OPENTAX_VERSION)) {
-      disagrees.push(`OPENTAX_VERSION pins ${env.OPENTAX_VERSION}`);
+    const expected = await setting<string>('engine.opentax_version');
+    if (reported !== bare(expected)) {
+      disagrees.push(`the expected version is ${expected}`);
     }
     if (disagrees.length > 0) {
       console.warn(
@@ -359,11 +359,11 @@ export async function draftReturnStatus(taxYear?: number): Promise<{
   // `resolveNodeMap` is asked for NaN when no year was named, and reports that as substituted.
   // With no year named there is nothing to have substituted *for*, so report false.
   const filingStatusSubstituted = taxYear !== undefined && (resolved?.substituted ?? false);
-  if (!env.DRAFT_RETURN_ENABLED) {
+  if (!(await setting<boolean>('draft.return_enabled'))) {
     return {
       enabled: false,
       engine: null,
-      expectedVersion: env.OPENTAX_VERSION,
+      expectedVersion: await setting<string>('engine.opentax_version'),
       filingStatuses,
       filingStatusYear,
       filingStatusSubstituted,
@@ -372,7 +372,7 @@ export async function draftReturnStatus(taxYear?: number): Promise<{
   return {
     enabled: true,
     engine: await engineHealth(),
-    expectedVersion: env.OPENTAX_VERSION,
+    expectedVersion: await setting<string>('engine.opentax_version'),
     filingStatuses,
     filingStatusYear,
     filingStatusSubstituted,
@@ -406,12 +406,12 @@ export interface EngineReadiness {
 export async function engineReadiness(taxYear?: number): Promise<EngineReadiness> {
   const resolved = await resolveNodeMap(taxYear ?? Number.NaN);
   const pins = {
-    environment: env.OPENTAX_VERSION,
+    environment: await setting<string>('engine.opentax_version'),
     nodeMap: resolved?.file.engine.pinnedVersion ?? null,
     nodeMapVersion: resolved?.file.version ?? null,
   };
 
-  if (!env.DRAFT_RETURN_ENABLED) {
+  if (!(await setting<boolean>('draft.return_enabled'))) {
     return {
       enabled: false,
       engine: { ok: false, version: null, reason: 'draft return is not enabled' },

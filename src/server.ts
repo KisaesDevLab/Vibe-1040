@@ -33,6 +33,8 @@ import {
 import { registry } from './schemas/registry.ts';
 import { ZodError } from 'zod';
 import { DraftEngineError } from './draft/client.ts';
+import { loadStartupSettings, startupSettings } from './settings/runtime.ts';
+import { setting } from './settings/store.ts';
 import { NodeMapMissingError } from './draft/nodes.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -165,6 +167,10 @@ export async function buildServer() {
 }
 
 async function main(): Promise<void> {
+  // Before anything registers a task class: these decide the *shape* of what gets registered,
+  // so they are read once and every read site uses the snapshot (src/settings/runtime.ts).
+  await loadStartupSettings();
+
   const forms = await registry();
   console.log(`[startup] form schema registry loaded: ${forms.size} schemas across ${forms.years().join(', ')}`);
 
@@ -207,7 +213,7 @@ async function main(): Promise<void> {
   // plain-HTTP origin locks every staff account out of an app that looks healthy, and the
   // reverse is a quiet weakening of §11's in-transit control. Neither is something an
   // operator should have to read an env file to discover.
-  if (env.OCR_FALLBACK_ENABLED) {
+  if (startupSettings().ocrFallbackEnabled) {
     console.log(
       '[startup] OCR fallback: ENABLED — pages with no text layer are transcribed through ' +
         'v1040_ocr_transcribe. Whether that stays on the appliance depends on what a firm ' +
@@ -260,7 +266,7 @@ async function main(): Promise<void> {
    * amount vanishes and the line reads as absent. Nobody goes looking for a number that is not
    * there.
    */
-  if (env.DRAFT_RETURN_ENABLED) {
+  if (await setting<boolean>('draft.return_enabled')) {
     void (async () => {
       try {
         const readiness = await engineReadiness();

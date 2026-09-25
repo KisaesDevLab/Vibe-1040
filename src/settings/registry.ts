@@ -20,7 +20,7 @@
 import { z } from 'zod';
 import { env } from '../config/env.ts';
 
-export type SettingGroup = 'reconciliation' | 'retention' | 'extraction' | 'rasterization' | 'email' | 'sms' | 'authentication' | 'licensing';
+export type SettingGroup = 'reconciliation' | 'retention' | 'extraction' | 'rasterization' | 'email' | 'sms' | 'authentication' | 'licensing' | 'engine';
 
 export interface SettingDef<T = unknown> {
   key: string;
@@ -36,6 +36,23 @@ export interface SettingDef<T = unknown> {
   options?: readonly string[];
   /** Restarting is not required, but some values only bite on the next job. */
   note?: string;
+  /**
+   * This value is only read at startup, so changing it here does nothing until the API and
+   * worker restart.
+   *
+   * Carried as data rather than left to the `help` prose because the UI has to *render* it —
+   * a switch that moves, saves, and changes nothing until someone restarts a container is the
+   * same defect as the dead filing-status control, and it took a browser to find that one.
+   * Anything marked here saves with a pending badge instead of reading as live.
+   */
+  restartRequired?: boolean;
+  /**
+   * Flipping this to a more permissive value needs a typed acknowledgement, whose text this
+   * is. The point is not friction for its own sake: it is that the audit row then records an
+   * admin who was told what changes and did it anyway, which is the property that made the
+   * environment key worth defending in the first place.
+   */
+  acknowledge?: string;
 }
 
 const def = <T>(d: SettingDef<T>): SettingDef<T> => d;
@@ -371,6 +388,101 @@ export const SETTINGS = [
     default: () => env.LICENSE_REQUIRED,
     input: 'boolean',
   }),
+
+  // ── engine and pipeline ────────────────────────────────────────────────────
+  //
+  // These were environment-only and shown read-only until 2026-09-25, on the reasoning that
+  // what the app computes about a taxpayer "is not a click". Kurt's call to make them
+  // clickable; the reasoning is answered rather than dropped — each one that matters carries
+  // an acknowledgement, so the audit row names an admin who was told what changes.
+  //
+  // What did **not** move is in `readOnlyEnvironment()` below, with a per-key reason.
+  def({
+    key: 'draft.return_enabled',
+    group: 'engine',
+    label: 'Draft return (OpenTax)',
+    help:
+      'Whether the bundle view offers a draft 1040 computed on this appliance from the amounts ' +
+      'read off these documents (§14). Adds no inference and no egress — the engine is ' +
+      'deterministic, holds no credential and makes no network call. It changes what the app ' +
+      'computes about a taxpayer, so every change here is audited.',
+    schema: z.boolean(),
+    default: () => env.DRAFT_RETURN_ENABLED,
+    input: 'boolean',
+    acknowledge:
+      'Turning this on makes the app compute a draft return for a taxpayer. ' +
+      'QUESTIONS.md Q21 — whether the WISP’s §7216 wording covers that — is still open, and ' +
+      'docs/wisp-amendment.md §4.1 is unapproved. This is recorded against your account.',
+    note:
+      'Takes effect immediately. A draft is still refused for any bundle with an ' +
+      'undispositioned hard failure — this switch does not open that gate (§6).',
+  }),
+  def({
+    key: 'engine.opentax_version',
+    group: 'engine',
+    label: 'Expected OpenTax version',
+    help:
+      'The engine release the node map was written against. What the sidecar actually reports ' +
+      'is checked against this, and a disagreement warns loudly — a mapping must not drift ' +
+      'under the engine. Editing this silences that warning rather than changing any binary: ' +
+      'the version that runs is pinned and checksum-verified when the image is built.',
+    schema: z.string().min(1).max(64),
+    default: () => env.OPENTAX_VERSION,
+    input: 'text',
+    acknowledge:
+      'This does not upgrade anything. It changes which version the app expects, so a real ' +
+      'drift between the node map and the running engine would stop being reported.',
+  }),
+  def({
+    key: 'router.expected_sensitivity',
+    group: 'engine',
+    label: 'Expected task-class sensitivity',
+    help:
+      'The tier this deployment expects its task classes to be at. Startup compares what the ' +
+      'router reports against this and warns on a mismatch. Changing it here changes what the ' +
+      'app expects — widening what the router actually permits is a firm-admin action in the ' +
+      'router’s own admin UI, and nothing on this page can do it.',
+    schema: z.enum(['local_only', 'cloud_deidentified', 'cloud_identified']),
+    default: () => env.ROUTER_EXPECTED_SENSITIVITY,
+    input: 'select',
+    options: ['local_only', 'cloud_deidentified', 'cloud_identified'],
+  }),
+  def({
+    key: 'extraction.attach_page_image',
+    group: 'engine',
+    label: 'Send the page image to the field binder',
+    help:
+      'Gives the binder the page image alongside the spans, which reads a dense grid better. ' +
+      'It also registers v1040_field_extract as a vision class, so router policy must bind a ' +
+      'vision-capable model or every extraction fails — and it means page images, which carry ' +
+      'SSNs and EINs unscrubbed (§3), egress on the extraction call as well as on classify.',
+    schema: z.boolean(),
+    default: () => env.EXTRACT_ATTACH_PAGE_IMAGE,
+    input: 'boolean',
+    restartRequired: true,
+    acknowledge:
+      'This sends taxpayer page images on the extraction call too. The router’s scrubber ' +
+      'rewrites text and passes images through verbatim, so those pixels leave the appliance ' +
+      'as they are. Check the router policy binds a vision model before restarting.',
+  }),
+  def({
+    key: 'extraction.ocr_fallback_enabled',
+    group: 'engine',
+    label: 'Transcribe pages with no text layer',
+    help:
+      'Runs v1040_ocr_transcribe over a page the sidecar found no text on, so a scan becomes ' +
+      'readable. It supplies no geometry: a value read out of a transcription has no span to ' +
+      'point at, so §6’s blocking rule applies in full. This makes a scanned page readable, ' +
+      'not provable.',
+    schema: z.boolean(),
+    default: () => env.OCR_FALLBACK_ENABLED,
+    input: 'boolean',
+    restartRequired: true,
+    note:
+      'The class is registered at startup, and whether it binds a local OCR server or a cloud ' +
+      'vision model is the firm’s decision in router policy — the startup log says which way ' +
+      'it resolved.',
+  }),
 ] as const satisfies readonly SettingDef[];
 
 export type SettingKey = (typeof SETTINGS)[number]['key'];
@@ -384,8 +496,20 @@ export function settingDef(key: string): SettingDef | undefined {
 /**
  * Environment values shown read-only in the admin UI.
  *
- * These are here so an admin can *see* the deployment's posture without being handed a
- * switch that turns the compliance guarantee off.
+ * **Most of what used to be here is now editable** in Admin → Settings (the `engine` group
+ * above), decided 2026-09-25: "it changes what the app computes about a taxpayer" was a reason
+ * to *audit* a change, not a reason to make an operator edit `.env` and restart a container.
+ *
+ * What is left is here for one of two reasons, and they are different in kind:
+ *
+ *  - **It would destroy or leak the firm's own data.** Not a policy view — rotating the TIN
+ *    salt orphans every taxpayer record, and one of these cannot be a setting at all because
+ *    the settings table's own secrets are encrypted with it.
+ *  - **It is the one compliance control §11 names**, and it is asserted at startup and fails
+ *    closed, so a page served by a process that already started cannot honestly offer it.
+ *
+ * Each `why` says which, in words a person can act on. If one of these should move too, it
+ * needs a decision-log entry and a migration path — not a change to this list.
  */
 export function readOnlyEnvironment(): { key: string; value: string; why: string }[] {
   return [
@@ -393,64 +517,47 @@ export function readOnlyEnvironment(): { key: string; value: string; why: string
       key: 'ROUTER_REQUIRE_US_REGION',
       value: String(env.ROUTER_REQUIRE_US_REGION),
       why:
-        'Whether the app refuses to start unless the router reports US-region pinning. This ' +
-        'is the control keeping taxpayer page images inside US inference (§11), so it is ' +
-        'deliberately not a UI toggle. Change it in the environment and restart.',
-    },
-    {
-      key: 'EXTRACT_ATTACH_PAGE_IMAGE',
-      value: String(env.EXTRACT_ATTACH_PAGE_IMAGE),
-      why:
-        'Whether the binder also receives the page image. Turning it on registers ' +
-        'v1040_field_extract as a vision class, which changes what router policy may bind, so ' +
-        'it is set in the environment and takes effect on restart.',
-    },
-    {
-      key: 'OCR_FALLBACK_ENABLED',
-      value: String(env.OCR_FALLBACK_ENABLED),
-      why:
-        'Whether pages with no text layer are transcribed through v1040_ocr_transcribe before ' +
-        'layout. Registers a task class at startup, so it lives in the environment.',
-    },
-    {
-      key: 'DRAFT_RETURN_ENABLED',
-      value: String(env.DRAFT_RETURN_ENABLED),
-      why:
-        'Whether the bundle view offers a draft return computed by the OpenTax engine (§14). ' +
-        'It changes what the app computes about a taxpayer, so it is not a UI toggle, and it ' +
-        'must stay off wherever there is live client data until QUESTIONS.md Q21 is answered.',
-    },
-    {
-      key: 'OPENTAX_VERSION',
-      value: env.OPENTAX_VERSION,
-      why:
-        'The engine release the node map was written against. A mismatch against what the ' +
-        'sidecar reports is logged at startup — a mapping must not drift under the engine.',
-    },
-    {
-      key: 'ROUTER_EXPECTED_SENSITIVITY',
-      value: env.ROUTER_EXPECTED_SENSITIVITY,
-      why: 'The task-class tier this deployment expects. Widening happens in the router admin UI, not here.',
+        'Whether the app refuses to start unless the router reports US-region pinning — the ' +
+        'only control keeping taxpayer page images inside US inference (§11), because the ' +
+        'classes that send them are cloud_deidentified and the router’s scrubber does not ' +
+        'scrub images. It is asserted at startup and fails closed, so a running process ' +
+        'offering to relax it would be offering something it cannot honour until the next ' +
+        'restart anyway. Change it in the environment, deliberately. Note this deployment ' +
+        'already runs it false by recorded decision (Q13) where policy binds DigitalOcean.',
     },
     {
       key: 'VIBE_AI_ROUTER_URL',
       value: env.VIBE_AI_ROUTER_URL,
-      why: 'Internal network address of the router. Set at provisioning.',
+      why:
+        'Where every page image is sent for inference. As an editable field this is a one-box ' +
+        'exfiltration channel: anyone holding an admin session could point it at a host they ' +
+        'control and receive every taxpayer document, unscrubbed, with nothing in the app ' +
+        'looking wrong. It stays at provisioning for that reason alone.',
     },
     {
       key: 'STORAGE_DRIVER',
       value: env.STORAGE_DRIVER,
-      why: 'Blob backend. Changing it after documents exist would orphan them.',
+      why:
+        'Blob backend. Switching it after documents exist does not migrate them — it points ' +
+        'the app at an empty store while every existing document still reads as present in ' +
+        'the database. Needs a migration, not a toggle.',
     },
     {
       key: 'TIN_HASH_SALT',
       value: '(set — never displayed)',
-      why: 'Salt for the client join key. Rotating it orphans every taxpayer record.',
+      why:
+        'Salt for the client join key (§7). Rotating it does not re-key anything: every ' +
+        'existing taxpayer record keeps its old hash and nothing matches it again, so the ' +
+        'firm silently acquires a second copy of every client. A rotation is a data migration.',
     },
     {
       key: 'STORAGE_ENCRYPTION_KEY',
       value: '(set — never displayed)',
-      why: 'Encrypts every stored document and page image. The highest-value secret here.',
+      why:
+        'Encrypts every stored document and page image — and also every secret in this ' +
+        'settings table, which is why it cannot be a setting: storing it here would encrypt ' +
+        'it with itself. Changing it makes every existing blob undecryptable. It is the ' +
+        'highest-value secret in the deployment and a web form is the wrong place for it.',
     },
   ];
 }

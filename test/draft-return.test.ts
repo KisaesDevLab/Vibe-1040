@@ -260,14 +260,22 @@ describe.skipIf(!dbAvailable)('draft return, end to end', () => {
     await db.update(schema.bundles).set({ identityConfirmedAt: new Date() }).where(eq(schema.bundles.id, bundleId));
   });
 
-  it('refuses outright when the deployment has not enabled it', async () => {
-    const { env } = await import('../src/config/env.ts');
-    const original = env.DRAFT_RETURN_ENABLED;
-    (env as { DRAFT_RETURN_ENABLED: boolean }).DRAFT_RETURN_ENABLED = false;
+  it('refuses outright when the firm has switched it off', async () => {
+    // It is a setting now, not an environment key (2026-09-25), so this reaches the switch the
+    // way an admin does: a stored row plus a cache invalidation. The old version of this test
+    // reached into the frozen `env` object and assigned to it, which no longer proves anything
+    // about the gate — the gate stopped reading that object.
+    const { invalidateSettingsCache } = await import('../src/settings/store.ts');
+    await db
+      .insert(schema.firmSettings)
+      .values({ key: 'draft.return_enabled', value: false })
+      .onConflictDoUpdate({ target: schema.firmSettings.key, set: { value: false } });
+    invalidateSettingsCache();
     try {
       await expect(generateDraftReturn(bundleId, userId, {})).rejects.toThrow(DraftReturnDisabledError);
     } finally {
-      (env as { DRAFT_RETURN_ENABLED: boolean }).DRAFT_RETURN_ENABLED = original;
+      await db.delete(schema.firmSettings).where(eq(schema.firmSettings.key, 'draft.return_enabled'));
+      invalidateSettingsCache();
     }
   });
 

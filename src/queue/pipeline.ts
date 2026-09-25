@@ -33,7 +33,7 @@ import {
   preclassifyFromText,
   type PageClassification,
 } from '../classify/pass.ts';
-import { env } from '../config/env.ts';
+import { startupSettings } from '../settings/runtime.ts';
 import { bindFields, type PageImage, type StoredSpan } from '../extract/binder.ts';
 import { persistBoundFields } from '../extract/persist.ts';
 import { resolveDocumentFields } from '../extract/resolve.ts';
@@ -425,7 +425,7 @@ export async function extractDocument(
   const spans: StoredSpan[] = spanRows.map((s, i) => ({ ...s, spanIndex: i }));
 
   let images: PageImage[] | undefined;
-  if (env.EXTRACT_ATTACH_PAGE_IMAGE) {
+  if (startupSettings().attachPageImage) {
     const docPages = await db
       .select({ id: pages.id, key: pages.rasterStorageKey })
       .from(pages)

@@ -17,7 +17,7 @@
  * readable, not provable, and that distinction is the reviewer's to resolve.
  */
 import { and, eq, isNull } from 'drizzle-orm';
-import { env } from '../config/env.ts';
+import { startupSettings } from '../settings/runtime.ts';
 import { db } from '../db/client.ts';
 import { pages } from '../db/schema.ts';
 import { completeText } from '../router/client.ts';
@@ -50,7 +50,7 @@ interface TranscribeCandidate {
 
 /** True when this page needs, and is allowed, a transcription. */
 export function shouldTranscribe(page: TranscribeCandidate): boolean {
-  if (!env.OCR_FALLBACK_ENABLED) return false;
+  if (!startupSettings().ocrFallbackEnabled) return false;
   if (!page.rasterStorageKey) return false;
   // Already done. Re-transcribing on a reprocess costs a call and changes nothing.
   if (page.ocrText !== null) return false;
@@ -95,7 +95,7 @@ export async function transcribePage(
 
 /** Pages in a bundle still awaiting a transcription. */
 export async function pagesNeedingTranscription(bundleId: string): Promise<string[]> {
-  if (!env.OCR_FALLBACK_ENABLED) return [];
+  if (!startupSettings().ocrFallbackEnabled) return [];
   const rows = await db
     .select({
       id: pages.id,

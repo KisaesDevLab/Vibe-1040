@@ -9,9 +9,10 @@
  * the database, and `settingsForAdmin` never returns one — the UI shows whether a secret is
  * set, not what it is.
  */
+import { eq } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
 import { db } from '../db/client.ts';
-import { firmSettings } from '../db/schema.ts';
+import { firmSettings, users } from '../db/schema.ts';
 import { open, seal } from '../storage/index.ts';
 import { SETTINGS, settingDef, type SettingDef } from './registry.ts';
 
@@ -102,6 +103,42 @@ function validateCombination(next: Map<string, unknown>): void {
 export interface SettingUpdate {
   key: string;
   value: unknown;
+  /**
+   * Set when the admin confirmed the setting's `acknowledge` text.
+   *
+   * Required to move a setting *towards* the more permissive value, and enforced here rather
+   * than only in the component — a confirmation a `curl` can skip is decoration, and the point
+   * of it is the audit row, not the dialog.
+   */
+  acknowledged?: boolean;
+}
+
+/** Raised when a change needing an acknowledgement arrives without one. */
+export class AcknowledgementRequiredError extends Error {
+  readonly key: string;
+  readonly acknowledge: string;
+
+  constructor(def: SettingDef) {
+    super(`${def.label} needs an acknowledgement: ${def.acknowledge}`);
+    this.name = 'AcknowledgementRequiredError';
+    this.key = def.key;
+    this.acknowledge = def.acknowledge ?? '';
+  }
+}
+
+/**
+ * Whether this change is the direction that needs acknowledging.
+ *
+ * Only one way: switching a guard **on** (false → true for a permissive flag) or changing a
+ * pin's value needs the admin to have read what changes; switching it back off is the safe
+ * direction and must never be made tedious, because friction on the safe direction is how a
+ * dangerous state ends up left in place.
+ */
+function needsAcknowledgement(def: SettingDef, before: unknown, after: unknown): boolean {
+  if (!def.acknowledge) return false;
+  if (before === after) return false;
+  if (typeof after === 'boolean') return after === true;
+  return true;
 }
 
 /**
@@ -115,7 +152,7 @@ export async function updateSettings(
   actor: { id: string; ip?: string | null },
 ): Promise<void> {
   const current = new Map(await load());
-  const parsed: { def: SettingDef; value: unknown }[] = [];
+  const parsed: { def: SettingDef; value: unknown; acknowledged: boolean }[] = [];
 
   for (const update of updates) {
     const def = settingDef(update.key);
@@ -128,13 +165,16 @@ export async function updateSettings(
     if (!result.success) {
       throw new Error(`${def.label}: ${result.error.issues[0]?.message ?? 'invalid value'}`);
     }
-    parsed.push({ def, value: result.data });
+    if (needsAcknowledgement(def, current.get(def.key), result.data) && !update.acknowledged) {
+      throw new AcknowledgementRequiredError(def);
+    }
+    parsed.push({ def, value: result.data, acknowledged: update.acknowledged === true });
     current.set(def.key, result.data);
   }
 
   validateCombination(current);
 
-  for (const { def, value } of parsed) {
+  for (const { def, value, acknowledged } of parsed) {
     const before = (await load()).get(def.key);
     const stored = def.secret
       ? seal(Buffer.from(String(value), 'utf8')).toString('base64')
@@ -160,7 +200,15 @@ export async function updateSettings(
       entityType: 'firm_setting',
       detail: def.secret
         ? { key: def.key, changed: true, secret: true }
-        : { key: def.key, before, after: value },
+        : {
+            key: def.key,
+            before,
+            after: value,
+            // Recorded on the row, not just checked: the value of an acknowledgement is that
+            // the log can later say this admin was told what changed and proceeded.
+            ...(def.acknowledge ? { acknowledged } : {}),
+            ...(def.restartRequired ? { pendingRestart: true } : {}),
+          },
     });
   }
 
@@ -172,9 +220,47 @@ export const UNCHANGED_SECRET = '__unchanged__';
 
 /** Admin-facing view. Secrets report only whether they are set. */
 export async function settingsForAdmin(): Promise<
-  { key: string; group: string; label: string; help: string; input: string; options?: readonly string[]; value: unknown; secret: boolean; isSet: boolean }[]
+  {
+    key: string;
+    group: string;
+    label: string;
+    help: string;
+    input: string;
+    options?: readonly string[];
+    value: unknown;
+    secret: boolean;
+    isSet: boolean;
+    note?: string;
+    /**
+     * Who last changed it and when, `null` while it is still the seeded default.
+     *
+     * Served because a switch whose whole justification is "the record says who did this" should
+     * show that record where the switch is, not only in the audit tab. An admin looking at a
+     * dangerous setting wants to know it was deliberate, and by whom.
+     */
+    updatedBy: string | null;
+    updatedAt: string | null;
+    /** Only bites on the next boot of the API and worker; the UI badges it rather than lying. */
+    restartRequired: boolean;
+    /** Non-null when turning this on needs a typed confirmation, and this is the text of it. */
+    acknowledge: string | null;
+  }[]
 > {
   const values = await load();
+
+  // Provenance for the rows that have been changed from the seeded default. One join rather than
+  // a query per setting; a setting nobody has touched has no row and reports null.
+  const rows = await db
+    .select({
+      key: firmSettings.key,
+      at: firmSettings.updatedAt,
+      by: users.displayName,
+      byEmail: users.email,
+    })
+    .from(firmSettings)
+    .leftJoin(users, eq(firmSettings.updatedBy, users.id));
+  const provenance = new Map(rows.map((r) => [r.key, r]));
+
   return SETTINGS.map((def) => {
     const value = values.get(def.key);
     const isSet = def.secret ? String(value ?? '') !== '' : true;
@@ -188,6 +274,11 @@ export async function settingsForAdmin(): Promise<
       value: def.secret ? (isSet ? UNCHANGED_SECRET : '') : value,
       secret: def.secret ?? false,
       isSet,
+      ...(def.note ? { note: def.note } : {}),
+      restartRequired: def.restartRequired ?? false,
+      acknowledge: def.acknowledge ?? null,
+      updatedBy: provenance.get(def.key)?.by ?? provenance.get(def.key)?.byEmail ?? null,
+      updatedAt: provenance.get(def.key)?.at?.toISOString() ?? null,
     };
   });
 }

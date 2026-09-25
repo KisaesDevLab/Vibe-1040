@@ -94,7 +94,7 @@ export const api = {
   adminSettings: () =>
     request<{ settings: SettingRow[]; environment: EnvSetting[] }>('/api/admin/settings'),
 
-  updateSettings: (updates: { key: string; value: unknown }[]) =>
+  updateSettings: (updates: { key: string; value: unknown; acknowledged?: boolean }[]) =>
     request<{ ok: boolean; settings: SettingRow[] }>('/api/admin/settings', {
       method: 'PATCH',
       body: JSON.stringify({ updates }),

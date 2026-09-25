@@ -213,8 +213,21 @@ docker compose --profile draft-return build \
   --build-arg OPENTAX_SHA256=7f0911050f7f34e10c149330e4bff9a1001a9eba5a70f50621e7c2c3aaaa02d4 \
   opentax
 docker compose --profile draft-return up -d opentax
-# then set DRAFT_RETURN_ENABLED=true and OPENTAX_VERSION=2.0.4 in .env and restart the api
+# then switch it on: Admin → Settings → Engine and pipeline → Draft return (OpenTax).
+# DRAFT_RETURN_ENABLED in .env is only the seed for a deployment that has never set it.
 ```
+
+**Changed 2026-09-25 (QUESTIONS.md Q26): the switch is in the UI, not the environment.** Turning
+it on takes a typed acknowledgement naming the open WISP question (Q21), and the audit row
+records who was told and proceeded — which is better evidence than an operator editing `.env`
+over SSH, which is what the old rule actually produced. `DRAFT_RETURN_ENABLED` still seeds a
+deployment that has never touched the setting, so an existing `.env` keeps behaving as it did;
+once an admin changes it in the UI the stored value wins and the env key stops mattering.
+
+`OPENTAX_VERSION` moved the same way and for the same reason. Note what editing it does and does
+not do: it changes which version the app *expects*, and so which mismatches it reports. It
+upgrades nothing — the version that runs is pinned and checksum-verified when the image is built
+(§14), and Admin → Draft engine reports rather than installs.
 
 `OPENTAX_VERSION` is compared against what the sidecar reports, and a mismatch is logged loudly
 on every draft — a node map must not drift under the engine. Check `/health`: it carries a

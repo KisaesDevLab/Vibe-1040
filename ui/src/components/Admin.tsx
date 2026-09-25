@@ -28,6 +28,7 @@ const GROUP_LABELS: Record<string, string> = {
   sms: 'SMS delivery',
   authentication: 'Authentication',
   licensing: 'Licensing',
+  engine: 'Engine and pipeline',
 };
 
 export function Admin({ role, onError }: { role: string; onError: (m: string) => void }) {
@@ -146,9 +147,10 @@ function DraftEngineTab({ onError }: { onError: (m: string) => void }) {
       <div className="card">
         <h3>Draft return engine</h3>
         <p className="muted">
-          The draft return is off for this deployment. It is an environment key,{' '}
-          <code>DRAFT_RETURN_ENABLED</code>, not a setting on this page, because it changes what
-          the app computes about a taxpayer — which is not a click.
+          The draft return is switched off for this firm, so there is no engine to report on.
+          Turn it on under <strong>Settings → Engine and pipeline</strong>. It takes effect
+          immediately and the change is recorded against your account, because it changes what
+          the app computes about a taxpayer.
         </p>
       </div>
     );
@@ -424,6 +426,14 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  /**
+   * Which pending acknowledgements the admin has ticked.
+   *
+   * Inline rather than a `window.confirm`: the text says which question is still open and what
+   * gets recorded, and a native dialog renders it as an unstyled wall that people click through
+   * without reading. Cleared on every load so it can never carry over to a later change.
+   */
+  const [acked, setAcked] = useState<Record<string, boolean>>({});
 
   const load = useCallback(() => {
     api
@@ -432,6 +442,7 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
         setRows(d.settings);
         setEnv(d.environment);
         setDraft(Object.fromEntries(d.settings.map((s) => [s.key, s.value])));
+        setAcked({});
       })
       .catch((e: Error) => onError(e.message));
   }, [onError]);
@@ -440,14 +451,36 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
 
   const dirty = rows.filter((r) => JSON.stringify(draft[r.key]) !== JSON.stringify(r.value));
 
+  /**
+   * Which dirty rows need the admin to confirm what they change, before anything is sent.
+   *
+   * Asked here rather than trusted here — the server refuses an unacknowledged change with a
+   * 409 either way (`AcknowledgementRequiredError`), so this dialog is the courtesy and the
+   * server check is the control. Only the permissive direction asks: switching a guard back
+   * off is the safe direction and must never be made tedious.
+   */
+  const needsAck = dirty.filter(
+    (r) => r.acknowledge !== null && draft[r.key] !== r.value && draft[r.key] !== false,
+  );
+  /** Every pending acknowledgement ticked? The save button waits on this rather than a dialog. */
+  const ackSatisfied = needsAck.every((r) => acked[r.key] === true);
+
   const save = () => {
+    if (!ackSatisfied) return;
     setBusy(true);
     setSaved(false);
     api
-      .updateSettings(dirty.map((r) => ({ key: r.key, value: draft[r.key] })))
+      .updateSettings(
+        dirty.map((r) => ({
+          key: r.key,
+          value: draft[r.key],
+          ...(needsAck.some((n) => n.key === r.key) ? { acknowledged: true } : {}),
+        })),
+      )
       .then((d) => {
         setRows(d.settings);
         setDraft(Object.fromEntries(d.settings.map((s) => [s.key, s.value])));
+        setAcked({});
         setSaved(true);
       })
       .catch((e: Error) => onError(e.message))
@@ -477,6 +510,8 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
                   {r.secret && (
                     <span className={r.isSet ? 'pill ok' : 'pill warn'}>{r.isSet ? 'set' : 'not set'}</span>
                   )}
+                  {r.restartRequired && <span className="pill">needs a restart</span>}
+                  {r.acknowledge !== null && <span className="pill warn">audited</span>}
                 </div>
                 <SettingInput
                   row={r}
@@ -484,6 +519,47 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
                   onChange={(v) => setDraft((d) => ({ ...d, [r.key]: v }))}
                 />
                 <span className="setting-help">{r.help}</span>
+                {r.note && <span className="setting-help">{r.note}</span>}
+                {/*
+                  Said at the moment it is true, not in a paragraph at the top of the page: this
+                  value is read once at boot, so a saved change is pending until someone restarts
+                  the API and the worker. A switch that moves and silently changes nothing is the
+                  same defect as the filing-status control that rendered dead for a week.
+                */}
+                {r.restartRequired && JSON.stringify(draft[r.key]) !== JSON.stringify(r.value) && (
+                  <span className="warn-note">
+                    Saving this stores it, but it does not take effect until the API and the
+                    worker restart — the task classes it decides are registered at startup.
+                  </span>
+                )}
+
+                {/*
+                  The acknowledgement, shown where the change is. The server refuses an
+                  unacknowledged change with a 409 regardless, so this is not the control — but it
+                  is where the admin finds out what they are agreeing to, so it says the specific
+                  thing (which question is open, what gets recorded) rather than "are you sure".
+                */}
+                {needsAck.some((n) => n.key === r.key) && (
+                  <div className="setting-ack">
+                    <p className="warn-note">{r.acknowledge}</p>
+                    <label className="ack-check">
+                      <input
+                        type="checkbox"
+                        checked={acked[r.key] === true}
+                        onChange={(e) => setAcked((a) => ({ ...a, [r.key]: e.target.checked }))}
+                      />
+                      <span>I understand, and this is recorded against my account.</span>
+                    </label>
+                  </div>
+                )}
+
+                {/* Provenance where the switch is, not only in the audit tab. */}
+                {r.updatedAt && (
+                  <span className="setting-provenance">
+                    Changed by {r.updatedBy ?? 'an admin'} on{' '}
+                    {new Date(r.updatedAt).toLocaleString()}
+                  </span>
+                )}
               </label>
             ))}
 
@@ -495,10 +571,15 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
       <section className="card">
         <h2>Environment (read-only)</h2>
         <p className="muted">
-          Set at provisioning and changed only in <code>.env</code> with a restart. These are
-          deliberately not editable here: the region assertion is the control keeping taxpayer
-          page images inside US inference, and the keys below would be handed to anyone who
-          compromised an admin account.
+          Set at provisioning and changed only in <code>.env</code>. Most of what used to be
+          here is now editable above, under <strong>Engine and pipeline</strong>. These five are
+          not, and for two different reasons &mdash; each row says which:{' '}
+          <strong>changing it would destroy or leak this firm&rsquo;s own data</strong> (rotating
+          the TIN salt orphans every taxpayer record; the blob key cannot be a setting at all,
+          because the secrets in this table are encrypted with it), or{' '}
+          <strong>it is the one control §11 names</strong>, asserted at startup and failing
+          closed. If one of these should move too, it needs a migration path rather than a
+          switch &mdash; say so and it gets one.
         </p>
         {env.map((e) => (
           <div key={e.key} className="env-row">
@@ -511,7 +592,17 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
 
       <div className="save-bar">
         <span>{dirty.length > 0 ? `${dirty.length} unsaved change(s)` : saved ? 'Saved.' : 'No changes.'}</span>
-        <button disabled={busy || dirty.length === 0} onClick={save}>
+        {/*
+          Say what is holding the save, rather than presenting a disabled button with no reason —
+          the acknowledgement may be scrolled well off screen in a page this long.
+        */}
+        {dirty.length > 0 && !ackSatisfied && (
+          <span className="warn-note">
+            {needsAck.filter((r) => acked[r.key] !== true).map((r) => r.label).join(', ')} needs
+            acknowledging above before this can save.
+          </span>
+        )}
+        <button disabled={busy || dirty.length === 0 || !ackSatisfied} onClick={save}>
           Save changes
         </button>
       </div>

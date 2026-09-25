@@ -14,6 +14,10 @@ export default defineConfig({
     // One OpenTax wrapper for the whole run (P17). Three files need the engine reachable at
     // the single OPENTAX_URL the app reads, and vitest runs files in parallel.
     globalSetup: ['test/helpers/opentax-global.ts'],
+    // Per-file, in-process: the boot snapshot in src/settings/runtime.ts is module state, so a
+    // globalSetup (separate process) could not seed it. Every entry point loads it at boot and
+    // reading it before that throws; this is the suite doing what the entry points do.
+    setupFiles: ['test/helpers/startup-settings.ts'],
     env: {
       NODE_ENV: 'test',
       DATABASE_URL: 'postgres://vibe1040:vibe1040@localhost:5432/vibe1040_test',

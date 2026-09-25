@@ -27,7 +27,12 @@ import { breakglassStatus, isBreakglassEmail } from '../lib/vibeAuthUsers.ts';
 import { normalizePhone, verifyEmail } from '../notify/channels.ts';
 import { retentionForecast, runRetention } from '../retention/purge.ts';
 import { readOnlyEnvironment } from '../settings/registry.ts';
-import { setting, settingsForAdmin, updateSettings } from '../settings/store.ts';
+import {
+  AcknowledgementRequiredError,
+  setting,
+  settingsForAdmin,
+  updateSettings,
+} from '../settings/store.ts';
 import { auditAccess, requireRole, requireUser } from './middleware.ts';
 
 export function registerAdminRoutes(app: FastifyInstance): void {
@@ -42,13 +47,33 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     const user = await requireRole(req, reply, ['admin']);
     if (!user) return;
     const body = z
-      .object({ updates: z.array(z.object({ key: z.string(), value: z.unknown() }).transform((u) => ({ key: u.key, value: u.value }))) })
+      .object({
+        updates: z.array(
+          z
+            .object({ key: z.string(), value: z.unknown(), acknowledged: z.boolean().optional() })
+            .transform((u) => ({
+              key: u.key,
+              value: u.value,
+              ...(u.acknowledged === undefined ? {} : { acknowledged: u.acknowledged }),
+            })),
+        ),
+      })
       .parse(req.body);
 
     try {
       await updateSettings(body.updates, { id: user.id, ip: req.ip });
       return { ok: true, settings: await settingsForAdmin() };
     } catch (err) {
+      // A missing acknowledgement is its own answer, not a validation error: the UI has to be
+      // able to show the text and ask, and a 409 with the text in it is what lets it.
+      if (err instanceof AcknowledgementRequiredError) {
+        return reply.code(409).send({
+          error: 'acknowledgement_required',
+          key: err.key,
+          acknowledge: err.acknowledge,
+          message: err.message,
+        });
+      }
       return reply.code(400).send({ error: 'invalid_settings', message: (err as Error).message });
     }
   });
