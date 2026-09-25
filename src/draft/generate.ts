@@ -25,7 +25,7 @@ import { setting } from '../settings/store.ts';
 import { loadMappedDocuments } from '../worksheet/generate.ts';
 import { computeReturn, DraftEngineError, engineHealth, type EngineResult } from './client.ts';
 import { compareDraft, type DraftComparison } from './compare.ts';
-import { type FilingStatusOption, loadNodeMap } from './nodes.ts';
+import { type FilingStatusOption, loadNodeMap, resolveNodeMap } from './nodes.ts';
 import { buildDraftInput, type DraftOmission, type DraftParams } from './translate.ts';
 
 /** Raised when the draft return is not switched on for this deployment. */
@@ -159,7 +159,9 @@ export async function generateDraftReturn(
       reportedCents: null,
       computedCents: c.computedCents,
       verdict: 'computed_only',
-      note: null,
+      // Carried, so the caveat is stored beside the figure and reaches the workbook too —
+      // §14 requires the omissions and the caveats on the same sheet as the numbers.
+      note: c.note ?? null,
     })),
   ];
   if (lineRows.length > 0) await db.insert(draftReturnLines).values(lineRows);
@@ -260,22 +262,32 @@ export async function draftReturnStatus(taxYear?: number): Promise<{
    * refused at the `general` node.
    */
   filingStatuses: FilingStatusOption[];
+  /**
+   * Which year's node map the vocabulary came from, and `null` when there is no map at all.
+   *
+   * Reported rather than swallowed. An empty `filingStatuses` renders a select with no options
+   * and a button that can never be pressed, so the panel has to be able to say why instead of
+   * offering a dead control — and the cause is a missing data file, which names its own fix.
+   */
+  filingStatusYear: number | null;
 }> {
-  // Read from whichever year's map we have; the vocabulary is per release, not per bundle.
-  let filingStatuses: FilingStatusOption[] = [];
-  try {
-    filingStatuses = (await loadNodeMap(taxYear ?? new Date().getFullYear())).filingStatuses;
-  } catch {
-    // No map for that year is not an error here — the UI just gets no options and says so.
-  }
+  // The vocabulary is a property of the engine release, not of the tax year, so the newest map
+  // on disk is a correct source for it — which is what `resolveNodeMap` falls back to when the
+  // caller names a year with no map, and when it names no year at all. Never
+  // `new Date().getFullYear()`: the calendar year is 2026 while the season being prepared is
+  // 2025, and asking for 2026 returned nothing at all.
+  const resolved = await resolveNodeMap(taxYear ?? Number.NaN);
+  const filingStatuses = resolved?.file.filingStatuses ?? [];
+  const filingStatusYear = resolved?.year ?? null;
   if (!env.DRAFT_RETURN_ENABLED) {
-    return { enabled: false, engine: null, expectedVersion: env.OPENTAX_VERSION, filingStatuses };
+    return { enabled: false, engine: null, expectedVersion: env.OPENTAX_VERSION, filingStatuses, filingStatusYear };
   }
   return {
     enabled: true,
     engine: await engineHealth(),
     expectedVersion: env.OPENTAX_VERSION,
     filingStatuses,
+    filingStatusYear,
   };
 }
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { assertConsistent, loadNodeMap, type NodeMapFile } from '../src/draft/nodes.ts';
+import {
+  assertConsistent,
+  loadNodeMap,
+  nodeMapYears,
+  resolveNodeMap,
+  type NodeMapFile,
+} from '../src/draft/nodes.ts';
 import { registry } from '../src/schemas/registry.ts';
 
 /**
@@ -230,5 +236,53 @@ describe('the line comparison map', () => {
     expect(noted.has('SCH1:21')).toBe(false);
     const notCompared = new Set(file.lines.notCompared.map((l) => l.lineRef));
     for (const ref of ['SCH1:1', 'SCH1:7', 'SCH1:21']) expect(notCompared.has(ref)).toBe(true);
+  });
+});
+
+/**
+ * The bug a screenshot found and no unit test did: `draftReturnStatus` defaulted to
+ * `new Date().getFullYear()`. The calendar year is 2026, the only node map is 2025's, and the
+ * miss was swallowed by a bare `catch` — so the panel rendered a filing-status select with no
+ * options above a button that could never be pressed. Nothing threw and nothing logged.
+ *
+ * A preparer works last season's returns for most of a year. The wall-clock year is never the
+ * right default for a tax year in this app.
+ */
+describe('resolving which node map to read a vocabulary from', () => {
+  it('lists the years that actually have a map, newest first', async () => {
+    const years = await nodeMapYears();
+    expect(years).toContain(2025);
+    expect(years).toEqual([...years].sort((a, b) => b - a));
+  });
+
+  it('returns the asked-for year when there is a map for it', async () => {
+    const resolved = await resolveNodeMap(2025);
+    expect(resolved?.year).toBe(2025);
+    expect(resolved?.substituted).toBe(false);
+    expect(resolved?.file.filingStatuses.map((f) => f.code)).toContain('mfj');
+  });
+
+  it('falls back to the newest map rather than returning nothing', async () => {
+    // The shape of the original bug: a year with no map of its own.
+    const resolved = await resolveNodeMap(2026);
+    expect(resolved, 'a year with no map must still yield a vocabulary').not.toBeNull();
+    expect(resolved!.substituted).toBe(true);
+    expect(resolved!.year).toBe((await nodeMapYears())[0]);
+    // And the codes are the engine's own, which is the whole reason the UI asks the server:
+    // the long names (`married_filing_jointly`) are refused at the `general` node.
+    expect(resolved!.file.filingStatuses.map((f) => f.code).sort()).toEqual([
+      'hoh',
+      'mfj',
+      'mfs',
+      'qss',
+      'single',
+    ]);
+  });
+
+  it('reports no map at all as null, rather than an empty vocabulary with no reason', async () => {
+    // An empty directory is the one case where the panel must say why instead of offering a
+    // control. `null` is what lets it tell the two apart.
+    expect(await resolveNodeMap(2025, '/nonexistent/opentax-nodes')).toBeNull();
+    expect(await nodeMapYears('/nonexistent/opentax-nodes')).toEqual([]);
   });
 });

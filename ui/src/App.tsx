@@ -1010,7 +1010,7 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
               </div>
             ))}
 
-          <DraftReturnPanel bundleId={bundleId} onError={onError} />
+          <DraftReturnPanel bundleId={bundleId} taxYear={bundle?.taxYear ?? null} onError={onError} />
         </aside>
       </div>
     </div>

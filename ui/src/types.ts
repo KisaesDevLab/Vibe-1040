@@ -233,6 +233,8 @@ export interface DraftComputedOnly {
   engineLine: string;
   label: string;
   computedCents: number | null;
+  /** How to read this figure when it is confident and still misleading. Shown, never hidden. */
+  note?: string;
 }
 
 export interface DraftOmission {

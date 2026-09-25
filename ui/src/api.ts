@@ -287,14 +287,20 @@ Proceed and discard them?`)) return { ok: false };
 
   // ── draft return (P17, §14) ───────────────────────────────────────────────
 
-  /** Whether this deployment offers a draft return at all, and whether the engine is up. */
-  draftReturnStatus: () =>
+  /**
+   * Whether this deployment offers a draft return at all, and whether the engine is up.
+   *
+   * `taxYear` is the bundle's, not the browser's clock. The node map is per season and the
+   * server falls back to the newest one it has, reporting which in `filingStatusYear`.
+   */
+  draftReturnStatus: (taxYear?: number | null) =>
     request<{
       enabled: boolean;
       engine: { ok: boolean; version: string | null; reason?: string } | null;
       expectedVersion: string;
       filingStatuses: { code: string; label: string }[];
-    }>('/api/draft-return/status'),
+      filingStatusYear: number | null;
+    }>(`/api/draft-return/status${taxYear ? `?taxYear=${taxYear}` : ''}`),
 
   /**
    * Compute a draft return. `filingStatus` is stated by the reviewer because no source

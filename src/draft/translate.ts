@@ -152,6 +152,11 @@ function withhold(
   return { documentId: doc.documentId, formType: doc.formType, fieldKey, reason, detail };
 }
 
+/** One terminating full stop, whatever the schema's own reason already ended with. */
+function sentence(text: string): string {
+  return /[.!?]$/.test(text.trimEnd()) ? text.trimEnd() : `${text.trimEnd()}.`;
+}
+
 function fieldLabel(schema: FormSchema, fieldKey: string): string {
   const field = schema.fields.find((f) => f.key === fieldKey);
   if (!field) return fieldKey;
@@ -243,8 +248,12 @@ export function buildDraftInput(
           doc,
           judgment.key,
           'judgment_required',
-          `${fieldLabel(doc.schema, judgment.key)} needs a preparer's judgment` +
-            `${judgment.judgmentReason ? `: ${judgment.judgmentReason}` : ''}.`,
+          // The schema's own reason is a sentence and usually ends in a full stop of its
+          // own, so only add one when it does not — `(§9)..` reads as a typo in the panel.
+          sentence(
+            `${fieldLabel(doc.schema, judgment.key)} needs a preparer's judgment` +
+              `${judgment.judgmentReason ? `: ${judgment.judgmentReason}` : ''}`,
+          ),
         ),
       );
       continue;

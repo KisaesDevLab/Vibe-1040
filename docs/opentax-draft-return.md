@@ -201,10 +201,11 @@ the compose service is behind a profile so nothing pulls it:
 ```bash
 # build the engine image against a pinned release
 docker compose --profile draft-return build \
-  --build-arg OPENTAX_VERSION=v0.1.0 \
-  --build-arg OPENTAX_SHA256=<sha256 of opentax-linux-x64> opentax
+  --build-arg OPENTAX_VERSION=v2.0.4 \
+  --build-arg OPENTAX_SHA256=7f0911050f7f34e10c149330e4bff9a1001a9eba5a70f50621e7c2c3aaaa02d4 \
+  opentax
 docker compose --profile draft-return up -d opentax
-# then set DRAFT_RETURN_ENABLED=true and OPENTAX_VERSION=v0.1.0 in .env and restart the api
+# then set DRAFT_RETURN_ENABLED=true and OPENTAX_VERSION=2.0.4 in .env and restart the api
 ```
 
 `OPENTAX_VERSION` is compared against what the sidecar reports, and a mismatch is logged loudly
@@ -233,6 +234,29 @@ on every draft — a node map must not drift under the engine. Check `/health`: 
   down. It never fails a bundle over a missing draft return.
 - Draft returns are **derived taxpayer data**: they purge on the retention schedule and vanish with
   `DELETE /api/bundles/:id`, logged to the same `purge_log` a policy purge writes (§11).
+
+### Known engine behaviour, and how it is surfaced
+
+The engine's output is **never corrected here**. A draft return that edited the engine's figures
+would be a check on nothing: the whole value of the thing is that two independent derivations of
+the same documents are put side by side. Where a figure is confident and, read alone, misleading,
+the node map carries a `note` on that line instead — rendered beside the figure in the panel,
+stored on the line, and carried onto the `Draft Return` workbook sheet.
+
+One such note ships today. **Engine 2.0.4 reports `line12c_deduction_total` as the itemised
+total even when the standard deduction is larger and is what the same run applied to taxable
+income.** Observed twice on different bundles: most recently 18,349 on line 12c against a 31,500
+married-filing-jointly standard deduction, with taxable income correctly computed on 31,500. The
+two lines therefore need not reconcile on the face of the draft. Worth reporting upstream; it is
+recorded in STATE.md's risk register and does not affect any line the harness scores.
+
+### Looking at the panel
+
+The panel lives in the review aside, which is about 290 CSS pixels wide. That is narrow enough
+to be worth remembering when changing it: the first browser render showed a four-column money
+table breaking every 1040 line label one word per line and clipping the agreement column off the
+right edge, which is why the comparison is stacked blocks rather than a table. It compiled and
+type-checked in that state for a week.
 
 ## 7. Licence posture
 

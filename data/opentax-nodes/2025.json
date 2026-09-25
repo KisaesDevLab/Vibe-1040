@@ -1566,7 +1566,8 @@
       {
         "engineForm": "f1040",
         "engineLine": "line12c_deduction_total",
-        "label": "Standard or itemized deduction"
+        "label": "Standard or itemized deduction",
+        "note": "Engine 2.0.4 reports the itemised total here even when the standard deduction is larger and is what the same run actually applied to taxable income, so this figure and taxable income need not reconcile on the face of the draft. Verified 2026-09-25 on a bundle whose only Schedule A items came to 18,349 against a 31,500 married-filing-jointly standard deduction: this line read 18,349 while taxable income was computed on 31,500. Reported as the engine produced it, not corrected — and the app decides neither deduction (§14)."
       },
       {
         "engineForm": "f1040",
@@ -1576,7 +1577,8 @@
       {
         "engineForm": "f1040",
         "engineLine": "line14_deductions_qbi_total",
-        "label": "Deductions plus QBI"
+        "label": "Deductions plus QBI",
+        "note": "Carries the same caveat as line 12c, which it includes."
       },
       {
         "engineForm": "f1040",

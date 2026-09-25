@@ -49,6 +49,8 @@ export interface ComputedOnlyFigure {
   engineLine: string;
   label: string;
   computedCents: number | null;
+  /** From the node map: how to read this figure when it is confident and still misleading. */
+  note?: string;
 }
 
 export interface DraftComparison {
@@ -144,6 +146,7 @@ export function compareDraft(
       engineLine: c.engineLine,
       label: c.label,
       computedCents: engineCents(result, c.engineForm, c.engineLine),
+      ...(c.note ? { note: c.note } : {}),
     })),
     counts,
     // `engine_silent` is usually a withheld document rather than a defect, and is listed

@@ -350,3 +350,21 @@ describe('provenance', () => {
     expect(ids).toEqual(['doc-a', 'doc-b']);
   });
 });
+
+/**
+ * Found by rendering the panel rather than by a test: a schema's judgment reason is already a
+ * sentence, so appending a full stop produced `(§9)..` on screen.
+ */
+describe('omission detail punctuation', () => {
+  it('ends a judgment omission with exactly one full stop', async () => {
+    const input = buildDraftInput(await nodeMap(), [
+      await doc('1099-R', { box_1: money(2_500_000), box_2b_not_determined: flag(true) }),
+    ]);
+
+    const judgment = input.omissions.find((o) => o.reason === 'judgment_required');
+    expect(judgment).toBeDefined();
+    // The schema's reason already ends in `(§9).`; appending another put `(§9)..` on screen.
+    expect(judgment!.detail).not.toMatch(/\.\.$/);
+    expect(judgment!.detail).toMatch(/[.!?]$/);
+  });
+});

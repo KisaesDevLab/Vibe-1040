@@ -18,7 +18,7 @@
  *    `codeGroups`, `monthlyArrays` or `ignored`. A box that quietly reaches no engine field
  *    is the same silent-omission class as a money field with no line mapping.
  */
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { loadMapping } from '../mapping/engine.ts';
@@ -149,7 +149,21 @@ const comparableLine = z
 
 /** An engine figure with no worksheet counterpart: displayed, never compared. */
 const computedOnlyLine = z
-  .object({ engineForm: z.string(), engineLine: z.string(), label: z.string() })
+  .object({
+    engineForm: z.string(),
+    engineLine: z.string(),
+    label: z.string(),
+    /**
+     * Shown beside the figure when the engine's own output needs reading with care.
+     *
+     * Not a place to correct the engine — a draft return shows what the engine computed,
+     * verbatim, or it is not a check on anything. It is for the case where a figure is
+     * confident and, on its own, misleading: 2.0.4's `line12c_deduction_total` reports the
+     * itemised total even when it is smaller than the standard deduction the same run applied
+     * to taxable income, so the two lines do not reconcile on the face of the draft.
+     */
+    note: z.string().optional(),
+  })
   .strict();
 
 const lineMapSection = z
@@ -217,6 +231,48 @@ export async function loadNodeMap(taxYear: number, root?: string): Promise<NodeM
   await assertConsistent(parsed, await registry());
   cache.set(taxYear, parsed);
   return parsed;
+}
+
+/**
+ * Which tax years actually have a node map on disk, newest first.
+ *
+ * Exists because "the current year" is the wrong default for anything in this app and the
+ * draft-return status route proved it: the calendar year is 2026 while the only map is 2025's,
+ * so asking for `new Date().getFullYear()` returned no filing-status vocabulary and the panel
+ * rendered a select with no options and a button that could never be pressed. A preparer works
+ * last season's returns for most of a year; a tax year is never the wall-clock year by default.
+ */
+export async function nodeMapYears(root?: string): Promise<number[]> {
+  const dir = root ?? join(process.cwd(), 'data', 'opentax-nodes');
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return [];
+  }
+  return names
+    .map((n) => /^(\d{4})\.json$/.exec(n)?.[1])
+    .filter((y): y is string => y !== undefined)
+    .map(Number)
+    .sort((a, b) => b - a);
+}
+
+/**
+ * The node map for `taxYear` if there is one, else the newest there is — and it says which.
+ *
+ * Deliberately not `loadNodeMap`'s behaviour. Translating a document against another season's
+ * node map would be the §14 rule-6 mistake in a different costume, so the strict loader stays
+ * strict and this exists only for the places that need the engine's *vocabulary* (its filing
+ * statuses), which is a property of the engine release rather than of the tax year.
+ */
+export async function resolveNodeMap(
+  taxYear: number,
+  root?: string,
+): Promise<{ file: NodeMapFile; year: number; substituted: boolean } | null> {
+  const years = await nodeMapYears(root);
+  const year = years.includes(taxYear) ? taxYear : years[0];
+  if (year === undefined) return null;
+  return { file: await loadNodeMap(year, root), year, substituted: year !== taxYear };
 }
 
 /** Test seam, mirroring `__setMapping` in the line-mapping engine. */

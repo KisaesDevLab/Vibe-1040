@@ -32,9 +32,12 @@ const VERDICT_LABEL: Record<DraftVerdict, string> = {
 
 export function DraftReturnPanel({
   bundleId,
+  taxYear,
   onError,
 }: {
   bundleId: string;
+  /** The bundle's tax year, so the node map asked for is the season being prepared. */
+  taxYear: number | null;
   onError: (message: string) => void;
 }) {
   // The filing-status codes come from the server, which reads them out of the node map.
@@ -44,6 +47,7 @@ export function DraftReturnPanel({
     enabled: boolean;
     engine: { ok: boolean; version: string | null; reason?: string } | null;
     filingStatuses: { code: string; label: string }[];
+    filingStatusYear: number | null;
   } | null>(null);
   const [filingStatus, setFilingStatus] = useState('');
   const [draft, setDraft] = useState<DraftReturn | null>(null);
@@ -51,10 +55,12 @@ export function DraftReturnPanel({
 
   useEffect(() => {
     api
-      .draftReturnStatus()
+      .draftReturnStatus(taxYear)
       .then(setStatus)
-      .catch(() => setStatus({ enabled: false, engine: null, filingStatuses: [] }));
-  }, []);
+      .catch(() =>
+        setStatus({ enabled: false, engine: null, filingStatuses: [], filingStatusYear: null }),
+      );
+  }, [taxYear]);
 
   // Not enabled here, or the engine is not up: show nothing at all rather than a dead
   // control. This is an optional checking aid and its absence is not an error state.
@@ -84,7 +90,19 @@ export function DraftReturnPanel({
         preparer&rsquo;s judgment is withheld from the engine and listed below.
       </p>
 
-      {!draft && (
+      {/*
+        No vocabulary means no node map on disk at all. Say that, rather than render a select
+        with no options above a button that can never be pressed — a control that cannot work
+        must explain itself, and this one's cause is a missing data file that names its own fix.
+      */}
+      {!draft && status.filingStatuses.length === 0 && (
+        <p className="draft-unavailable">
+          No OpenTax node map is installed, so there is nothing to compute against. Adding a tax
+          year is a data change: <code>data/opentax-nodes/&lt;year&gt;.json</code>.
+        </p>
+      )}
+
+      {!draft && status.filingStatuses.length > 0 && (
         <div className="draft-start">
           <label>
             Filing status
@@ -144,44 +162,56 @@ export function DraftReturnPanel({
             </div>
           )}
 
-          <table className="draft-table">
-            <thead>
-              <tr>
-                <th>Line</th>
-                <th>Documents report</th>
-                <th>Engine computes</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {shown?.map((line) => (
-                <tr key={line.lineRef} className={line.verdict === 'differs' ? 'draft-row-differs' : undefined}>
-                  <td>
-                    <span className="draft-ref">{line.lineRef}</span>
-                    <span className="draft-label">{line.label}</span>
-                    {line.note && <span className="draft-note">Expected: {line.note}</span>}
-                  </td>
-                  <td className="draft-num">{formatCents(line.reportedCents)}</td>
-                  <td className="draft-num draft-computed">{formatCents(line.computedCents)}</td>
-                  <td className="draft-verdict">{VERDICT_LABEL[line.verdict]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {/*
+            Stacked blocks rather than a four-column table. This panel lives in the review
+            aside, which is about 290px wide, and the first render in a browser showed what a
+            table does there: every 1040 line label broke one word per line and the agreement
+            column was clipped off the right edge entirely. Two money figures need to sit side
+            by side and be read at a glance; a label does not need to share their row.
+          */}
+          <div className="draft-lines">
+            {shown?.map((line) => (
+              <div
+                key={line.lineRef}
+                className={`draft-line${line.verdict === 'differs' ? ' draft-line-differs' : ''}`}
+              >
+                <div className="draft-line-head">
+                  <span className="draft-ref">{line.lineRef}</span>
+                  <span className={`draft-verdict draft-verdict-${line.verdict}`}>
+                    {VERDICT_LABEL[line.verdict]}
+                  </span>
+                </div>
+                <div className="draft-label">{line.label}</div>
+                {line.note && <div className="draft-note">Expected: {line.note}</div>}
+                <dl className="draft-figures">
+                  <div>
+                    <dt>Documents report</dt>
+                    <dd className="draft-num">{formatCents(line.reportedCents)}</dd>
+                  </div>
+                  <div>
+                    <dt>Engine computes</dt>
+                    <dd className="draft-num draft-computed">{formatCents(line.computedCents)}</dd>
+                  </div>
+                </dl>
+              </div>
+            ))}
+          </div>
 
           <h4>Computed by the engine, with nothing on the worksheet to compare</h4>
-          <table className="draft-table">
-            <tbody>
-              {draft.comparison.computedOnly.map((c) => (
-                <tr key={`${c.engineForm}.${c.engineLine}`}>
-                  <td>
-                    <span className="draft-label">{c.label}</span>
-                  </td>
-                  <td className="draft-num draft-computed">{formatCents(c.computedCents)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="draft-lines">
+            {draft.comparison.computedOnly.map((c) => (
+              <div key={`${c.engineForm}.${c.engineLine}`} className="draft-line draft-line-computed">
+                <div className="draft-computed-row">
+                  <span className="draft-label">{c.label}</span>
+                  <span className="draft-num draft-computed">{formatCents(c.computedCents)}</span>
+                </div>
+                {/* A confident figure that needs reading with care says so here, beside
+                    itself. It is never corrected and never dropped: a draft return that
+                    edited the engine's output would be a check on nothing. */}
+                {c.note && <div className="draft-note">{c.note}</div>}
+              </div>
+            ))}
+          </div>
 
           {(draft.validation.hard.length > 0 || draft.validation.soft.length > 0) && (
             <details className="draft-validation">

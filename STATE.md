@@ -110,14 +110,76 @@ computed-only figures, so a draft would display it. Raised rather than worked ar
 
 - `opentax/Dockerfile` has **never been built** — Docker is unavailable in the development
   environment. The pinned tag and checksum are recorded and the binary was run directly instead.
-- The three draft-return routes have not been exercised over HTTP.
-- **The UI panel has still not been looked at.** It cannot render without
-  `@kisaesdevlab/vibe-auth/react`, which needs a `read:packages` token.
 - **P17 has not exited.** Q21 is unanswered, and the phase also wants a draft return hand-checked
-  line by line by a person against a known packet.
+  line by line by a person against a known packet. A screenshot is not that check.
+- The sign-in and Admin → Authentication screens were **deliberately not captured**: the auth
+  package was stubbed to get the SPA to boot, so those two surfaces would have been showing a
+  placeholder rather than the product.
 
 
-**Verified by execution on 2026-09-25** (P17, all three stages; carries **migration 0012**):
+**Verified by rendering, on 2026-09-25** (P17, the UI panel — the thing that had never been
+looked at):
+
+The panel was rendered in a real Chromium against the **real engine 2.0.4**, the real database
+at migration 0012, and the real API over HTTP, on a seeded `smith-joint-2025`-shaped bundle
+(two W-2s, a current and a prior-year 1098, a code-G 1099-R with "taxable amount not
+determined" ticked). `@kisaesdevlab/vibe-auth` was stubbed locally and uncommitted, because it
+needs a `read:packages` token this environment has none of; the stub's two React components
+render a visible "STUB — NOT THE REAL PACKAGE" marker and the capture asserts no such marker
+appears on any captured page. Authentication was bypassed by seeding a session row, so the
+stubbed sign-in path was never exercised.
+
+`/health` reported `2.0.4` before anything was captured, so every figure on screen came from
+the pinned binary. **Three defects the first render found, none of which any test caught:**
+
+1. **The filing-status control was dead.** `draftReturnStatus` defaulted to
+   `new Date().getFullYear()` — 2026 — the only node map is 2025's, and a bare `catch`
+   swallowed the miss. The select rendered with no options above a button that could never be
+   pressed, and nothing threw or logged. A preparer works last season's returns for most of a
+   year, so the wall-clock year is never the right default for a tax year here. Fixed:
+   `nodeMapYears` / `resolveNodeMap` fall back to the newest map and report which,
+   `filingStatusYear` is served rather than swallowed, the panel now says what is missing
+   instead of offering a dead control, and the UI passes the bundle's own year.
+2. **The comparison table was unusable.** The panel lives in the ~290px review aside, where a
+   four-column money table broke every 1040 line label one word per line and clipped the
+   agreement column off the right edge. Rebuilt as stacked blocks with the two figures side by
+   side, which is the comparison the panel exists to make.
+3. **`(§9)..`** — the schema's judgment reason already ends in a full stop and the translator
+   appended another. Fixed, and mutation-checked: revert the fix and the new test fails.
+
+**And one thing the render made unavoidable rather than broke.** Engine 2.0.4 reports
+`line12c_deduction_total` as the *itemised* total even when the standard deduction is larger
+and is what the same run applied to taxable income — on this bundle, 18,349 on line 12c against
+a 31,500 married-filing-jointly standard deduction, with taxable income correctly computed on
+31,500. The two figures do not reconcile on the face of the draft. This is the same suspected
+engine defect recorded above, now observed a second time on different numbers. **The engine's
+output is not corrected** — a draft return that edited it would be a check on nothing. The node
+map carries a `note` on that line instead, which the panel renders beside the figure and which
+is stored with the line so it reaches the workbook sheet too. Worth reporting upstream.
+
+What the capture confirmed positively: the filing-status select offers the engine's own codes
+(`single | mfj | mfs | hoh | qss`, not the long names the engine refuses); the omissions block
+is open by default and sits **above** the first figure (asserted by bounding box, not by
+reading); the withheld 1099-R and the off-year 1098 both appear in it with their reasons; line
+`1040:5a` shows 25,000.00 reported against nothing from the engine, which is §14's central
+warning made visible; and there were no console errors and no failed requests. The workbook
+generated for the same bundle carries the `Draft Return` sheet with the omissions on it.
+
+The suite is now **335 across 27 files, none skipped**, up from 330 at the real-engine pass:
+five new tests, one pinning the punctuation and four pinning the node-map year resolution that
+the dead filing-status control came from. `npm run check:providers` is clean and
+`python fixtures/generate.py test/fixtures` leaves `manifest.json` untouched.
+
+**Not verified by this:** the three draft-return routes were exercised by the browser and by
+`curl`, but not by an automated test over HTTP. `npm run typecheck`, `npm run build` and the UI
+build were run here against the **stubbed** auth package, so only CI's runs of them count.
+
+
+**Verified by execution on 2026-09-25** (P17, all three stages; carries **migration 0012**)
+— the **first pass, against a stand-in binary**. Its "Not verified" list below is a record of
+where this stood that afternoon, and the two blocks above have since falsified most of it: the
+real engine has been scored and the panel has been rendered. Kept as written rather than
+edited, because what a pass did not verify at the time is the whole point of recording it.
 
 - `npx vitest run`: **328 pass across 27 files, none skipped**, with a real Postgres.
   **85 are new**, across seven new files. Nothing regressed.
@@ -598,7 +660,7 @@ what a model returns.
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
 | P16 | Single sign-on (Vibe Auth) | implemented, released v0.10.0 (2026-09-22) | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
-| P17 | Draft return (OpenTax) | **implemented and scored against engine v2.0.4, 2026-09-25**; carries migration 0012 | translator, node map, sidecar, comparison, workbook sheet, UI panel, harness. `npm run draft -- --truth` is 13/13 against the real engine. **Cannot exit**: Q21 unanswered, the Dockerfile unbuilt, and no person has hand-checked a draft line by line. See Current position |
+| P17 | Draft return (OpenTax) | **implemented, scored against engine v2.0.4 and rendered in a browser, 2026-09-25**; carries migration 0012 | translator, node map, sidecar, comparison, workbook sheet, UI panel, harness. `npm run draft -- --truth` is 13/13 against the real engine. The panel has now been looked at, which found three defects no test caught (dead filing-status control, unreadable table in a 290px aside, `(§9)..`) — all fixed and regression-tested. **Cannot exit**: Q21 unanswered, the Dockerfile unbuilt, and no person has hand-checked a draft line by line. See Current position |
 
 ---
 
@@ -1228,7 +1290,7 @@ and remains deferred.
 | Base64 inflation pushes request bodies past Router limits during season | P7 | Largely retired — Router default is 10 MiB vs ~800 KB/page. Still measure encoded sizes at P2 exit and confirm the deployed value |
 | K-1 renderings differ across UltraTax, CCH, Lacerte | P15 | Three-rendering fixture requirement in P15 exit criteria |
 | **A draft return computed from a documents-only bundle is structurally incomplete, and looks authoritative** | P17 | Incompleteness is a first-class enumerated output (`omissions[]`, §14), not a footnote: filing status comes from the reviewer, every §9 judgment item withholds its whole document, and `complete` is false whenever anything was withheld. Every computed figure is labelled advisory |
-| **The engine is young and largely AI-maintained, and its arithmetic is only partly measured** | P17 | Pinned at v2.0.4 and checksummed. `npm run draft -- --truth` now scores 13/13 against it, which covers wages, withholding, interest and dividends — not tax, credits or phase-outs. One suspected engine defect already observed (line 12c ignoring the standard deduction; see Current position). P17 still cannot exit until a person has checked a draft line by line |
+| **The engine is young and largely AI-maintained, and its arithmetic is only partly measured** | P17 | Pinned at v2.0.4 and checksummed. `npm run draft -- --truth` now scores 13/13 against it, which covers wages, withholding, interest and dividends — not tax, credits or phase-outs. One suspected engine defect now observed twice on different bundles (line 12c reports the itemised total while taxable income uses the larger standard deduction). It is surfaced as a node-map `note` beside the figure in the panel, the stored line and the workbook, never corrected. P17 still cannot exit until a person has checked a draft line by line |
 | A draft return is built on extraction accuracy that has never been measured | P7, P8, P17 | Accepted 2026-09-25 and inverted deliberately: the draft return is the accuracy instrument (P17 stage 3). Values flagged for review or citing no span never reach the engine, so an unchecked number cannot silently feed a computed line. `--truth` mode now isolates the two: the node map and engine are measured at 13/13, so a future disagreement on a real bundle is extraction |
 | Relicensing to AGPL forecloses a proprietary licence for the combined work | P17, §13 | Q22. The engine is a separate process and a severable optional service; with the flag unset no OpenTax code is present at all. Do not move it in-process or vendor its source |
 | **A stand-in binary that shares a wrong assumption tests nothing** | P17 | Learned the hard way: the stub encoded a nested `lines` shape the engine does not use, so all 328 tests agreed with the mistake. `test/helpers/fake-opentax.mjs` now mirrors the engine's real shapes — flat keys, array-valued lines, absent source lines, present zero totals — and its comments say where each came from. Re-derive it against the binary whenever the pin moves |
