@@ -64,7 +64,17 @@ export type DraftOmissionReason =
    * one to a calculation engine would silently add last season's mortgage interest to this
    * season's return.
    */
-  | 'off_year_document';
+  | 'off_year_document'
+  /**
+   * A figure the preparer supplied displaces one this app read off a document (P18).
+   *
+   * Not a defect and not an error — it is a preparer correcting or limiting what a form says,
+   * which is their call to make. It is an omission because the document's figure was
+   * deliberately not sent, and §14's contract is that every reason something was withheld is
+   * enumerated. Without this the override would be the one thing in the whole design that
+   * changes a draft's arithmetic without saying so.
+   */
+  | 'superseded_by_preparer';
 
 export interface DraftOmission {
   documentId: string | null;
@@ -94,6 +104,55 @@ export interface DraftParams {
   taxpayerBlind?: boolean;
   spouseBlind?: boolean;
   dependentCount?: number;
+  /** Dependents the preparer entered (P18). Empty is "none stated", not "none". */
+  dependents?: readonly PreparerDependent[];
+  /** Itemised deduction figures, keyed by the node map's `column`. Absent values stay absent. */
+  scheduleA?: PreparerScheduleA | null;
+  /** Businesses and rental properties, entered as summaries. */
+  activities?: readonly PreparerActivity[];
+}
+
+/**
+ * A dependent as the preparer stated them (P18).
+ *
+ * **No TIN, by construction.** The engine marks `ssn`/`itin`/`atin` optional on its dependents
+ * node, so a draft computes without one, and §7's rule is that a taxpayer identification number
+ * is never stored here and never forwarded. A dependent's is a TIN like any other.
+ */
+export interface PreparerDependent {
+  firstName: string;
+  lastName: string;
+  middleInitial?: string | null;
+  /** `YYYY-MM-DD`, as the engine's date fields want it. */
+  dob: string;
+  relationship: string;
+  monthsInHome: number;
+  /** Determinations the engine accepts and never makes. Null means "not stated" (§9). */
+  qualifyingChildForCtc?: boolean | null;
+  disabled?: boolean | null;
+  fullTimeStudent?: boolean | null;
+  taxpayerProvidedOverHalfSupport?: boolean | null;
+  dependentOnAnotherReturn?: boolean | null;
+  grossIncomeCents?: number | null;
+}
+
+/** Keyed by the node map's `column`; cents for money, booleans for the force flags. */
+export type PreparerScheduleA = Record<string, number | boolean | null | undefined>;
+
+/** One business or rental property, entered as a summary rather than line by line. */
+export interface PreparerActivity {
+  /** `schedule_c` | `schedule_e` — matches an entry in the node map's `activities`. */
+  kind: string;
+  description: string;
+  activityCode?: string | null;
+  accountingMethod?: string | null;
+  materialParticipation?: boolean | null;
+  propertyType?: string | null;
+  fairRentalDays?: number | null;
+  personalUseDays?: number | null;
+  grossCents?: number | null;
+  expensesCents?: number | null;
+  expensesDescription?: string | null;
 }
 
 export interface DraftInput {
@@ -121,6 +180,39 @@ const NOT_IN_BUNDLE: readonly { key: string; detail: string }[] = [
   { key: 'carryovers', detail: 'Prior-year carryovers — capital loss, passive loss, charitable, credit and NOL.' },
   { key: 'prior_year_agi', detail: 'Prior-year AGI and whether deductions were itemised, which a 1099-G box 2 refund depends on.' },
 ];
+
+/**
+ * Which document fields a preparer's figures displace (P18).
+ *
+ * Keyed `nodeType.nodeField`. A pair only counts when the preparer **actually supplied** the
+ * schedule figure: an empty Schedule A line displaces nothing, and the document flows as it
+ * always did.
+ *
+ * The reason this exists at all is measured behaviour, not theory. Where both a document and a
+ * preparer feed the same engine line, engine 2.0.4 uses the document and discards the
+ * preparer's silently — a 1098 of 40,000 beats a typed 55,000 with no diagnostic anywhere. So
+ * the app sends one side, and `scripts/probe-conflicts.mjs` re-measures that on every engine
+ * upgrade rather than assuming it still holds.
+ */
+function supersededByPreparer(
+  file: NodeMapFile,
+  scheduleA: PreparerScheduleA | null | undefined,
+): Map<string, { scheduleField: string; formType: string; fieldKey: string }> {
+  const out = new Map<string, { scheduleField: string; formType: string; fieldKey: string }>();
+  if (!scheduleA || !file.preparerInputs) return out;
+  for (const field of file.preparerInputs.scheduleA.fields) {
+    const supplied = scheduleA[field.column];
+    if (supplied === null || supplied === undefined) continue;
+    for (const sup of field.supersedes) {
+      out.set(`${sup.nodeType}.${sup.nodeField}`, {
+        scheduleField: field.nodeField,
+        formType: sup.formType,
+        fieldKey: sup.fieldKey,
+      });
+    }
+  }
+  return out;
+}
 
 function isMoney(schema: FormSchema, fieldKey: string): boolean {
   return schema.fields.find((f) => f.key === fieldKey)?.type === 'money';
@@ -197,6 +289,9 @@ export function buildDraftInput(
   const nodes: DraftNode[] = [];
   const omissions: DraftOmission[] = [];
   let withheldCount = 0;
+
+  // Which document fields the preparer's own figures displace, if any (P18).
+  const superseded = supersededByPreparer(file, params.scheduleA);
 
   for (const doc of documents) {
     const unmappable = unmappableFor(file, doc.formType);
@@ -330,6 +425,54 @@ export function buildDraftInput(
         break;
       }
 
+      // The preparer supplied a figure for the engine line this box feeds, so the box is left
+      // off the payload and the fact is recorded. Sending both would mean the engine silently
+      // using the document's and discarding theirs — measured, see `supersededByPreparer`.
+      //
+      // Note this does NOT withhold the document: only this one field. The 1098's other boxes
+      // still flow, which is the difference between a surgical override and dropping a form.
+      const supersedes = superseded.get(`${form.nodeType}.${map.nodeField}`);
+      if (supersedes) {
+        const shown = engineValue(doc.schema, map.fieldKey, value);
+        const reports = typeof shown === 'number' ? shown.toFixed(2) : String(shown);
+
+        // Whether one field can be dropped or the whole document has to go depends on the
+        // engine, and the two cases are not alike:
+        //
+        //   W-2 box 17 is OPTIONAL on the engine's node, so leaving it off is clean and the
+        //   wages and federal withholding on the same form still flow.
+        //
+        //   1098 box 1 is REQUIRED, and a node missing it is refused outright — which would
+        //   silently take the rest of that 1098 with it. So the document is withheld
+        //   deliberately and the omission says what that costs, rather than the engine
+        //   rejecting it and the draft quietly being short a form.
+        if (map.engineRequired) {
+          blocked = withhold(
+            doc,
+            map.fieldKey,
+            'superseded_by_preparer',
+            `You supplied a figure for ${label} under itemised deductions, and the draft uses ` +
+              `yours. The engine requires ${label} on a ${doc.formType}, so this ` +
+              `document is left out of the computation entirely rather than sent without it — ` +
+              `anything else it reports is not in the draft either. It reports ${reports}, and ` +
+              'the worksheet still shows the document unchanged.',
+          );
+          break;
+        }
+
+        omissions.push({
+          documentId: doc.documentId,
+          formType: doc.formType,
+          fieldKey: map.fieldKey,
+          reason: 'superseded_by_preparer',
+          detail:
+            `${label} was not sent to the engine: you supplied a figure for it under itemised ` +
+            `deductions, and that is what the draft uses. This ${doc.formType} reports ${reports}. ` +
+            'The rest of the document is still computed, and the worksheet reports it unchanged.',
+        });
+        continue;
+      }
+
       const engine = engineValue(doc.schema, map.fieldKey, value);
       if (engine !== undefined) payload[map.nodeField] = engine;
       else if (map.engineRequired) {
@@ -447,13 +590,109 @@ export function buildDraftInput(
   if (params.spouseAge65OrOlder !== undefined) general['spouse_age_65_or_older'] = params.spouseAge65OrOlder;
   if (params.taxpayerBlind !== undefined) general['taxpayer_blind'] = params.taxpayerBlind;
   if (params.spouseBlind !== undefined) general['spouse_blind'] = params.spouseBlind;
+  // Dependents ride on the `general` node (P18). Nothing here is inferred: a dependent exists
+  // because a preparer entered one, and every determination flag is sent only when stated.
+  const inputs = file.preparerInputs;
+  const statedDependents = params.dependents ?? [];
+  if (inputs && statedDependents.length > 0) {
+    general[inputs.dependents.nodeField] = statedDependents.map((d) => {
+      const item: Record<string, unknown> = {};
+      for (const map of inputs.dependents.fields) {
+        const raw = (d as unknown as Record<string, unknown>)[map.column];
+        if (raw === null || raw === undefined || raw === '') continue;
+        item[map.nodeField] = map.money && typeof raw === 'number' ? toDollars(raw) : raw;
+      }
+      return item;
+    });
+  }
+
   if (general['filing_status'] !== undefined) {
     nodes.push({ nodeType: 'general', documentId: null, formType: null, payload: general });
   }
 
+  // Itemised deductions, as stated. Only fields the preparer actually filled are sent: an
+  // untouched line is absent from the payload, never a zero (§5).
+  if (inputs && params.scheduleA) {
+    const scheduleA: Record<string, unknown> = {};
+    for (const map of [...inputs.scheduleA.fields, ...inputs.scheduleA.flags]) {
+      const raw = params.scheduleA[map.column];
+      if (raw === null || raw === undefined) continue;
+      // Money is stored as cents and sent as dollars; the force flags are booleans and pass
+      // straight through.
+      scheduleA[map.nodeField] = map.money && typeof raw === 'number' ? toDollars(raw) : raw;
+    }
+    if (Object.keys(scheduleA).length > 0) {
+      nodes.push({ nodeType: inputs.scheduleA.nodeType, documentId: null, formType: null, payload: scheduleA });
+    }
+  }
+
+  // Businesses and rental properties, entered as summaries.
+  for (const activity of params.activities ?? []) {
+    const map = inputs?.activities.find((a) => a.kind === activity.kind);
+    if (!map) {
+      // An activity kind the node map does not carry. The only way to reach this is an engine
+      // that cannot take it — Schedule F on 2.0.4 — so say which, rather than drop it.
+      const unsupported = inputs?.unsupportedActivities.find((u) => u.kind === activity.kind);
+      omissions.push({
+        documentId: null,
+        formType: null,
+        fieldKey: activity.kind,
+        reason: 'not_in_bundle',
+        detail: unsupported
+          ? `${unsupported.label} — "${activity.description}" is not in this draft. ${unsupported.detail}`
+          : `"${activity.description}" is an activity of a kind this node map does not map (${activity.kind}).`,
+      });
+      continue;
+    }
+
+    const payload: Record<string, unknown> = { ...map.constants };
+    let missingRequired: string | undefined;
+    for (const field of map.fields) {
+      const raw = (activity as unknown as Record<string, unknown>)[field.column];
+      if (raw === null || raw === undefined || raw === '') {
+        if (field.engineRequired) missingRequired ??= field.column;
+        continue;
+      }
+      // Which fields convert is declared in the node map, not sniffed. `property_type` is a
+      // number on the engine while a business code is a string of digits, so coercing anything
+      // that looks numeric would quietly break the latter.
+      if (field.money && typeof raw === 'number') payload[field.nodeField] = toDollars(raw);
+      else if (field.numeric) payload[field.nodeField] = Number(raw);
+      else payload[field.nodeField] = raw;
+    }
+
+    if (missingRequired !== undefined) {
+      omissions.push({
+        documentId: null,
+        formType: null,
+        fieldKey: missingRequired,
+        reason: 'engine_required_field_blank',
+        detail:
+          `${map.label} — "${activity.description}" is not in this draft: the engine requires ` +
+          `${missingRequired} and it has not been entered. It is left out rather than guessed at.`,
+      });
+      continue;
+    }
+
+    // The lump expense, where the node takes an array of {description, amount} rather than a
+    // single number. Schedule C has a plain field; Schedule E does not.
+    if (map.expenseArray && activity.expensesCents !== null && activity.expensesCents !== undefined) {
+      payload[map.expenseArray] = [
+        {
+          description: activity.expensesDescription?.trim() || `Per ${map.label}`,
+          amount: toDollars(activity.expensesCents),
+        },
+      ];
+    }
+
+    nodes.push({ nodeType: map.nodeType, documentId: null, formType: null, payload });
+  }
+
   for (const missing of NOT_IN_BUNDLE) {
     if (missing.key === 'filing_status' && knownStatus) continue;
-    if (missing.key === 'dependents' && params.dependentCount === 0) continue;
+    if (missing.key === 'dependents' && (statedDependents.length > 0 || params.dependentCount === 0)) continue;
+    // Itemised deductions stop being "not in the bundle" once a preparer has supplied them.
+    if (missing.key === 'itemised_deductions' && params.scheduleA && Object.values(params.scheduleA).some((v) => v !== null && v !== undefined)) continue;
     omissions.push({
       documentId: null,
       formType: null,

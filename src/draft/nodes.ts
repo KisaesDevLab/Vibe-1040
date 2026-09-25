@@ -213,6 +213,15 @@ const preparerField = z
     engineRequired: z.boolean().default(false),
     /** Stored as integer cents here, sent as dollars at the boundary. */
     money: z.boolean().default(false),
+    /**
+     * Send as a number although this app stores it as text.
+     *
+     * Needed because the engine is not consistent: `schedule_e.property_type` is a number 1-8
+     * while `schedule_c.line_b_business_code` is a string of digits. Coercing anything that
+     * looks numeric would turn a business code into an integer and break it, so which fields
+     * convert is stated rather than guessed.
+     */
+    numeric: z.boolean().default(false),
     supersedes: z.array(supersedes).default([]),
   })
   .strict();

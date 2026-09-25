@@ -1679,7 +1679,8 @@
         {
           "column": "monthsInHome",
           "nodeField": "months_in_home",
-          "engineRequired": true
+          "engineRequired": true,
+          "numeric": true
         },
         {
           "column": "qualifyingChildForCtc",
@@ -1764,7 +1765,8 @@
       "fields": [
         {
           "column": "medicalCents",
-          "nodeField": "line_1_medical"
+          "nodeField": "line_1_medical",
+          "money": true
         },
         {
           "column": "stateIncomeTaxCents",
@@ -1782,23 +1784,28 @@
               "nodeField": "box19_local_withheld",
               "fieldKey": "box_19"
             }
-          ]
+          ],
+          "money": true
         },
         {
           "column": "salesTaxCents",
-          "nodeField": "line_5a_sales_tax"
+          "nodeField": "line_5a_sales_tax",
+          "money": true
         },
         {
           "column": "realEstateTaxCents",
-          "nodeField": "line_5b_real_estate_tax"
+          "nodeField": "line_5b_real_estate_tax",
+          "money": true
         },
         {
           "column": "personalPropertyTaxCents",
-          "nodeField": "line_5c_personal_property_tax"
+          "nodeField": "line_5c_personal_property_tax",
+          "money": true
         },
         {
           "column": "otherTaxesCents",
-          "nodeField": "line_6_other_taxes"
+          "nodeField": "line_6_other_taxes",
+          "money": true
         },
         {
           "column": "mortgageInterest1098Cents",
@@ -1810,39 +1817,48 @@
               "nodeField": "box1_mortgage_interest",
               "fieldKey": "box_1"
             }
-          ]
+          ],
+          "money": true
         },
         {
           "column": "mortgageInterestNo1098Cents",
-          "nodeField": "line_8b_mortgage_interest_no_1098"
+          "nodeField": "line_8b_mortgage_interest_no_1098",
+          "money": true
         },
         {
           "column": "pointsNo1098Cents",
-          "nodeField": "line_8c_points_no_1098"
+          "nodeField": "line_8c_points_no_1098",
+          "money": true
         },
         {
           "column": "investmentInterestCents",
-          "nodeField": "line_9_investment_interest"
+          "nodeField": "line_9_investment_interest",
+          "money": true
         },
         {
           "column": "cashContributionsCents",
-          "nodeField": "line_11_cash_contributions"
+          "nodeField": "line_11_cash_contributions",
+          "money": true
         },
         {
           "column": "noncashContributionsCents",
-          "nodeField": "line_12_noncash_contributions"
+          "nodeField": "line_12_noncash_contributions",
+          "money": true
         },
         {
           "column": "contributionCarryoverCents",
-          "nodeField": "line_13_contribution_carryover"
+          "nodeField": "line_13_contribution_carryover",
+          "money": true
         },
         {
           "column": "casualtyTheftLossCents",
-          "nodeField": "line_15_casualty_theft_loss"
+          "nodeField": "line_15_casualty_theft_loss",
+          "money": true
         },
         {
           "column": "otherDeductionsCents",
-          "nodeField": "line_16_other_deductions"
+          "nodeField": "line_16_other_deductions",
+          "money": true
         }
       ],
       "flags": [
@@ -1931,17 +1947,20 @@
           {
             "column": "propertyType",
             "nodeField": "property_type",
-            "engineRequired": true
+            "engineRequired": true,
+            "numeric": true
           },
           {
             "column": "fairRentalDays",
             "nodeField": "fair_rental_days",
-            "engineRequired": true
+            "engineRequired": true,
+            "numeric": true
           },
           {
             "column": "personalUseDays",
             "nodeField": "personal_use_days",
-            "engineRequired": true
+            "engineRequired": true,
+            "numeric": true
           },
           {
             "column": "grossCents",

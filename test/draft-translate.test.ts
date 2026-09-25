@@ -368,3 +368,188 @@ describe('omission detail punctuation', () => {
     expect(judgment!.detail).toMatch(/[.!?]$/);
   });
 });
+
+// ── preparer-supplied inputs and the override (P18) ──────────────────────────
+
+/**
+ * These exist because the override is the one thing in the design that lets a human figure
+ * displace a document's. That is legitimate — a preparer limiting mortgage interest under
+ * §163(h)(3), or correcting a wrong 1098 — but it must never be silent, and it must never
+ * cost more than it says it does.
+ */
+describe('preparer-supplied inputs', () => {
+  const w2 = async () =>
+    doc('W-2', {
+      employer_name: text('ACME'),
+      box_1: money(9_000_000),
+      box_2: money(800_000),
+      box_17: money(500_000),
+    });
+  const f1098 = async () =>
+    doc('1098', { recipient_name: text('BANK'), box_1: money(4_000_000) }, 'doc-1098');
+
+  it('sends nothing for an itemised line the preparer left blank — a blank is not a zero (§5)', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2()], {
+      filingStatus: 'mfj',
+      scheduleA: { cashContributionsCents: 2_000_000, medicalCents: null },
+    });
+    const sa = input.nodes.find((n) => n.nodeType === 'schedule_a');
+    expect(sa).toBeDefined();
+    expect(sa!.payload['line_11_cash_contributions']).toBe(20_000);
+    // Not 0, and not present at all.
+    expect('line_1_medical' in sa!.payload).toBe(false);
+  });
+
+  it('emits no schedule_a node at all when nothing was entered', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2()], { filingStatus: 'mfj', scheduleA: {} });
+    expect(input.nodes.find((n) => n.nodeType === 'schedule_a')).toBeUndefined();
+  });
+
+  it('drops only the superseded field when the engine does not require it', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2()], {
+      filingStatus: 'mfj',
+      scheduleA: { stateIncomeTaxCents: 900_000 },
+    });
+    const node = input.nodes.find((n) => n.nodeType === 'w2');
+    // The W-2 still computes: wages and federal withholding are untouched.
+    expect(node).toBeDefined();
+    expect(node!.payload['box1_wages']).toBe(90_000);
+    expect(node!.payload['box2_fed_withheld']).toBe(8_000);
+    // But box 17 is gone, because sending both would mean the engine silently using the
+    // document's figure and discarding the preparer's.
+    expect('box17_state_withheld' in node!.payload).toBe(false);
+
+    const omission = input.omissions.find((o) => o.reason === 'superseded_by_preparer');
+    expect(omission).toBeDefined();
+    expect(omission!.fieldKey).toBe('box_17');
+    expect(omission!.detail).toMatch(/rest of the document is still computed/);
+  });
+
+  it('withholds the whole document when the superseded field is one the engine requires', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2(), await f1098()], {
+      filingStatus: 'mfj',
+      scheduleA: { mortgageInterest1098Cents: 5_500_000 },
+    });
+    // A 1098 without box 1 is refused outright by the engine, which would have taken the rest
+    // of the form with it silently. So it is withheld deliberately instead.
+    expect(input.nodes.find((n) => n.nodeType === 'f1098')).toBeUndefined();
+    expect(input.nodes.find((n) => n.nodeType === 'w2')).toBeDefined();
+
+    const omission = input.omissions.find((o) => o.reason === 'superseded_by_preparer');
+    expect(omission).toBeDefined();
+    expect(omission!.formType).toBe('1098');
+    // It has to say what withholding the document costs, not just that it happened.
+    expect(omission!.detail).toMatch(/left out of the computation entirely/);
+    expect(input.documentsWithheld).toBeGreaterThan(0);
+  });
+
+  it('does not override a field the preparer left blank', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2(), await f1098()], {
+      filingStatus: 'mfj',
+      scheduleA: { cashContributionsCents: 1_000_000 },
+    });
+    // Nothing was supplied for mortgage interest or state tax, so both documents flow whole.
+    expect(input.nodes.find((n) => n.nodeType === 'f1098')).toBeDefined();
+    expect(input.nodes.find((n) => n.nodeType === 'w2')!.payload['box17_state_withheld']).toBe(5_000);
+    expect(input.omissions.filter((o) => o.reason === 'superseded_by_preparer')).toEqual([]);
+  });
+
+  it('sends dependents with no TIN of any kind (§7)', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2()], {
+      filingStatus: 'mfj',
+      dependents: [
+        { firstName: 'Ada', lastName: 'Smith', dob: '2015-04-02', relationship: 'son', monthsInHome: 12, qualifyingChildForCtc: true },
+      ],
+    });
+    const general = input.nodes.find((n) => n.nodeType === 'general')!;
+    const dependents = general.payload['dependents'] as Record<string, unknown>[];
+    expect(dependents).toHaveLength(1);
+    expect(dependents[0]!['first_name']).toBe('Ada');
+    expect(dependents[0]!['months_in_home']).toBe(12);
+    // The engine marks ssn/itin/atin optional, which is the only reason this is buildable.
+    const serialized = JSON.stringify(input.nodes);
+    for (const key of ['ssn', 'itin', 'atin']) expect(serialized).not.toContain(`"${key}"`);
+  });
+
+  it('sends no determination a preparer did not state — nothing is defaulted (§9)', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2()], {
+      filingStatus: 'mfj',
+      dependents: [{ firstName: 'Ada', lastName: 'Smith', dob: '2015-04-02', relationship: 'son', monthsInHome: 12 }],
+    });
+    const dependents = input.nodes.find((n) => n.nodeType === 'general')!.payload['dependents'] as Record<string, unknown>[];
+    // "Not stated" and "stated as no" are different answers, and only a preparer may give
+    // either. A false here would be the app deciding whether a child qualifies for the credit.
+    expect('qualifying_child_for_ctc' in dependents[0]!).toBe(false);
+    expect('disabled' in dependents[0]!).toBe(false);
+  });
+
+  it('stops listing itemised deductions as missing once they have been supplied', async () => {
+    const before = buildDraftInput(await nodeMap(), [await w2()], { filingStatus: 'mfj' });
+    expect(before.omissions.filter((o) => o.fieldKey === 'itemised_deductions')).toHaveLength(1);
+
+    const after = buildDraftInput(await nodeMap(), [await w2()], {
+      filingStatus: 'mfj',
+      scheduleA: { cashContributionsCents: 2_000_000 },
+    });
+    expect(after.omissions.filter((o) => o.fieldKey === 'itemised_deductions')).toEqual([]);
+  });
+
+  it('turns a business summary into a node, with the lump expense where the engine wants it', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2()], {
+      filingStatus: 'mfj',
+      activities: [
+        {
+          kind: 'schedule_c', description: 'Consulting', activityCode: '541600',
+          accountingMethod: 'cash', materialParticipation: true,
+          grossCents: 12_000_000, expensesCents: 4_500_000,
+        },
+      ],
+    });
+    const node = input.nodes.find((n) => n.nodeType === 'schedule_c')!;
+    expect(node.payload['line_1_gross_receipts']).toBe(120_000);
+    expect(node.payload['line_27b_other_expenses']).toBe(45_000);
+    // A business code is a string of digits and must stay one — the engine refuses a number.
+    expect(node.payload['line_b_business_code']).toBe('541600');
+  });
+
+  it('sends a rental property type as the number the engine wants', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2()], {
+      filingStatus: 'mfj',
+      activities: [
+        {
+          kind: 'schedule_e', description: '12 Oak St', propertyType: '1',
+          fairRentalDays: 365, personalUseDays: 0, grossCents: 3_600_000, expensesCents: 1_400_000,
+        },
+      ],
+    });
+    const node = input.nodes.find((n) => n.nodeType === 'schedule_e')!;
+    // A string here is refused outright by the engine.
+    expect(node.payload['property_type']).toBe(1);
+    expect(node.payload['rent_income']).toBe(36_000);
+    expect(node.payload['expense_other_lines']).toEqual([{ description: 'Per Rental property (Schedule E)', amount: 14_000 }]);
+  });
+
+  it('names an activity the engine cannot take rather than sending a node it will refuse', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2()], {
+      filingStatus: 'mfj',
+      activities: [{ kind: 'schedule_f', description: 'Home farm', grossCents: 8_000_000 }],
+    });
+    expect(input.nodes.find((n) => n.nodeType === 'schedule_f')).toBeUndefined();
+    const omission = input.omissions.find((o) => o.fieldKey === 'schedule_f');
+    expect(omission, 'a farm must be reported as absent, not silently dropped').toBeDefined();
+    expect(omission!.detail).toMatch(/Home farm/);
+    expect(omission!.detail).toMatch(/not a valid input for f1040\/2025/);
+  });
+
+  it('leaves an incomplete activity out and says which field is missing', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2()], {
+      filingStatus: 'mfj',
+      activities: [{ kind: 'schedule_c', description: 'Consulting', grossCents: 12_000_000 }],
+    });
+    expect(input.nodes.find((n) => n.nodeType === 'schedule_c')).toBeUndefined();
+    const omission = input.omissions.find((o) => o.reason === 'engine_required_field_blank' && o.fieldKey === 'activityCode');
+    expect(omission).toBeDefined();
+    expect(omission!.detail).toMatch(/left out rather than guessed at/);
+  });
+});
+
