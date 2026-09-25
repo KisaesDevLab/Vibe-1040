@@ -17,10 +17,13 @@ to main 2026-09-25 (PR #2, merge `67283c1`). **v0.11.0 images are published** as
 (release run 28, on merge `6c86717`) — the appliance, the sidecar and, for the first time, the
 OpenTax engine image, each at `0.11.0` and `latest`, all six manifests verified anonymously
 pullable. **The git tag `v0.11.0` is not pushed**: the push returns 403 from an agent session, so
-the release was dispatched by hand and carries no floating `0.11` tag. **v0.12.0 follows on 2026-09-25** (PR #6, merge `faa4c99`): the engine and pipeline controls
-become audited settings rather than environment keys (Q26), and Admin → Draft engine reports
-whether a newer OpenTax release exists without being able to install one (Q23's middle option).
-Neither changes what the app computes; both change who can change it and what the record says.
+the release was dispatched by hand and carries no floating `0.11` tag. **v0.12.0 images are published** as of 2026-09-25 (release run 29, on merge `58d6205`, dispatched
+by hand for the same 403 as before) — all three at `0.12.0` and `latest`, six manifests verified
+anonymously pullable, and again **no git tag and no floating `0.12`**. It carries PR #6
+(`faa4c99`): the engine and pipeline controls become audited settings rather than environment
+keys (Q26), and Admin → Draft engine reports whether a newer OpenTax release exists without being
+able to install one (Q23's middle option). Neither changes what the app computes; both change who
+can change it and what the record says.
 See *The v0.11.0 release,
 and the P0 defect it exposed* below — it took two attempts, and the first one's failure was the
 most serious finding of the pass.
@@ -123,7 +126,8 @@ the UI, against a real Postgres at 0013. `npm run lint` clean in both packages.
 
 ### v0.12.0 — what a firm admin can change, and what they still cannot
 
-Released 2026-09-25 from merge `faa4c99`. Two changes, both answering a page that told Kurt no,
+Released 2026-09-25 as run 29 from merge `58d6205`, carrying PR #6 (`faa4c99`). Two changes,
+both answering a page that told Kurt no,
 and neither of them touching what the app computes about a taxpayer.
 
 **Q26 — five environment keys become audited settings.** `DRAFT_RETURN_ENABLED`,
