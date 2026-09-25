@@ -203,6 +203,34 @@ what is installed and computing there.
 
 ### Q22 — What does relicensing this app AGPL v3 actually oblige, and who can still license it?
 **Gates:** publishing this repository, and §13 productization. **Raised:** 2026-09-25.
+**Partly answered:** 2026-09-25.
+
+**A (publishing the images):** go ahead. (Kurt, 2026-09-25, asked twice with the consequence
+stated.) **v0.11.0 is the first release of this app as AGPL-3.0-only**, and the release pipeline
+requires the images be anonymously pullable, so pushing that tag conveys AGPL-licensed object
+code to anyone who pulls it. Three images: `vibe-1040`, `vibe-1040-sidecar` and, new in this
+release, `vibe-1040-opentax`, which carries the unmodified OpenTax binary and its licence text.
+
+**What that leaves outstanding, and it is not nothing.** AGPL §6 requires either conveying the
+Corresponding Source with the object code or accompanying it with a **written offer** valid for
+three years; §13 requires offering it to anyone interacting with the software over a network.
+Neither is satisfied by publishing an image alone, and **neither is done yet**:
+
+- **A written offer needs to exist and needs to travel with the images.** An OCI label or a
+  `NOTICE` in the image pointing at where source can be had would do it. Not built.
+- **Corresponding Source still has to cover `@kisaes/vibe-ai-client` and
+  `@kisaesdevlab/vibe-auth`**, per the analysis below. Those are sibling-repo decisions and they
+  are unchanged by this answer.
+- **The repository itself stays private, and that remains correct.** AGPL does not require a
+  public repository, and `docs/wisp-amendment.md` lives in this one. The obligation is to supply
+  source to recipients, not to publish it to the world.
+
+So this answer unblocks the release and does **not** close Q22. What is still open is the
+mechanics of the offer and the two sibling packages.
+
+---
+
+**The original analysis, unchanged:**
 
 `package.json` declared `BUSL-1.1` with no licence text ever committed. On 2026-09-25 it was
 relicensed to `AGPL-3.0-only` and the AGPL text added as `LICENSE`, so that OpenTax — verbatim
