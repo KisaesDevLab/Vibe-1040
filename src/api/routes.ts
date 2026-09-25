@@ -34,6 +34,14 @@ import {
   worksheets,
 } from '../db/schema.ts';
 import { buildDraftInputForBundle } from '../draft/build.ts';
+import { DraftEngineError } from '../draft/client.ts';
+import {
+  DraftReturnDisabledError,
+  draftReturnStatus,
+  generateDraftReturn,
+  latestDraftReturn,
+} from '../draft/generate.ts';
+import type { DraftParams } from '../draft/translate.ts';
 import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
 import { hashTin, isPlausibleTin, normalizeTin } from '../identity/tin.ts';
@@ -84,6 +92,10 @@ export function registerRoutes(app: FastifyInstance): void {
     service: 'vibe-1040',
     // Degraded but serving: existing bundles remain readable when the router is down (§3).
     router: isRouterReachable() ? 'reachable' : 'unreachable',
+    // Same posture for the draft-return engine (P17): 'off' when the deployment has not
+    // enabled it, and a reachability report when it has. Never a reason for `ok: false` —
+    // an optional checking aid does not make the appliance unhealthy.
+    draftReturn: await draftReturnStatus(),
   }));
 
   // ── auth ───────────────────────────────────────────────────────────────────
@@ -582,6 +594,95 @@ export function registerRoutes(app: FastifyInstance): void {
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `attachment; filename="${safeLabel} - sorted.pdf"`)
       .send(data);
+  });
+
+  /**
+   * Whether a draft return can be produced here at all, for the bundle view to decide what to
+   * offer. Cheap, unaudited: it reports deployment posture, not taxpayer data.
+   */
+  app.get('/api/draft-return/status', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    return draftReturnStatus();
+  });
+
+  /**
+   * Compute a draft return (P17, §14). Explicit and audited — the pipeline never does this on
+   * its own. Goes through `assertWorksheetAllowed`, the same door as the worksheet, with no
+   * force flag: a bundle with an undispositioned hard failure gets no draft return either.
+   *
+   * `filingStatus` is stated by the reviewer because no document carries it. That is the
+   * preparer making a determination, which is where it belongs (§11).
+   */
+  app.post('/api/bundles/:id/draft-return', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = z
+      .object({
+        filingStatus: z.string().min(1).optional(),
+        taxpayerAge65OrOlder: z.boolean().optional(),
+        spouseAge65OrOlder: z.boolean().optional(),
+        taxpayerBlind: z.boolean().optional(),
+        spouseBlind: z.boolean().optional(),
+      })
+      .parse(req.body ?? {});
+
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    // exactOptionalPropertyTypes: an absent key and a key set to undefined are different
+    // things here, and DraftParams means the first.
+    const params: DraftParams = {};
+    if (body.filingStatus !== undefined) params.filingStatus = body.filingStatus;
+    if (body.taxpayerAge65OrOlder !== undefined) params.taxpayerAge65OrOlder = body.taxpayerAge65OrOlder;
+    if (body.spouseAge65OrOlder !== undefined) params.spouseAge65OrOlder = body.spouseAge65OrOlder;
+    if (body.taxpayerBlind !== undefined) params.taxpayerBlind = body.taxpayerBlind;
+    if (body.spouseBlind !== undefined) params.spouseBlind = body.spouseBlind;
+
+    try {
+      const result = await generateDraftReturn(id, user.id, params);
+      return result;
+    } catch (err) {
+      if (err instanceof DraftReturnDisabledError) {
+        return reply.code(409).send({ error: 'draft_return_disabled', message: err.message });
+      }
+      if (err instanceof DraftEngineError) {
+        // An optional checking aid being unreachable is a degraded state, not a bundle
+        // failure — the same posture as router-down parking (§3).
+        return reply.code(err.isUnavailable ? 503 : 502).send({
+          error: err.code,
+          message: err.message,
+          detail: err.detail ?? null,
+        });
+      }
+      if (err instanceof ExtractionIncompleteError) {
+        return reply.code(409).send({ error: 'extraction_incomplete', message: err.message });
+      }
+      if (err instanceof IdentityNotConfirmedError) {
+        return reply.code(409).send({ error: 'identity_not_confirmed', message: err.message });
+      }
+      if (err instanceof WorksheetBlockedError) {
+        return reply.code(409).send({ error: 'blocked', blocking: err.blocking });
+      }
+      throw err;
+    }
+  });
+
+  /** The most recent stored draft return for a bundle. Audited: computed taxpayer amounts. */
+  app.get('/api/bundles/:id/draft-return', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const stored = await latestDraftReturn(id);
+    if (!stored) return reply.code(404).send({ error: 'not found', message: 'No draft return has been computed for this bundle.' });
+
+    await auditAccess(req, 'draft.view', {
+      bundleId: id,
+      entityType: 'draft_return',
+      entityId: stored.draftReturn.id,
+    });
+    return stored;
   });
 
   /**

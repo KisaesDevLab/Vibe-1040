@@ -21,6 +21,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { loadMapping } from '../mapping/engine.ts';
 import { type FormRegistry, registry } from '../schemas/registry.ts';
 
 /** Why a field of a mapped form type reaches no engine field. */
@@ -98,6 +99,50 @@ const unmappableForm = z
   })
   .strict();
 
+/** Why a worksheet line has no engine counterpart to sit beside. */
+const notComparedReason = z.enum([
+  /** Detail this app carries that has no 1040 line at all. */
+  'informational_detail',
+  /** The engine computes it internally and does not put it in `lines`. */
+  'engine_does_not_surface_it',
+  /** The engine takes it as an already-determined input, which §9 refuses to supply. */
+  'engine_takes_it_as_a_determined_input',
+  /** Judgment Required is not a line. */
+  'not_a_line',
+])
+
+/**
+ * Pairs a worksheet line with the engine output it should equal.
+ *
+ * Mapped by **meaning, not by line number** — the engine's keys carry names from whichever
+ * season they were written in, and a number that has moved between revisions would silently
+ * pair two different things.
+ */
+const comparableLine = z
+  .object({
+    lineRef: z.string(),
+    engineForm: z.string(),
+    engineLine: z.string(),
+    /** Why a disagreement here may be expected rather than a defect. */
+    note: z.string().optional(),
+  })
+  .strict();
+
+/** An engine figure with no worksheet counterpart: displayed, never compared. */
+const computedOnlyLine = z
+  .object({ engineForm: z.string(), engineLine: z.string(), label: z.string() })
+  .strict();
+
+const lineMapSection = z
+  .object({
+    comparable: z.array(comparableLine).default([]),
+    notCompared: z
+      .array(z.object({ lineRef: z.string(), reason: notComparedReason }).strict())
+      .default([]),
+    computedOnly: z.array(computedOnlyLine).default([]),
+  })
+  .strict();
+
 const nodeMapFile = z
   .object({
     taxYear: z.number().int(),
@@ -108,6 +153,7 @@ const nodeMapFile = z
     notes: z.array(z.string()).default([]),
     forms: z.array(formMap).min(1),
     unmappable: z.array(unmappableForm).default([]),
+    lines: lineMapSection.default({ comparable: [], notCompared: [], computedOnly: [] }),
   })
   .strict();
 
@@ -115,6 +161,9 @@ export type NodeMapFile = z.infer<typeof nodeMapFile>;
 export type FormNodeMap = z.infer<typeof formMap>;
 export type UnmappableForm = z.infer<typeof unmappableForm>;
 export type IgnoreReason = z.infer<typeof ignoreReason>;
+export type ComparableLine = z.infer<typeof comparableLine>;
+export type ComputedOnlyLine = z.infer<typeof computedOnlyLine>;
+export type NotComparedReason = z.infer<typeof notComparedReason>;
 export type UnmappableReason = z.infer<typeof unmappableReason>;
 
 const cache = new Map<number, NodeMapFile>();
@@ -135,7 +184,7 @@ export async function loadNodeMap(taxYear: number, root?: string): Promise<NodeM
   }
 
   const parsed = nodeMapFile.parse(JSON.parse(raw));
-  assertConsistent(parsed, await registry());
+  await assertConsistent(parsed, await registry());
   cache.set(taxYear, parsed);
   return parsed;
 }
@@ -153,7 +202,7 @@ export function __clearNodeMapCache(): void {
  * Structural checks that must hold before any document is translated. Thrown at load so a
  * malformed map fails on startup rather than halfway through a bundle.
  */
-export function assertConsistent(file: NodeMapFile, reg: FormRegistry): void {
+export async function assertConsistent(file: NodeMapFile, reg: FormRegistry): Promise<void> {
   const problems: string[] = [];
 
   const mapped = new Set(file.forms.map((f) => f.formType));
@@ -222,6 +271,36 @@ export function assertConsistent(file: NodeMapFile, reg: FormRegistry): void {
       problems.push(
         `${formType} is registered as a form type but is absent from the node map. Add it to ` +
           '`forms` or to `unmappable` with a reason.',
+      );
+    }
+  }
+
+  // Every worksheet line is declared too, for the same reason every box is: a line quietly
+  // absent from the comparison is a computed figure nobody checked.
+  const mapping = await loadMapping(file.taxYear);
+  const comparable = new Set(file.lines.comparable.map((l) => l.lineRef));
+  const notCompared = new Set(file.lines.notCompared.map((l) => l.lineRef));
+
+  for (const ref of comparable) {
+    if (notCompared.has(ref)) problems.push(`line ${ref} is both compared and not compared`);
+  }
+  const engineTargets = new Set<string>();
+  for (const line of file.lines.comparable) {
+    const key = `${line.engineForm}.${line.engineLine}`;
+    if (engineTargets.has(key)) problems.push(`engine line ${key} is compared against twice`);
+    engineTargets.add(key);
+  }
+  const declaredRefs = new Set(mapping.lines.map((l) => l.ref));
+  for (const ref of [...comparable, ...notCompared]) {
+    if (!declaredRefs.has(ref)) {
+      problems.push(`line ${ref} is in the node map but not in the ${file.taxYear} line mappings`);
+    }
+  }
+  for (const ref of declaredRefs) {
+    if (!comparable.has(ref) && !notCompared.has(ref)) {
+      problems.push(
+        `line ${ref} is neither compared against the engine nor declared notCompared with a ` +
+          'reason. A line absent from the comparison is a figure nobody checked.',
       );
     }
   }

@@ -13,7 +13,9 @@
     "Amounts are stored here in cents and converted to dollars at the boundary. A null is never sent as zero (CLAUDE.md §5); it is reported as an omission.",
     "Every field of every mapped form type appears in exactly one of fields, codeGroups, monthlyArrays or ignored. The loader refuses a file where one does not.",
     "W-2G boxes 2, 3, 5, 6, 7, 8 and 10 are ignored because the engine's w2g node numbers those boxes differently from the 2025 form revision this app reads; mapping them by number would move a date into a wager type.",
-    "RRB-1099 binds to the ssa1099 node with is_rrb set. Box 4 (net SSEB tier 1 paid) is the gross benefit, box 5 the repayment."
+    "RRB-1099 binds to the ssa1099 node with is_rrb set. Box 4 (net SSEB tier 1 paid) is the gross benefit, box 5 the repayment.",
+    "lines.comparable pairs this app's worksheet line refs with the engine's output keys, so a computed figure can sit beside the reported total it should equal. Mapped by MEANING, not by line number -- see the SCH1:21 note.",
+    "lines.computedOnly are engine figures with no worksheet counterpart -- AGI, taxable income, total tax, refund or amount owed. They are the new information a draft return adds, and they are displayed, never compared."
   ],
   "forms": [
     {
@@ -1368,5 +1370,349 @@
       "reason": "no_engine_node",
       "detail": "No engine input node. Informational, as 5498."
     }
-  ]
+  ],
+  "lines": {
+    "comparable": [
+      {
+        "lineRef": "1040:1a",
+        "engineForm": "f1040",
+        "engineLine": "line1a_wages"
+      },
+      {
+        "lineRef": "1040:1b",
+        "engineForm": "f1040",
+        "engineLine": "line1b_household_wages"
+      },
+      {
+        "lineRef": "1040:1z",
+        "engineForm": "f1040",
+        "engineLine": "line1z_total_wages"
+      },
+      {
+        "lineRef": "1040:2a",
+        "engineForm": "f1040",
+        "engineLine": "line2a_tax_exempt"
+      },
+      {
+        "lineRef": "1040:2b",
+        "engineForm": "f1040",
+        "engineLine": "line2b_taxable_interest"
+      },
+      {
+        "lineRef": "1040:3a",
+        "engineForm": "f1040",
+        "engineLine": "line3a_qualified_dividends"
+      },
+      {
+        "lineRef": "1040:3b",
+        "engineForm": "f1040",
+        "engineLine": "line3b_ordinary_dividends"
+      },
+      {
+        "lineRef": "1040:4a",
+        "engineForm": "f1040",
+        "engineLine": "line4a_ira_gross"
+      },
+      {
+        "lineRef": "1040:4b",
+        "engineForm": "f1040",
+        "engineLine": "line4b_ira_taxable"
+      },
+      {
+        "lineRef": "1040:5a",
+        "engineForm": "f1040",
+        "engineLine": "line5a_pension_gross"
+      },
+      {
+        "lineRef": "1040:5b",
+        "engineForm": "f1040",
+        "engineLine": "line5b_pension_taxable"
+      },
+      {
+        "lineRef": "1040:6a",
+        "engineForm": "f1040",
+        "engineLine": "line6a_ss_gross",
+        "note": "This app withholds every SSA-1099 and RRB-1099 from the engine (§9), so a disagreement here is expected whenever the bundle holds one: the worksheet reports the gross benefit and the engine sees nothing."
+      },
+      {
+        "lineRef": "1040:6b",
+        "engineForm": "f1040",
+        "engineLine": "line6b_ss_taxable",
+        "note": "The worksheet never reports a taxable portion, so this side is always blank here. The engine's figure is informational only."
+      },
+      {
+        "lineRef": "1040:7",
+        "engineForm": "f1040",
+        "engineLine": "line7_capital_gain",
+        "note": "1099-B is unmappable (per-lot vs section subtotals, §8), so the engine sees no sales. Expect a disagreement whenever the bundle holds a 1099-B."
+      },
+      {
+        "lineRef": "1040:8",
+        "engineForm": "f1040",
+        "engineLine": "line8_additional_income"
+      },
+      {
+        "lineRef": "1040:13b",
+        "engineForm": "f1040",
+        "engineLine": "line13b_additional_deductions"
+      },
+      {
+        "lineRef": "1040:25a",
+        "engineForm": "f1040",
+        "engineLine": "line25a_w2_withheld"
+      },
+      {
+        "lineRef": "1040:25b",
+        "engineForm": "f1040",
+        "engineLine": "line25b_withheld_1099"
+      },
+      {
+        "lineRef": "1040:25c",
+        "engineForm": "f1040",
+        "engineLine": "line25c_additional_medicare_withheld"
+      },
+      {
+        "lineRef": "SCH1:1",
+        "engineForm": "schedule1",
+        "engineLine": "line1_state_refund",
+        "note": "1099-G box 2 is judgmentRequired, so a populated one withholds its document. The engine sees a state refund only when the box is blank, which is to say never in practice."
+      },
+      {
+        "lineRef": "SCH1:3",
+        "engineForm": "schedule1",
+        "engineLine": "line3_schedule_c"
+      },
+      {
+        "lineRef": "SCH1:5",
+        "engineForm": "schedule1",
+        "engineLine": "line5_schedule_e"
+      },
+      {
+        "lineRef": "SCH1:7",
+        "engineForm": "schedule1",
+        "engineLine": "line7_unemployment"
+      },
+      {
+        "lineRef": "SCH1:18",
+        "engineForm": "schedule1",
+        "engineLine": "line18_early_withdrawal"
+      },
+      {
+        "lineRef": "SCH1:20",
+        "engineForm": "schedule1",
+        "engineLine": "line20_ira_deduction"
+      },
+      {
+        "lineRef": "SCH1:21",
+        "engineForm": "schedule1",
+        "engineLine": "line19_student_loan_interest",
+        "note": "Mapped by meaning, not by number. Student loan interest is Schedule 1 line 21 on the 2025 revision; the engine's key still says line19, which looks like a name carried over from an earlier season. Verify against the engine's own output before trusting the placement."
+      }
+    ],
+    "notCompared": [
+      {
+        "lineRef": "SCH1:8b",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:8f",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:8z",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:1",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:2",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:3",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:4",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:total",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCHA:5a",
+        "reason": "engine_takes_it_as_a_determined_input"
+      },
+      {
+        "lineRef": "SCHA:8a",
+        "reason": "engine_takes_it_as_a_determined_input"
+      },
+      {
+        "lineRef": "SCHA:8c",
+        "reason": "engine_takes_it_as_a_determined_input"
+      },
+      {
+        "lineRef": "SCHA:8d",
+        "reason": "engine_takes_it_as_a_determined_input"
+      },
+      {
+        "lineRef": "SCHB:1",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCHB:5",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCHD:13",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCHD:PROCEEDS",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "F2441:12",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "F8889:9",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "F8889:14a",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "F8962:11",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "INFO:state_wages",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:state_withholding",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:local_wages",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:local_withholding",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:ss_wages",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:ss_withheld",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:medicare_wages",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:medicare_withheld",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:ira_fmv",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:section_199a",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:box12_deferrals",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:foreign_tax_paid",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:foreign_source_income",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "JUDGMENT",
+        "reason": "not_a_line"
+      }
+    ],
+    "computedOnly": [
+      {
+        "engineForm": "f1040",
+        "engineLine": "line9_total_income",
+        "label": "Total income"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line10_adjustments",
+        "label": "Adjustments to income"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line11_agi",
+        "label": "Adjusted gross income"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line12c_deduction_total",
+        "label": "Standard or itemized deduction"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line13_qbi_deduction",
+        "label": "Qualified business income deduction"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line14_deductions_qbi_total",
+        "label": "Deductions plus QBI"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line15_taxable_income",
+        "label": "Taxable income"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line16_income_tax",
+        "label": "Tax"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line24_total_tax",
+        "label": "Total tax"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line33_total_payments",
+        "label": "Total payments"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line34_overpayment",
+        "label": "Overpayment"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line35a_refund",
+        "label": "Refund"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line37_amount_owed",
+        "label": "Amount owed"
+      }
+    ]
+  }
 }

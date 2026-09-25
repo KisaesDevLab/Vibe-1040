@@ -122,7 +122,7 @@ describe('load-time refusals', () => {
     const reg = await registry();
     const w2 = file.forms.find((f) => f.formType === 'W-2')!;
     w2.fields = w2.fields.filter((f) => f.fieldKey !== 'box_3');
-    expect(() => assertConsistent(file, reg)).toThrow(/box_3 is neither mapped nor ignored/);
+    await expect(assertConsistent(file, reg)).rejects.toThrow(/box_3 is neither mapped nor ignored/);
   });
 
   it('refuses a map with a field key the schema does not have', async () => {
@@ -130,21 +130,21 @@ describe('load-time refusals', () => {
     const reg = await registry();
     const w2 = file.forms.find((f) => f.formType === 'W-2')!;
     w2.fields.push({ fieldKey: 'box_99', nodeField: 'box99', engineRequired: false });
-    expect(() => assertConsistent(file, reg)).toThrow(/box_99 is not on the schema/);
+    await expect(assertConsistent(file, reg)).rejects.toThrow(/box_99 is not on the schema/);
   });
 
   it('refuses a map that drops a registered form type entirely', async () => {
     const file = await base();
     const reg = await registry();
     file.forms = file.forms.filter((f) => f.formType !== 'W-2');
-    expect(() => assertConsistent(file, reg)).toThrow(/W-2 is registered as a form type but is absent/);
+    await expect(assertConsistent(file, reg)).rejects.toThrow(/W-2 is registered as a form type but is absent/);
   });
 
   it('refuses a form type that is both mapped and unmappable', async () => {
     const file = await base();
     const reg = await registry();
     file.unmappable.push({ formType: 'W-2', reason: 'no_engine_node', detail: 'x'.repeat(50) });
-    expect(() => assertConsistent(file, reg)).toThrow(/both mapped and declared unmappable/);
+    await expect(assertConsistent(file, reg)).rejects.toThrow(/both mapped and declared unmappable/);
   });
 
   it('refuses two boxes aimed at one engine field', async () => {
@@ -153,10 +153,67 @@ describe('load-time refusals', () => {
     const w2 = file.forms.find((f) => f.formType === 'W-2')!;
     const box3 = w2.fields.find((f) => f.fieldKey === 'box_3')!;
     box3.nodeField = 'box1_wages';
-    expect(() => assertConsistent(file, reg)).toThrow(/box1_wages is targeted twice/);
+    await expect(assertConsistent(file, reg)).rejects.toThrow(/box1_wages is targeted twice/);
   });
 
   it('has no node map for a year with no file, and says adding one is a data change', async () => {
     await expect(loadNodeMap(1999)).rejects.toThrow(/data change, not a code change/);
+  });
+
+  it('refuses a map that leaves a worksheet line out of the comparison', async () => {
+    const file = await base();
+    const reg = await registry();
+    file.lines.comparable = file.lines.comparable.filter((l) => l.lineRef !== '1040:1z');
+    await expect(assertConsistent(file, reg)).rejects.toThrow(
+      /line 1040:1z is neither compared against the engine nor declared notCompared/,
+    );
+  });
+
+  it('refuses two worksheet lines compared against one engine line', async () => {
+    const file = await base();
+    const reg = await registry();
+    const a = file.lines.comparable.find((l) => l.lineRef === '1040:1a')!;
+    a.engineLine = 'line1z_total_wages';
+    await expect(assertConsistent(file, reg)).rejects.toThrow(
+      /engine line f1040.line1z_total_wages is compared against twice/,
+    );
+  });
+
+  it('refuses a node-map line ref that is not in the line mappings', async () => {
+    const file = await base();
+    const reg = await registry();
+    file.lines.notCompared.push({ lineRef: '1040:99', reason: 'not_a_line' });
+    await expect(assertConsistent(file, reg)).rejects.toThrow(
+      /line 1040:99 is in the node map but not in the 2025 line mappings/,
+    );
+  });
+});
+
+describe('the line comparison map', () => {
+  it('declares every 2025 worksheet line exactly once', async () => {
+    const file = await loadNodeMap(2025);
+    const compared = new Set(file.lines.comparable.map((l) => l.lineRef));
+    const not = new Set(file.lines.notCompared.map((l) => l.lineRef));
+    expect([...compared].filter((r) => not.has(r))).toEqual([]);
+    expect(compared.size + not.size).toBe(60);
+  });
+
+  it('offers engine-only figures a worksheet has no counterpart for', async () => {
+    const file = await loadNodeMap(2025);
+    const keys = file.lines.computedOnly.map((l) => l.engineLine);
+    // The whole point of a draft return: numbers the worksheet cannot produce.
+    expect(keys).toContain('line11_agi');
+    expect(keys).toContain('line15_taxable_income');
+    expect(keys).toContain('line24_total_tax');
+    expect(keys).toContain('line35a_refund');
+  });
+
+  it('notes the lines where a disagreement is expected rather than a defect', async () => {
+    const file = await loadNodeMap(2025);
+    const noted = new Map(file.lines.comparable.filter((l) => l.note).map((l) => [l.lineRef, l.note!]));
+    // These three are withheld from the engine by design, so they cannot agree.
+    expect(noted.get('1040:6a')).toContain('withholds every SSA-1099');
+    expect(noted.get('1040:7')).toContain('1099-B is unmappable');
+    expect(noted.get('SCH1:21')).toContain('by meaning, not by number');
   });
 });

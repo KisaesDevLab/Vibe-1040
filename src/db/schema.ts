@@ -589,6 +589,110 @@ export const worksheetContributions = pgTable(
   (t) => [index('worksheet_contributions_line_idx').on(t.worksheetLineId)],
 );
 
+// ── draft returns (P17, migration 0012) ──────────────────────────────────────
+
+/**
+ * A draft 1040 computed by the OpenTax engine from the amounts this app read (§14).
+ *
+ * Derived taxpayer data, on the same footing as a rasterized page or the sorted PDF:
+ * regenerable, purged on the retention schedule, and never outliving its sources (§11).
+ *
+ * `complete` is written by the app from the translator's verdict, not derived at read time,
+ * so that changing what counts as an omission later cannot silently re-characterise a draft
+ * somebody has already read.
+ */
+export const draftReturns = pgTable(
+  'draft_returns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bundleId: uuid('bundle_id')
+      .notNull()
+      .references(() => bundles.id, { onDelete: 'cascade' }),
+    taxYear: integer('tax_year').notNull(),
+    /** Provenance: a draft is only meaningful against the versions that produced it. */
+    engineVersion: text('engine_version').notNull(),
+    nodeMapVersion: text('node_map_version').notNull(),
+    mappingVersion: text('mapping_version').notNull(),
+    /** Stated by the reviewer, because no document carries it (§14 rule 5). */
+    filingStatus: text('filing_status'),
+    /** False whenever anything at all was withheld. Never a finished return. */
+    complete: boolean('complete').notNull().default(false),
+    documentsIncluded: integer('documents_included').notNull().default(0),
+    documentsWithheld: integer('documents_withheld').notNull().default(0),
+    engineSummary: jsonb('engine_summary').notNull().default({}),
+    generatedBy: uuid('generated_by')
+      .notNull()
+      .references(() => users.id),
+    ...timestamps,
+  },
+  (t) => [index('draft_returns_bundle_idx').on(t.bundleId)],
+);
+
+export const draftReturnLines = pgTable(
+  'draft_return_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    draftReturnId: uuid('draft_return_id')
+      .notNull()
+      .references(() => draftReturns.id, { onDelete: 'cascade' }),
+    /** Null for an engine figure the worksheet has no counterpart for — AGI, total tax. */
+    lineRef: text('line_ref'),
+    lineLabel: text('line_label').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    engineForm: text('engine_form').notNull(),
+    engineLine: text('engine_line').notNull(),
+    /** Both nullable: null means that side reported nothing. A blank is not a zero (§5). */
+    reportedCents: bigint('reported_cents', { mode: 'number' }),
+    computedCents: bigint('computed_cents', { mode: 'number' }),
+    /** agrees | differs | engine_silent | worksheet_silent | both_blank | computed_only */
+    verdict: text('verdict').notNull(),
+    /** Why a disagreement here may be expected rather than a defect. */
+    note: text('note'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('draft_return_lines_uq').on(t.draftReturnId, t.engineForm, t.engineLine),
+    index('draft_return_lines_draft_idx').on(t.draftReturnId),
+  ],
+);
+
+/** The omissions contract, made durable. A draft that cannot say what it is missing is the
+ * failure mode the whole design exists to avoid. */
+export const draftReturnOmissions = pgTable(
+  'draft_return_omissions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    draftReturnId: uuid('draft_return_id')
+      .notNull()
+      .references(() => draftReturns.id, { onDelete: 'cascade' }),
+    /** Null for something no document could carry — filing status, basis, carryovers. */
+    documentId: uuid('document_id').references(() => documents.id, { onDelete: 'cascade' }),
+    formType: text('form_type'),
+    fieldKey: text('field_key'),
+    reason: text('reason').notNull(),
+    detail: text('detail').notNull(),
+    ...timestamps,
+  },
+  (t) => [index('draft_return_omissions_draft_idx').on(t.draftReturnId)],
+);
+
+/** The engine's own MeF business-rule diagnostics. Read here; never emitted, never filed. */
+export const draftReturnValidations = pgTable(
+  'draft_return_validations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    draftReturnId: uuid('draft_return_id')
+      .notNull()
+      .references(() => draftReturns.id, { onDelete: 'cascade' }),
+    /** hard | soft */
+    severity: text('severity').notNull(),
+    code: text('code').notNull(),
+    message: text('message').notNull(),
+    ...timestamps,
+  },
+  (t) => [index('draft_return_validations_draft_idx').on(t.draftReturnId)],
+);
+
 // ── jobs (P3) ────────────────────────────────────────────────────────────────
 
 /**

@@ -14,7 +14,7 @@ import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
 import { env } from '../config/env.ts';
 import { db } from '../db/client.ts';
-import { bundles, pages, purgeLog, sourceFiles } from '../db/schema.ts';
+import { bundles, draftReturns, pages, purgeLog, sourceFiles } from '../db/schema.ts';
 import { setting } from '../settings/store.ts';
 import { blobs } from '../storage/index.ts';
 
@@ -79,6 +79,33 @@ export async function runRetention(): Promise<PurgeSummary> {
       rastersPurged += 1;
     } catch (err) {
       errors.push({ key: bundle.key!, message: (err as Error).message });
+    }
+  }
+
+  // A draft return holds computed taxpayer amounts and no blob — it is derived data that is
+  // regenerable while the documents live, so it goes on the raster schedule too (§11, §14).
+  // Its lines, omissions and diagnostics cascade with the row.
+  const staleDrafts = await db
+    .select({ id: draftReturns.id, bundleId: draftReturns.bundleId, at: draftReturns.createdAt })
+    .from(draftReturns)
+    .where(lt(draftReturns.createdAt, rasterCutoff));
+  for (const draft of staleDrafts) {
+    const ageDays = Math.floor((Date.now() - draft.at.getTime()) / 86_400_000);
+    try {
+      if (!dryRun) await db.delete(draftReturns).where(eq(draftReturns.id, draft.id));
+      await db.insert(purgeLog).values({
+        kind: 'draft_return',
+        entityType: 'draft_return',
+        entityId: draft.id,
+        bundleId: draft.bundleId,
+        policyDays: rasterDays,
+        ageDays,
+        storageKey: null,
+        dryRun,
+      });
+      rastersPurged += 1;
+    } catch (err) {
+      errors.push({ key: `draft_return:${draft.id}`, message: (err as Error).message });
     }
   }
 

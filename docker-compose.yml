@@ -55,6 +55,40 @@ services:
       - blobs:/data/blobs
     networks: [vibe1040]
 
+  # The OpenTax engine (P17, CLAUDE.md §14). Optional: start it only when
+  # DRAFT_RETURN_ENABLED is true. Nothing else depends on it, and with it stopped the app
+  # degrades and says so at /health rather than failing a bundle.
+  #
+  # `profiles` keeps it out of a plain `docker compose up`, so a deployment that has not
+  # enabled the draft return does not pull or run an engine it will never call:
+  #   docker compose --profile draft-return up -d
+  #
+  # It joins vibe1040 only. It has no database, no Redis, no volume and no secret, and it
+  # reaches nothing outside this network — the engine is deterministic and makes no calls.
+  opentax:
+    image: ghcr.io/kisaesdevlab/vibe-1040-opentax:${VIBE_1040_VERSION:-latest}
+    profiles: [draft-return]
+    build:
+      context: ./opentax
+      dockerfile: Dockerfile
+      args:
+        # Pinned, and checksummed. See opentax/Dockerfile for why this is not optional.
+        OPENTAX_VERSION: ${OPENTAX_VERSION:?set OPENTAX_VERSION to a pinned engine release}
+        OPENTAX_SHA256: ${OPENTAX_SHA256:?set OPENTAX_SHA256 to that release asset's sha256}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      # Returns are computed in a temp directory and deleted with the response. Nothing here
+      # needs to persist, and nothing holding taxpayer amounts should be able to.
+      - /tmp
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8230/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks: [vibe1040]
+
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped

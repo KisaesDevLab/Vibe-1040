@@ -14,7 +14,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.ts';
-import { bundles, pages, purgeLog, sourceFiles, worksheets } from '../db/schema.ts';
+import { bundles, draftReturns, pages, purgeLog, sourceFiles, worksheets } from '../db/schema.ts';
 import { blobs } from '../storage/index.ts';
 
 export interface DeleteSummary {
@@ -83,6 +83,22 @@ export async function deleteBundle(bundleId: string): Promise<DeleteSummary> {
   }
 
   // Rows last. Every child table cascades from the bundle.
+  // Draft returns hold no blob, so they leave no orphan in storage — but they hold computed
+  // taxpayer amounts, and an ad-hoc delete must leave the same evidence a policy purge does
+  // (§11). The rows themselves cascade with the bundle.
+  for (const draft of await db.select({ id: draftReturns.id }).from(draftReturns).where(eq(draftReturns.bundleId, bundleId))) {
+    await db.insert(purgeLog).values({
+      kind: 'draft_return',
+      entityType: 'draft_return',
+      entityId: draft.id,
+      bundleId,
+      policyDays: 0,
+      ageDays: 0,
+      storageKey: null,
+      dryRun: false,
+    });
+  }
+
   await db.delete(bundles).where(eq(bundles.id, bundleId));
 
   return { bundleId, label: bundle.label, blobsDeleted, errors };
