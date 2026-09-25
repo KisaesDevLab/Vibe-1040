@@ -1,0 +1,1372 @@
+{
+  "taxYear": 2025,
+  "version": "2025.1",
+  "engine": {
+    "name": "opentax",
+    "formType": "f1040",
+    "pinnedVersion": "0.1.0"
+  },
+  "notes": [
+    "Form type and field mapping onto the OpenTax input-node catalogue (PHASES.md P17).",
+    "Data, not code: adding a tax year is a data change, exactly as for data/line-mappings.",
+    "Engine field names are NOT derivable by convention -- the catalogue uses box1_wages on w2, box1 on f1099int, box1_oid on f1099oid and box_1_unemployment on f1099g. Every pair below is explicit for that reason.",
+    "Amounts are stored here in cents and converted to dollars at the boundary. A null is never sent as zero (CLAUDE.md §5); it is reported as an omission.",
+    "Every field of every mapped form type appears in exactly one of fields, codeGroups, monthlyArrays or ignored. The loader refuses a file where one does not.",
+    "W-2G boxes 2, 3, 5, 6, 7, 8 and 10 are ignored because the engine's w2g node numbers those boxes differently from the 2025 form revision this app reads; mapping them by number would move a date into a wager type.",
+    "RRB-1099 binds to the ssa1099 node with is_rrb set. Box 4 (net SSEB tier 1 paid) is the gross benefit, box 5 the repayment."
+  ],
+  "forms": [
+    {
+      "formType": "W-2",
+      "nodeType": "w2",
+      "fields": [
+        {
+          "fieldKey": "employer_ein",
+          "nodeField": "employer_ein"
+        },
+        {
+          "fieldKey": "employer_name",
+          "nodeField": "employer_name"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_wages",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_fed_withheld",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_ss_wages"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_ss_withheld"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_medicare_wages"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_medicare_withheld"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7_ss_tips"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_allocated_tips"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10_dep_care"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11_nonqual_plans"
+        },
+        {
+          "fieldKey": "box_13_statutory",
+          "nodeField": "box13_statutory_employee"
+        },
+        {
+          "fieldKey": "box_13_retirement",
+          "nodeField": "box13_retirement_plan"
+        },
+        {
+          "fieldKey": "box_13_sick_pay",
+          "nodeField": "box13_third_party_sick"
+        },
+        {
+          "fieldKey": "box_15_state",
+          "nodeField": "box15_state"
+        },
+        {
+          "fieldKey": "box_16",
+          "nodeField": "box16_state_wages"
+        },
+        {
+          "fieldKey": "box_17",
+          "nodeField": "box17_state_withheld"
+        },
+        {
+          "fieldKey": "box_18",
+          "nodeField": "box18_local_wages"
+        },
+        {
+          "fieldKey": "box_19",
+          "nodeField": "box19_local_withheld"
+        }
+      ],
+      "codeGroups": [
+        {
+          "nodeField": "box12_entries",
+          "pairs": [
+            {
+              "code": "box_12a_code",
+              "amount": "box_12a_amount"
+            },
+            {
+              "code": "box_12b_code",
+              "amount": "box_12b_amount"
+            },
+            {
+              "code": "box_12c_code",
+              "amount": "box_12c_amount"
+            },
+            {
+              "code": "box_12d_code",
+              "amount": "box_12d_amount"
+            }
+          ]
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "employee_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "employee_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_14_other",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_15_state_id",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_20",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "W-2G",
+      "nodeType": "w2g",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name"
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_ein"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_winnings"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_15",
+          "nodeField": "box15_state_withheld"
+        },
+        {
+          "fieldKey": "box_13_state_id",
+          "nodeField": "box14_state_id"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "winner_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "winner_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_2",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_3",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_5",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_6",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_7",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_8",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_10",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_14",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_16",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_17",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_18",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-INT",
+      "nodeType": "f1099int",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_tin"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box9"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11"
+        },
+        {
+          "fieldKey": "box_12",
+          "nodeField": "box12"
+        },
+        {
+          "fieldKey": "box_13",
+          "nodeField": "box13"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7"
+        },
+        {
+          "fieldKey": "box_14",
+          "nodeField": "box14"
+        },
+        {
+          "fieldKey": "box_17",
+          "nodeField": "box17"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "account_number",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_15_state",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_16_state_id",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-OID",
+      "nodeType": "f1099oid",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_tin"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_oid"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_other_interest"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_early_withdrawal_penalty"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_market_discount"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_acquisition_premium"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7_description"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_oid_treasury"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box9_investment_expenses"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10_bond_premium"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11_tax_exempt_oid"
+        },
+        {
+          "fieldKey": "box_14",
+          "nodeField": "box12_state_tax"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "account_number",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_12_state",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_13_state_id",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-DIV",
+      "nodeType": "f1099div",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name"
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_tin"
+        },
+        {
+          "fieldKey": "box_1a",
+          "nodeField": "box1a",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_1b",
+          "nodeField": "box1b"
+        },
+        {
+          "fieldKey": "box_2a",
+          "nodeField": "box2a"
+        },
+        {
+          "fieldKey": "box_2b",
+          "nodeField": "box2b"
+        },
+        {
+          "fieldKey": "box_2c",
+          "nodeField": "box2c"
+        },
+        {
+          "fieldKey": "box_2d",
+          "nodeField": "box2d"
+        },
+        {
+          "fieldKey": "box_2e",
+          "nodeField": "box2e"
+        },
+        {
+          "fieldKey": "box_2f",
+          "nodeField": "box2f"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box9"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11"
+        },
+        {
+          "fieldKey": "box_12",
+          "nodeField": "box12"
+        },
+        {
+          "fieldKey": "box_13",
+          "nodeField": "box13"
+        },
+        {
+          "fieldKey": "box_16",
+          "nodeField": "box16"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "account_number",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_14_state",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_15_state_id",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-R",
+      "nodeType": "f1099r",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_ein",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "account_number",
+          "nodeField": "account_number"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_gross_distribution",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_2a",
+          "nodeField": "box2a_taxable_amount"
+        },
+        {
+          "fieldKey": "box_2b_not_determined",
+          "nodeField": "box2b_not_determined"
+        },
+        {
+          "fieldKey": "box_2b_total_distribution",
+          "nodeField": "box2b_total_dist"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_capital_gain"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_employee_contributions"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_nua"
+        },
+        {
+          "fieldKey": "box_7_code",
+          "nodeField": "box7_distribution_code",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_7_ira_sep_simple",
+          "nodeField": "box7_ira_simple_indicator"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_other"
+        },
+        {
+          "fieldKey": "box_9a",
+          "nodeField": "box9a_pct_total"
+        },
+        {
+          "fieldKey": "box_9b",
+          "nodeField": "box9b_total_employee_contributions"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10_irr_within_5yr"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11_first_year_roth"
+        },
+        {
+          "fieldKey": "box_12_fatca",
+          "nodeField": "box12_fatca"
+        },
+        {
+          "fieldKey": "box_14",
+          "nodeField": "box14_state_tax"
+        },
+        {
+          "fieldKey": "box_15_state",
+          "nodeField": "box15_payer_state"
+        },
+        {
+          "fieldKey": "box_16",
+          "nodeField": "box16_state_distribution"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_15_state_id",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-G",
+      "nodeType": "f1099g",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name"
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_tin"
+        },
+        {
+          "fieldKey": "account_number",
+          "nodeField": "account_number"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box_1_unemployment"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box_2_state_refund"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box_3_tax_year"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box_4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box_5_rtaa"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box_6_taxable_grants"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box_7_agriculture"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box_8_trade_or_business"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box_9_market_gain"
+        },
+        {
+          "fieldKey": "box_10a_state",
+          "nodeField": "box_10a_state"
+        },
+        {
+          "fieldKey": "box_10b_state_id",
+          "nodeField": "box_10b_state_id"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box_11_state_withheld"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    },
+    {
+      "formType": "1099-MISC",
+      "nodeType": "f1099m",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "account_number",
+          "nodeField": "account_number"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_rents"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_royalties"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_other_income"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_fishing_boat"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_medical_payments"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7_direct_sales"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_substitute_payments"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box9_crop_insurance"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10_attorney_proceeds"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11_fish_purchased"
+        },
+        {
+          "fieldKey": "box_12",
+          "nodeField": "box12_section_409a_deferrals"
+        },
+        {
+          "fieldKey": "box_13",
+          "nodeField": "box13_fatca"
+        },
+        {
+          "fieldKey": "box_14",
+          "nodeField": "box15_nqdc"
+        },
+        {
+          "fieldKey": "box_15",
+          "nodeField": "box16_state_tax_withheld"
+        },
+        {
+          "fieldKey": "box_17_state",
+          "nodeField": "box17_state_payer_id"
+        },
+        {
+          "fieldKey": "box_18",
+          "nodeField": "box18_state_income"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "payer_tin",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_16",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-NEC",
+      "nodeType": "f1099nec",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_tin",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_nec"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_direct_sales"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "account_number",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_5",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_6_state",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_7",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-K",
+      "nodeType": "f1099k",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "pse_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "pse_tin"
+        },
+        {
+          "fieldKey": "account_number",
+          "nodeField": "account_number"
+        },
+        {
+          "fieldKey": "box_1a",
+          "nodeField": "box1a_gross_payments"
+        },
+        {
+          "fieldKey": "box_1b",
+          "nodeField": "box1b_card_not_present"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_merchant_category_code"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_transaction_count"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_6_state",
+          "nodeField": "box6_state"
+        },
+        {
+          "fieldKey": "box_7_state_id",
+          "nodeField": "box7_state_id"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_state_withheld"
+        },
+        {
+          "fieldKey": "box_5_january",
+          "nodeField": "box5a_january"
+        },
+        {
+          "fieldKey": "box_5_february",
+          "nodeField": "box5b_february"
+        },
+        {
+          "fieldKey": "box_5_march",
+          "nodeField": "box5c_march"
+        },
+        {
+          "fieldKey": "box_5_april",
+          "nodeField": "box5d_april"
+        },
+        {
+          "fieldKey": "box_5_may",
+          "nodeField": "box5e_may"
+        },
+        {
+          "fieldKey": "box_5_june",
+          "nodeField": "box5f_june"
+        },
+        {
+          "fieldKey": "box_5_july",
+          "nodeField": "box5g_july"
+        },
+        {
+          "fieldKey": "box_5_august",
+          "nodeField": "box5h_august"
+        },
+        {
+          "fieldKey": "box_5_september",
+          "nodeField": "box5i_september"
+        },
+        {
+          "fieldKey": "box_5_october",
+          "nodeField": "box5j_october"
+        },
+        {
+          "fieldKey": "box_5_november",
+          "nodeField": "box5k_november"
+        },
+        {
+          "fieldKey": "box_5_december",
+          "nodeField": "box5l_december"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    },
+    {
+      "formType": "1098",
+      "nodeType": "f1098",
+      "fields": [
+        {
+          "fieldKey": "recipient_name",
+          "nodeField": "lender_name"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_mortgage_interest",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_outstanding_principal"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_origination_date"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_refund_overpaid"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_mip"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_points_paid"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7_property_address_same"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_property_address"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box9_number_of_properties"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10_other"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11_acquisition_date"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "payer_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "borrower_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    },
+    {
+      "formType": "1098-E",
+      "nodeType": "f1098e",
+      "fields": [
+        {
+          "fieldKey": "lender_name",
+          "nodeField": "lender_name"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_student_loan_interest",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_origination_fees_excluded"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "borrower_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "borrower_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    },
+    {
+      "formType": "SSA-1099",
+      "nodeType": "ssa1099",
+      "fields": [
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_gross_benefits",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_repaid"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_net_benefits"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_federal_withheld"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "beneficiary_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "beneficiary_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_7",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_8",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "RRB-1099",
+      "nodeType": "ssa1099",
+      "constants": {
+        "is_rrb": true
+      },
+      "fields": [
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box3_gross_benefits",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box4_repaid"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box6_federal_withheld"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_6",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_7",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_8",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1095-A",
+      "nodeType": "f1095a",
+      "fields": [
+        {
+          "fieldKey": "policy_issuer_name",
+          "nodeField": "issuer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "marketplace_id",
+          "nodeField": "policy_number"
+        },
+        {
+          "fieldKey": "annual_premium",
+          "nodeField": "annual_premium"
+        },
+        {
+          "fieldKey": "annual_slcsp",
+          "nodeField": "annual_slcsp"
+        },
+        {
+          "fieldKey": "annual_aptc",
+          "nodeField": "annual_aptc"
+        }
+      ],
+      "monthlyArrays": [
+        {
+          "nodeField": "monthly_premiums",
+          "fieldKeys": [
+            "monthly_january_premium",
+            "monthly_february_premium",
+            "monthly_march_premium",
+            "monthly_april_premium",
+            "monthly_may_premium",
+            "monthly_june_premium",
+            "monthly_july_premium",
+            "monthly_august_premium",
+            "monthly_september_premium",
+            "monthly_october_premium",
+            "monthly_november_premium",
+            "monthly_december_premium"
+          ]
+        },
+        {
+          "nodeField": "monthly_slcsps",
+          "fieldKeys": [
+            "monthly_january_slcsp",
+            "monthly_february_slcsp",
+            "monthly_march_slcsp",
+            "monthly_april_slcsp",
+            "monthly_may_slcsp",
+            "monthly_june_slcsp",
+            "monthly_july_slcsp",
+            "monthly_august_slcsp",
+            "monthly_september_slcsp",
+            "monthly_october_slcsp",
+            "monthly_november_slcsp",
+            "monthly_december_slcsp"
+          ]
+        },
+        {
+          "nodeField": "monthly_aptcs",
+          "fieldKeys": [
+            "monthly_january_aptc",
+            "monthly_february_aptc",
+            "monthly_march_aptc",
+            "monthly_april_aptc",
+            "monthly_may_aptc",
+            "monthly_june_aptc",
+            "monthly_july_aptc",
+            "monthly_august_aptc",
+            "monthly_september_aptc",
+            "monthly_october_aptc",
+            "monthly_november_aptc",
+            "monthly_december_aptc"
+          ]
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    }
+  ],
+  "unmappable": [
+    {
+      "formType": "1099-B",
+      "reason": "engine_shape_mismatch",
+      "detail": "The engine's f1099b node is per-lot and requires description, date_acquired, date_sold, proceeds and cost_basis for every transaction. This app extracts Form 8949 section subtotals only and does not extract per-lot rows in v1 (CLAUDE.md §8), so there is nothing to populate a lot with."
+    },
+    {
+      "formType": "1099-CONSOLIDATED",
+      "reason": "container",
+      "detail": "A consolidated package is a container whose sub-forms are separate documents (CLAUDE.md §4). The sub-forms map on their own; the summary page exists to foot against them, not to feed a computation."
+    },
+    {
+      "formType": "K-1-1065",
+      "reason": "policy_boxes_as_printed",
+      "detail": "K-1 v1 scope is boxes as printed with no line dispersion (CLAUDE.md §8). The engine has a k1_partnership node, but populating it would disperse lettered sub-codes and footnote statements this app deliberately does not parse."
+    },
+    {
+      "formType": "K-1-1120S",
+      "reason": "policy_boxes_as_printed",
+      "detail": "As K-1-1065. The engine's k1_s_corp node is deliberately not used."
+    },
+    {
+      "formType": "K-1-1041",
+      "reason": "policy_boxes_as_printed",
+      "detail": "As K-1-1065. The engine's k1_trust node is deliberately not used."
+    },
+    {
+      "formType": "SSA-1042S",
+      "reason": "policy_boxes_as_printed",
+      "detail": "Boxes as printed only, with no 1040 line mapping at all (CLAUDE.md §8, QUESTIONS.md Q16). Whether the benefit belongs on a 1040 or a 1040-NR, and at what rate or under which treaty, is not decided here."
+    },
+    {
+      "formType": "1098-T",
+      "reason": "no_engine_node",
+      "detail": "The engine has no 1098-T input node; its f8863 node takes already-determined qualified expenses, which is the netting question CLAUDE.md §9 refuses to answer."
+    },
+    {
+      "formType": "1099-S",
+      "reason": "no_engine_node",
+      "detail": "No engine input node. Gross proceeds depend on the §121 exclusion, which CLAUDE.md §2 forbids this app from applying."
+    },
+    {
+      "formType": "1099-SA",
+      "reason": "no_engine_node",
+      "detail": "No engine input node for HSA/MSA distributions; the engine's form8889 is an output node fed from W-2 box 12 codes."
+    },
+    {
+      "formType": "1099-Q",
+      "reason": "no_engine_node",
+      "detail": "No engine input node for qualified education program distributions."
+    },
+    {
+      "formType": "1099-LTC",
+      "reason": "no_engine_node",
+      "detail": "No engine input node. The engine's ltc_premium node is a premium deduction input, not the 1099-LTC benefit statement."
+    },
+    {
+      "formType": "5498",
+      "reason": "no_engine_node",
+      "detail": "No engine input node. A 5498 is informational; contributions reach the return through the taxpayer's own records, not the form."
+    },
+    {
+      "formType": "5498-SA",
+      "reason": "no_engine_node",
+      "detail": "No engine input node. Informational, as 5498."
+    }
+  ]
+}

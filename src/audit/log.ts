@@ -33,6 +33,9 @@ export type AuditAction =
   | 'document.correct'
   | 'bundle.sorted_pdf'
   | 'bundle.sorted_pdf_download'
+  // Draft return (P17). The engine input carries the taxpayer's amounts; the draft return
+  // carries computed lines. Both leave the appliance toward a browser, so both audit.
+  | 'bundle.draft_input'
   | 'check.disposition'
   | 'worksheet.generate'
   | 'worksheet.download'

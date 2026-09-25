@@ -33,6 +33,7 @@ import {
   users,
   worksheets,
 } from '../db/schema.ts';
+import { buildDraftInputForBundle } from '../draft/build.ts';
 import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
 import { hashTin, isPlausibleTin, normalizeTin } from '../identity/tin.ts';
@@ -49,7 +50,7 @@ import { blobs } from '../storage/index.ts';
 import { placementOf, sortDocuments } from '../worksheet/form-order.ts';
 import { buildSortedPdf } from '../worksheet/sorted-pdf.ts';
 import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts';
-import { ExtractionIncompleteError, IdentityNotConfirmedError, WorksheetBlockedError } from '../reconcile/gate.ts';
+import { assertWorksheetAllowed, ExtractionIncompleteError, IdentityNotConfirmedError, WorksheetBlockedError } from '../reconcile/gate.ts';
 import { auditAccess, requireRole, requireUser } from './middleware.ts';
 
 /** Queue every source file of a freshly ingested bundle for rasterisation. */
@@ -581,6 +582,69 @@ export function registerRoutes(app: FastifyInstance): void {
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `attachment; filename="${safeLabel} - sorted.pdf"`)
       .send(data);
+  });
+
+  /**
+   * The bundle as OpenTax engine input (P17), for a preparer who wants to run the engine
+   * themselves. This computes nothing: it is the extracted values in the engine's input-node
+   * shape, plus every reason a value could not be sent.
+   *
+   * Audited as taxpayer data, because that is exactly what the file contains. A blocked
+   * bundle is refused through the same gate as the worksheet — there is one door (§6, §7).
+   */
+  app.get('/api/bundles/:id/draft-input', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const query = z
+      .object({
+        filingStatus: z.string().optional(),
+        download: z.coerce.boolean().optional(),
+      })
+      .parse(req.query);
+
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    try {
+      await assertWorksheetAllowed(id);
+    } catch (err) {
+      if (err instanceof WorksheetBlockedError) {
+        return reply.code(409).send({ error: 'blocked', blocking: err.blocking });
+      }
+      if (err instanceof ExtractionIncompleteError) {
+        return reply.code(409).send({ error: 'extraction_incomplete', message: err.message });
+      }
+      if (err instanceof IdentityNotConfirmedError) {
+        return reply.code(409).send({ error: 'identity_unconfirmed', message: err.message });
+      }
+      throw err;
+    }
+
+    const input = await buildDraftInputForBundle(
+      id,
+      query.filingStatus === undefined ? {} : { filingStatus: query.filingStatus },
+    );
+    await auditAccess(req, 'bundle.draft_input', {
+      bundleId: id,
+      entityType: 'bundle',
+      entityId: id,
+      detail: {
+        nodes: input.nodes.length,
+        omissions: input.omissions.length,
+        documentsWithheld: input.documentsWithheld,
+        nodeMapVersion: input.nodeMapVersion,
+      },
+    });
+
+    if (!query.download) return input;
+
+    const safeLabel = bundle.label.replace(/[^A-Za-z0-9 _.-]+/g, '').trim() || 'bundle';
+    return reply
+      .header('Content-Type', 'application/json')
+      .header('Content-Disposition', `attachment; filename="${safeLabel} - opentax input.json"`)
+      .header('Cache-Control', 'private, no-store')
+      .send(JSON.stringify(input, null, 2));
   });
 
   /**
