@@ -349,6 +349,21 @@ runtime; a click that downloaded and swapped an engine would be `install.sh | sh
 manners, and §14's pin-and-verify rule exists to forbid exactly that. The page is the part of
 this procedure a person can see without a shell — see QUESTIONS.md Q23.
 
+### What CI verifies about the image
+
+`opentax-image` builds `opentax/Dockerfile` from `opentax/pinned.json` and then, in the
+**runtime** stage rather than the build stage, checks four things a comment cannot:
+
+1. The engine runs at all — `deno compile` output on `node:24-bookworm-slim`, as a non-root
+   user, with no build tooling present.
+2. It reports the pinned version, so a moved release or a wrong checksum fails here.
+3. **Its AGPL licence is in the image and is the AGPL.** The binary is conveyed in this image,
+   so its licence has to travel with it (§8, Q22). It is fetched in the build stage from the
+   release tag — not from `main`, which moves — with `curl -f`, so a 404 or an error page fails
+   the build instead of being baked in as the licence text.
+4. The sidecar comes up and `/health` and `/catalog` answer correctly, which is how the app
+   reaches it.
+
 ## 8. Licence posture
 
 This app was relicensed **AGPL-3.0-only** on 2026-09-25, from a BUSL-1.1 declaration that never

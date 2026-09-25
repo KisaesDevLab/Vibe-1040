@@ -44,14 +44,28 @@ RUN curl -fsSL -o /tmp/opentax \
  && rm -f /tmp/opentax \
  && /usr/local/bin/opentax version
 
+# The engine's own licence, from the tag being installed. `-f` so an error page or a 404 fails
+# the build rather than being baked in as the licence text.
+RUN mkdir -p /usr/share/licenses/opentax \
+ && curl -fsSL -o /usr/share/licenses/opentax/LICENSE \
+      "https://raw.githubusercontent.com/filedcom/opentax/${OPENTAX_VERSION}/LICENSE" \
+ && grep -q 'GNU AFFERO GENERAL PUBLIC LICENSE' /usr/share/licenses/opentax/LICENSE
+
 # ---
 
 FROM node:24-bookworm-slim AS runtime
 
 # The engine is AGPL v3. It is conveyed here unmodified and invoked as a subprocess; its
-# licence travels with it so anyone handed this image is told where the source is.
+# licence travels with it so anyone handed this image is told where the source is (§13, Q22).
+#
+# Fetched in the build stage, from the RELEASE TAG rather than from `main`: this is the licence
+# of the binary actually shipped, and `main` moves. It is also fetched there because that stage
+# has curl and can fail loudly on a bad response, where `ADD` from a URL is unchecksummed and
+# was previously reporting `DONE 0.0s` — not evidence that anything arrived. CI asserts the
+# file is present and is the AGPL, because conveying the binary without it is a licence
+# problem, not a cosmetic one.
 COPY --from=engine /usr/local/bin/opentax /usr/local/bin/opentax
-ADD https://raw.githubusercontent.com/filedcom/opentax/main/LICENSE /usr/share/licenses/opentax/LICENSE
+COPY --from=engine /usr/share/licenses/opentax/LICENSE /usr/share/licenses/opentax/LICENSE
 
 WORKDIR /app
 COPY server.mjs ./server.mjs

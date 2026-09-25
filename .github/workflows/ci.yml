@@ -186,6 +186,17 @@ jobs:
             exit 1
           }
 
+      # The engine is AGPL v3 and is conveyed in this image, so its licence has to travel with
+      # it (§13, QUESTIONS.md Q22). Asserted rather than assumed: the previous `ADD` from a URL
+      # reported `DONE 0.0s`, which is not evidence that anything arrived.
+      - name: The engine's licence is in the image
+        run: |
+          docker run --rm --entrypoint sh vibe-1040-opentax:ci -c '
+            test -s /usr/share/licenses/opentax/LICENSE || { echo "LICENSE missing or empty"; exit 1; }
+            head -3 /usr/share/licenses/opentax/LICENSE
+            grep -q "GNU AFFERO GENERAL PUBLIC LICENSE" /usr/share/licenses/opentax/LICENSE
+          '
+
       # And that it comes up as a service and answers, which is how the app reaches it.
       - name: Start the sidecar and check /health and /catalog
         run: |
