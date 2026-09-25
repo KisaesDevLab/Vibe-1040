@@ -12,7 +12,8 @@ do not infer progress from the commit log.
 2026-09-19**, merged to main 2026-09-22 (PR #1, merge `84c3918`) and **released as v0.10.0**
 the same day so the appliance can register against a real image. **P17 (draft return via
 OpenTax) — implemented 2026-09-25**, all three stages, carrying migration 0012. **P18
-(preparer-supplied inputs) — implemented 2026-09-25**, carrying migration 0013.
+(preparer-supplied inputs) — implemented 2026-09-25**, carrying migration 0013. Both merged
+to main 2026-09-25 (PR #2, merge `67283c1`) and **released as v0.11.0**.
 **Status:** P0–P16 code complete and **integration-unverified**; P17 code complete and
 **scored against the real engine v2.0.4** — 13 of 13 comparable lines agree (see below); P18
 code complete and **driven end to end in a browser against that engine and a real database**.
