@@ -33,6 +33,19 @@ export type AuditAction =
   | 'document.correct'
   | 'bundle.sorted_pdf'
   | 'bundle.sorted_pdf_download'
+  // Draft return (P17). The engine input carries the taxpayer's amounts; the draft return
+  // carries computed lines. Both leave the appliance toward a browser, so both audit.
+  | 'bundle.draft_input'
+  | 'draft.generate'
+  | 'draft.view'
+  /** Preparer-supplied inputs (P18). Who stated what, since these are determinations. */
+  | 'draft.inputs_updated'
+  | 'draft.dependent_added'
+  | 'draft.dependent_updated'
+  | 'draft.dependent_removed'
+  | 'draft.activity_added'
+  | 'draft.activity_updated'
+  | 'draft.activity_removed' 
   | 'check.disposition'
   | 'worksheet.generate'
   | 'worksheet.download'
@@ -47,6 +60,14 @@ export type AuditAction =
   | 'admin.test_sms'
   | 'admin.audit_view'
   | 'admin.retention_run'
+  /** Who looked at the draft-return engine's version pins and node-map agreement. */
+  | 'admin.draft_engine_checked'
+  // Staging an engine upgrade (Q23). Each is a deliberate act by a named admin, and the last
+  // two change what computes a taxpayer's figures — so the record says who, and when.
+  | 'admin.draft_engine_staged'
+  | 'admin.draft_engine_activated'
+  | 'admin.draft_engine_rolled_back'
+  | 'admin.draft_engine_discarded'
   | 'auth.phone_verified'
   | 'auth.password_reset_requested'
   | 'auth.password_reset_failed'

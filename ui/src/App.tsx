@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { LoginPanel } from '@kisaesdevlab/vibe-auth/react';
 import { api, formatCents } from './api';
+import { DraftReturnPanel } from './components/DraftReturnPanel.tsx';
 import { FieldEditor } from './components/FieldEditor';
 import { PageOverlay } from './components/PageOverlay';
 import { Admin } from './components/Admin';
@@ -635,6 +636,10 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
     if (!running) return undefined;
     const t = setInterval(refreshBundle, 8000);
     return () => clearInterval(t);
+    // `bundle` rather than `bundle?.status` would restart the interval on every poll, since
+    // each refresh replaces the object — so the 8-second timer would never actually fire.
+    // The narrowing is the point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bundle?.status, refreshBundle]);
 
   const openDoc = (id: string) => {
@@ -1008,6 +1013,8 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
                 )}
               </div>
             ))}
+
+          <DraftReturnPanel bundleId={bundleId} taxYear={bundle?.taxYear ?? null} onError={onError} />
         </aside>
       </div>
     </div>

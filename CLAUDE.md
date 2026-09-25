@@ -67,7 +67,7 @@ Working rules:
 ```bash
 node scripts/install-deps.mjs        # NOT `npm install` — see below
 npm run typecheck                    # tsc --noEmit (strict, exactOptionalPropertyTypes)
-npm run lint                         # eslint . — known broken: no eslint.config.* was ever committed
+npm run lint                         # eslint . — flat config, type-aware; runs in CI
 npm test                             # vitest run — test/**/*.test.ts
 npx vitest run test/layout.test.ts   # one file
 npm run build                        # tsc + copy migrations into dist/
@@ -76,6 +76,9 @@ npm run dev | worker                 # API and queue worker, --experimental-stri
 npm run accuracy -- <bundleId>       # score a processed bundle against fixture ground truth
 npm run check:providers              # provider-leakage grep; must stay clean
 ```
+
+The UI is linted and tested too: `cd ui && npm run lint && npm test` — ESLint with the React
+hooks rules, and component tests under jsdom. Both run in CI's `ui` job.
 
 Installing takes two first-party packages that plain `npm install` cannot fetch.
 `@kisaes/vibe-ai-client` is on no registry: `scripts/install-deps.mjs` installs everything
@@ -107,13 +110,27 @@ and raise a QUESTIONS.md entry before adding anything in these directions.
 
 - **Not a diff engine.** The app never ingests the prepared return. No MeF XML parsing,
   no UltraTax / Lacerte / CCH / GoSystem export ingestion, no automated reconciliation
-  against a return. The human does the comparison.
+  against a return. The human does the comparison. **This is unchanged by P17**: the draft
+  return compares the app's own two derivations of the same source documents — what the
+  worksheet reports against what the engine computes — which is internal consistency
+  checking. Nothing is ever read out of a prepared return, and the app emits no MeF XML.
 - **Not a client portal.** Upload is staff-only, from inside the firm. No client accounts,
   no client-facing auth, no consent-collection UI, no E2EE intake. Vibe Connect owns that
   surface; this app does not duplicate it.
-- **Not a tax calculation engine.** The app does not compute taxable Social Security, does
-  not apply the §121 exclusion, does not compute QBI. It reports what the documents say
-  and, where a box does not map cleanly to a line, it says so and stops.
+- **Not a tax calculation engine of its own, and never a decider.** The app computes no tax
+  itself: there is no taxable-Social-Security worksheet, no §121 exclusion, no QBI
+  calculation anywhere in `src/`. It reports what the documents say and, where a box does not
+  map cleanly to a line, it says so and stops.
+  **Amended 2026-09-25 (§14, P17 and P18, STATE.md decision log).** It may hand the amounts it
+  read to a separate, deterministic, locally-run engine and show that engine's computed lines
+  beside its own reported totals, as a checking aid. That is a narrowing, not a repeal: every
+  §9 judgment call is still withheld rather than answered, the engine is a severable optional
+  process and not a library, and no characterization logic is written here. It may also
+  **record determinations a preparer has already made** — filing status, dependents, itemised
+  deduction totals, business and rental summaries — so the engine can compute over them. It
+  makes none of them: nothing on those surfaces is computed, suggested, defaulted or carried
+  over, and an unanswered question is stored as "not stated" rather than as "no". Read §14
+  before touching any of it.
 - **Not multi-tenant.** Single firm per deployment.
 - **Not a model host.** All inference goes through Vibe AI Router. This app holds no
   provider credentials of any kind.
@@ -415,10 +432,20 @@ says and does not attempt the deduction.
 
 ## 11. Compliance posture
 
-The app performs data capture only and makes no substantive determinations about filing
-status, income characterization, deductions, or credits. That keeps inference within the
-auxiliary service provider treatment under Treas. Reg. §301.7216-2(d), which does not
-require written taxpayer consent — but only while processing stays inside the US.
+The app performs data capture and makes no substantive determinations about filing status,
+income characterization, deductions, or credits. That keeps inference within the auxiliary
+service provider treatment under Treas. Reg. §301.7216-2(d), which does not require written
+taxpayer consent — but only while processing stays inside the US.
+
+**Amended 2026-09-25, and not yet settled.** §14's draft return computes arithmetic over
+amounts a human has accepted, from inputs the preparer has stated. It still decides nothing:
+a populated field the schema marks `judgmentRequired` withholds its whole document from the
+engine, so an SSA-1099 never reaches it and the taxable portion of social security is never
+computed here. The engine runs on the appliance and discloses nothing to anyone, so the set of
+third parties seeing taxpayer data is unchanged. **But the sentence above is the sentence the
+WISP rests on, and `docs/wisp-amendment.md` §4 has to be revised by whoever owns the WISP
+before this runs against live client data — QUESTIONS.md Q21.** Until Q21 is answered,
+`DRAFT_RETURN_ENABLED` stays off wherever there is live client data.
 
 - The Router must enforce US-region pinning for any task class this app calls. This app
   asserts at startup that the Router reports a US-pinned policy for `v1040_page_classify`,
@@ -472,6 +499,16 @@ wire contract and drift silently.
 
 Internal Kisaes use first, licensed Vibe product later. Build single-firm, but:
 
+**Licensed AGPL-3.0-only since 2026-09-25**, relicensed from BUSL-1.1 so the OpenTax engine
+(verbatim AGPL v3, no linking exception) can be used without ambiguity. Two things follow and
+neither is settled — see QUESTIONS.md Q22. Conveying Corresponding Source has to cover
+`@kisaes/vibe-ai-client` and `@kisaesdevlab/vibe-auth`, which are sibling-repo decisions. And
+a proprietary licence for a work that *incorporates* OpenTax is no longer Kisaes's alone to
+grant, which is why the engine is invoked as a separate process and stays severable: **do not
+move it in-process and do not vendor its source into `src/`.** The AGPL obliges offering source
+to those who use the service over a network; it does not oblige a public repository, and this
+one stays private while `docs/wisp-amendment.md` lives in it.
+
 - Keep firm-specific configuration in config, not in code.
 - Stub the licensing.kisaes.com check at the same integration point the other appliances
   use, feature-flagged off.
@@ -479,3 +516,167 @@ Internal Kisaes use first, licensed Vibe product later. Build single-firm, but:
   T&B or the Filer sentinel instead of deriving identity from the bundle.
 
 Do not build multi-tenancy now.
+
+## 14. Draft return (P17) and preparer-supplied inputs (P18)
+
+**Decided 2026-09-25.** The app can hand the amounts it read to
+[OpenTax](https://opentax.filed.com/) — a deterministic, open-source federal 1040 engine that
+runs as a single binary on the appliance — and show the computed lines beside the worksheet's
+own reported totals. It turns §1's eyeball comparison into an arithmetic one without ingesting
+the prepared return.
+
+Why this is not a repeal of §2: the engine holds no credentials, makes no network call and
+sees no third party, so nothing about the §7216 disclosure analysis changes; the app itself
+still computes no tax and still decides nothing; and everything §9 sends to Judgment Required
+is withheld from the engine rather than guessed at.
+
+**Off by default, behind `DRAFT_RETURN_ENABLED`.** It is an environment key, not a
+`firm_settings` row, and renders read-only in Admin → Settings with its reason — it changes
+what the app computes about a taxpayer, which is not a click. **It stays off wherever there is
+live client data until QUESTIONS.md Q21 is answered.**
+
+### The omissions contract
+
+**An incomplete draft return is an enumerated fact, not a footnote.** A draft computed from a
+source-document bundle can never be a return, and pretending otherwise is the one failure mode
+that would make this worse than nothing. `src/draft/translate.ts` therefore emits, beside the
+nodes it can send, every reason something could not be sent. Six rules produce it, and none of
+them may be softened to make a draft look more complete:
+
+1. **A blank is never a zero.** `null` reaching a calculation engine as `0` would destroy the
+   distinction §5 exists to preserve. A blank box is left off the payload; where the engine
+   requires the field, the **whole document is withheld** rather than zero-filled. A partially
+   read 1095-A year is not padded with zero-premium months. A zero the form actually printed is
+   sent, because that is a value.
+2. **A value no human has accepted does not feed a computation.** A mapped field flagged for
+   review, or citing no span, withholds its document (§4, §6).
+3. **A judgment call is never made here.** A *populated* field the schema marks
+   `judgmentRequired` withholds its document, and an `allJudgmentRequired` form type never
+   reaches the engine at all. Applied per document by content, this is §9 exactly: an SSA-1099
+   always prints box 3, so it is always withheld, because the taxable portion of social
+   security is not this app's to compute. Every K-1 and the SSA-1042S are withheld by §8.
+4. **A negative amount is withheld**, because nearly every money field in the engine's
+   catalogue is declared non-negative and the alternative is a silent absolute value.
+5. **What the bundle cannot know is listed every time** — filing status, dependents, itemised
+   deductions, estimated payments, basis, carryovers, prior-year AGI. Filing status and the
+   age/blindness flags come from the **reviewer**, never from inference over a pile of forms.
+   That is the preparer making the determination, which is the right place for it.
+6. **A document from another season stays out.** A document whose own tax year is not the
+   bundle's is withheld. §6 flags the mismatch as a soft failure precisely because a prior-year
+   1098 or an off-year 5498 in the pile is a real preparer error — and feeding one to a
+   calculation engine would quietly add last season's mortgage interest to this season's return.
+   The worksheet still reports it, annotated.
+7. **One door.** A draft return goes through `assertWorksheetAllowed` (`src/reconcile/gate.ts`),
+   the same gate as the worksheet, so a bundle with an undispositioned hard failure gets no
+   draft return either. Do not add a `force` flag; the gate deliberately has none.
+
+**Why the omissions list is part of the answer, not an appendix to it.** Verified against
+engine 2.0.4, a withheld document leaves two different traces, and the dangerous one is the
+second:
+
+- The **source line** it would have fed comes back **absent**, which looks exactly like "the
+  documents reported nothing on this line".
+- The engine's **computed totals are confident numbers regardless**. AGI, taxable income, total
+  tax and the refund are all computed as though the withheld document did not exist, so a draft
+  can show a plausible refund that is wrong by the whole of a pension. Nothing in the figures
+  says so.
+
+So the omissions are rendered above the figures in the UI, on the same sheet in the workbook,
+and stored beside the lines in the database — and each surface says in words that the figures
+are wrong by whatever was left out. Do not move them to a second screen, a second sheet, or a
+footnote.
+
+### What the preparer supplies (P18)
+
+**Decided 2026-09-25.** A 1040 needs facts no source document carries, and §14 rule 5 already
+routed two of them — filing status and the age/blindness flags — through the reviewer, "which is
+the preparer making the determination, which is the right place for it". P18 extends the same
+arrangement to **dependents**, **itemised deductions** and **summaries of business and rental
+activity**, stored per bundle in `draft_inputs` and its three child tables and read by
+`src/draft/inputs.ts`.
+
+This is data entry, not a feature. Everything typed here is a determination the preparer already
+made; the app records the answer and supplies none:
+
+- **Nothing defaults.** Every determination is three-valued and starts at *not stated*, because
+  a checkbox cannot tell "decided no" from "has not looked" — and which of those it is decides
+  whether a credit is computed. A dependent whose qualifying-child question is unanswered earns
+  no credit and the total simply does not move, so the entry surface names them.
+- **Blank is not zero (§5)** all the way down. An untouched Schedule A line is absent from the
+  payload, never `0`. An absent key in a patch leaves the stored figure alone; an explicit `null`
+  clears it; the two are not interchangeable.
+- **No TIN for a dependent either (§7).** The engine marks a dependent's SSN, ITIN and ATIN
+  optional, so none is asked for and `draft_input_dependents` has no column that could hold one.
+- **The vocabularies and the fields come from the node map**, never from the component. A code
+  the engine does not know is refused at the point it is typed — 2.0.4 wants `mfj`, and refuses
+  the whole `general` node otherwise — and an activity this release cannot compute (a farm, on
+  2.0.4) is named with its measured reason rather than offered and dropped later.
+- **The worksheet is untouched.** Nothing here writes a worksheet line or a contribution. The
+  two derivations being compared stay independent, which is the only thing that makes it a check.
+
+**The override, and why it is safe (QUESTIONS.md Q24).** Some engine fields can be fed from two
+directions — a 1098's box 1 is also Schedule A line 8a; a W-2's box 17 is also line 5a. Measured
+against 2.0.4, sending both makes the engine **use the document's figure and discard the
+preparer's silently**. So the app sends one side: where the preparer supplied a figure, the
+document's is withheld and a `superseded_by_preparer` omission is recorded. Where the engine
+*requires* the field on that node, withholding it alone would refuse the whole node, so the whole
+document is withheld instead and the omission says so.
+
+It is the one thing in P18 a reviewer could use to make the draft disagree with the documents on
+purpose, which is exactly why it goes through the omissions contract rather than around it: it is
+enumerated on every surface the omissions already reach, audited with who changed what, announced
+at the point of entry before the typing with the form and the amount it will displace, and it
+never touches the worksheet. `scripts/probe-conflicts.mjs` (`npm run draft:conflicts`) re-measures
+the behaviour on every engine upgrade, because a release that started *adding* the two would
+change what the app should send. Do not add a conflict pair to the node map without probing it.
+
+**Engine lines are accounted for like engine fields.** Every line the engine returns must be in
+`lines.comparable`, `lines.computedOnly` or `lines.ignoredLines` with a reason. This cannot be a
+load-time check — enumerating a release's output lines means computing a return — so it runs on
+every draft and warns. It exists because the child tax credit P18 made enterable was computed,
+netted into total tax, and shown nowhere.
+
+### The node map is data
+
+`data/opentax-nodes/<year>.json`, loaded and validated by `src/draft/nodes.ts`. A new season is
+a data change, exactly as for `data/line-mappings`. The engine's field names are **not**
+derivable by convention — its catalogue calls the first money box `box1_wages` on `w2`, `box1`
+on `f1099int`, `box1_oid` on `f1099oid` and `box_1_unemployment` on `f1099g` — so every pair is
+written out and checked.
+
+Two load-time rules carry the weight, and both exist because a quietly missing number is the
+failure this whole app is built to prevent:
+
+- **Every registered form type is declared**, either mapped or explicitly `unmappable` with a
+  reason a preparer can read. A form type nobody thought about fails at startup.
+- **Every field of a mapped form type is accounted for exactly once**, in `fields`,
+  `codeGroups`, `monthlyArrays` or `ignored`. A TIN is always `ignored` with reason
+  `tin_withheld` and is never forwarded (§7).
+
+### Boundaries that stay
+
+- **The engine is a separate process over JSON, never a library.** That is the arm's-length
+  reading of its AGPL licence and it keeps the integration severable (§13, QUESTIONS.md Q22).
+  Do not move it in-process. Do not vendor its source into `src/`.
+- **Pin the version and verify the binary by checksum.** It is a young, largely
+  AI-maintained engine; `install.sh | sh` into a floating latest is not acceptable here.
+  **Amended 2026-09-25 (Q23 answered):** an admin may now *stage* an upgrade — name an exact
+  version and an exact SHA-256, have the digest verified **before** the binary is ever run, have
+  it checked against the node map's catalogue, and then activate it deliberately. The rule is
+  intact, because staging is not installing: there is still no `latest`, still no
+  `install.sh | sh`, and still no path by which the running system chooses its own engine. What
+  changed is who does the tedious half. Read `src/draft/install.ts` before touching any of it,
+  and do not add a path that activates without a person. The feature is inert unless the
+  deployment gives the sidecar a staging directory, which needs a writable volume and outbound
+  access that are a WISP decision (Q21).
+- **Check the node map against the engine's own catalogue before sending** (`src/draft/
+  catalog.ts`). A renamed *required* field is refused loudly; a renamed **optional** field is
+  accepted and ignored, so the amount vanishes and the line reads as absent — the silent
+  omission this app exists to prevent, through the one door the omissions contract does not
+  cover. A blocking mismatch withholds draft returns; the worksheet is unaffected. It is a
+  name check: `npm run draft -- --truth` measures behaviour, and an upgrade needs both.
+  `docs/opentax-draft-return.md` §7 has the procedure.
+- **No MeF XML and no filing.** The engine can emit MeF XML and a filled PDF; this app uses
+  neither. No transmission, no acknowledgements, no EFIN or ERO surface.
+- **Every computed figure is labelled advisory**, with the engine and its version named, and a
+  draft return is never presented as a finished return.

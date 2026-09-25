@@ -177,20 +177,20 @@ describe('review workbook', () => {
     const { wb, review, w2 } = await build();
     const plan = planFormSheets(review).find((p) => p.formType === 'W-2')!;
     const sheet = wb.getWorksheet('W-2')!;
-    expect(sheet.getCell(2, plan.docCol.get('w2-a')!).value).toBe('W-2 — ACME MANUFACTURING INC');
-    expect(sheet.getCell(2, plan.docCol.get('w2-b')!).value).toBe('W-2 — OZARK REGIONAL HEALTH');
+    expect(sheet.getCell(2, plan.docCol.get('w2-a')).value).toBe('W-2 — ACME MANUFACTURING INC');
+    expect(sheet.getCell(2, plan.docCol.get('w2-b')).value).toBe('W-2 — OZARK REGIONAL HEALTH');
 
     const rowOf = (key: string) => plan.fieldRow.get(key)!;
     expect(sheet.getCell(rowOf('box_1'), 2).value).toBe(w2.fields.find((f) => f.key === 'box_1')!.label);
     expect(sheet.getCell(rowOf('box_1'), 3).value).toBe('1040:1a');
-    expect(sheet.getCell(rowOf('box_1'), plan.docCol.get('w2-a')!).value).toBe(85_000);
-    expect(sheet.getCell(rowOf('box_1'), plan.docCol.get('w2-b')!).value).toBe(42_000);
+    expect(sheet.getCell(rowOf('box_1'), plan.docCol.get('w2-a')).value).toBe(85_000);
+    expect(sheet.getCell(rowOf('box_1'), plan.docCol.get('w2-b')).value).toBe(42_000);
     // §5 on the sheet: an empty box is an empty cell; a printed zero is 0.
-    expect(sheet.getCell(rowOf('box_7'), plan.docCol.get('w2-a')!).value).toBeNull();
-    expect(sheet.getCell(rowOf('box_8'), plan.docCol.get('w2-a')!).value).toBe(0);
+    expect(sheet.getCell(rowOf('box_7'), plan.docCol.get('w2-a')).value).toBeNull();
+    expect(sheet.getCell(rowOf('box_8'), plan.docCol.get('w2-a')).value).toBe(0);
     // Checkboxes read as marks.
-    expect(sheet.getCell(rowOf('box_13_retirement'), plan.docCol.get('w2-a')!).value).toBe('☑');
-    expect(sheet.getCell(rowOf('box_13_statutory'), plan.docCol.get('w2-a')!).value).toBe('☐');
+    expect(sheet.getCell(rowOf('box_13_retirement'), plan.docCol.get('w2-a')).value).toBe('☑');
+    expect(sheet.getCell(rowOf('box_13_statutory'), plan.docCol.get('w2-a')).value).toBe('☐');
     // A total column sums across documents; SUM skips blanks.
     const totalCol = plan.docCol.get('w2-b')! + 1;
     expect(sheet.getCell(rowOf('box_1'), totalCol).value).toMatchObject({ formula: expect.stringMatching(/^SUM\(/) });
@@ -208,7 +208,7 @@ describe('review workbook', () => {
     expect((corrected.fill as ExcelJS.FillPattern).fgColor?.argb).toBe('FFE2EFDA');
     expect(String(corrected.note)).toContain('91,000.00');
     // The other W-2 never reported box 16: greyed, not blank-as-if-read.
-    const unread = sheet.getCell(plan.fieldRow.get('box_16')!, plan.docCol.get('w2-b')!);
+    const unread = sheet.getCell(plan.fieldRow.get('box_16')!, plan.docCol.get('w2-b'));
     expect((unread.fill as ExcelJS.FillPattern).fgColor?.argb).toBe('FFEDEDED');
   });
 

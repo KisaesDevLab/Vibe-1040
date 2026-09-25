@@ -68,6 +68,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # `npm run lint` has been in package.json since P0 and failed outright for the whole build,
+      # because no eslint config was ever committed — so this step could not exist. It exists now,
+      # and it is the only thing enforcing the two syntaxes `--experimental-strip-types` rejects:
+      # a parameter property or an enum compiles in the built image and fails in `npm run dev`,
+      # the worker and the migration scripts.
+      - name: Lint
+        run: npm run lint
+
       # Forward, back, forward: migrations running in both directions is a P0 exit criterion
       # and nothing enforced it. The values are the same throwaway ones vitest.config.ts uses.
       - name: Migrate the test database (up, down, up)
@@ -110,6 +118,14 @@ jobs:
         working-directory: ui
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The UI was the one part of the build with neither lint nor tests. Both now run here.
+      # `exhaustive-deps` is the rule that matters: the panel shipped with a dead
+      # filing-status control for a week because an effect asked for a vocabulary with the
+      # wrong value and a bare `catch` swallowed the miss.
+      - run: npm run lint
+        working-directory: ui
+      - run: npm test
+        working-directory: ui
       - run: npm run build
         working-directory: ui
 
@@ -140,3 +156,88 @@ jobs:
         run: |
           python fixtures/generate.py test/fixtures
           git diff --exit-code --stat test/fixtures/manifest.json
+
+  # The one thing about P17 that had never been observed: whether the engine sidecar image
+  # actually builds and whether a `deno compile` binary runs on debian-slim as a non-root
+  # user. Both were reasoned, not run, because Docker was unavailable in development.
+  #
+  # The build itself is most of the proof — opentax/Dockerfile verifies the SHA-256 and runs
+  # `opentax version` in the build stage, so a moved release or a wrong checksum fails here
+  # rather than at a firm. The step after it proves the *runtime* stage too, which is the
+  # part the build stage cannot: a different base, a non-root user, and no build tooling.
+  opentax-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Read the pin from the repository rather than hardcoding it here, so this job verifies
+      # the release that actually ships and moving the pin is still a one-file change.
+      - name: Read the pinned engine release
+        id: pin
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          p = json.load(open('opentax/pinned.json'))
+          for key in ('tag', 'version', 'asset', 'sha256'):
+              print(f"{key}={p[key]}")
+          PY
+
+      - name: Build the sidecar image against the pinned release
+        run: |
+          docker build \
+            --build-arg OPENTAX_VERSION='${{ steps.pin.outputs.tag }}' \
+            --build-arg OPENTAX_SHA256='${{ steps.pin.outputs.sha256 }}' \
+            --build-arg OPENTAX_ASSET='${{ steps.pin.outputs.asset }}' \
+            -t vibe-1040-opentax:ci \
+            opentax/
+
+      # The runtime stage: debian-slim, non-root, no curl. If `deno compile` output needs
+      # anything this image does not have, it surfaces here.
+      - name: Run the engine in the runtime image
+        run: |
+          reported=$(docker run --rm --entrypoint opentax vibe-1040-opentax:ci version)
+          echo "engine reports: $reported"
+          echo "$reported" | grep -qF '${{ steps.pin.outputs.version }}' || {
+            echo "::error::the built image reports '$reported', not the pinned ${{ steps.pin.outputs.version }}"
+            exit 1
+          }
+
+      # The engine is AGPL v3 and is conveyed in this image, so its licence has to travel with
+      # it (§13, QUESTIONS.md Q22). Asserted rather than assumed: the previous `ADD` from a URL
+      # reported `DONE 0.0s`, which is not evidence that anything arrived.
+      - name: The engine's licence is in the image
+        run: |
+          docker run --rm --entrypoint sh vibe-1040-opentax:ci -c '
+            test -s /usr/share/licenses/opentax/LICENSE || { echo "LICENSE missing or empty"; exit 1; }
+            head -3 /usr/share/licenses/opentax/LICENSE
+            grep -q "GNU AFFERO GENERAL PUBLIC LICENSE" /usr/share/licenses/opentax/LICENSE
+          '
+
+      # And that it comes up as a service and answers, which is how the app reaches it.
+      - name: Start the sidecar and check /health and /catalog
+        run: |
+          docker run -d --name opentax -p 8230:8230 vibe-1040-opentax:ci
+          for i in $(seq 1 30); do
+            sleep 2
+            curl -fsS http://127.0.0.1:8230/health > /tmp/health.json && break
+          done
+          cat /tmp/health.json
+          python3 -c "
+          import json; d = json.load(open('/tmp/health.json'))
+          assert d['ok'] is True, d
+          assert d['version'] == '${{ steps.pin.outputs.version }}', d
+          print('health ok:', d)
+          "
+          # The catalogue endpoint spawns the engine per node type, so this also proves the
+          # binary is executable from inside the running container and not only at build time.
+          curl -fsS 'http://127.0.0.1:8230/catalog?nodes=w2,general' > /tmp/catalog.json
+          python3 -c "
+          import json; d = json.load(open('/tmp/catalog.json'))
+          assert d['nodes']['w2']['fields']['box1_wages']['required'] is True, d['nodes']['w2']
+          assert 'filing_status' in d['nodes']['general']['fields'], d['nodes']['general']
+          print('catalog ok:', len(d['nodes']), 'node types')
+          "
+
+      - name: Sidecar logs on failure
+        if: failure()
+        run: docker logs opentax || true

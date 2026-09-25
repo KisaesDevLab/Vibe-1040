@@ -26,10 +26,18 @@ export interface GenerateResult {
   pdfKey: string;
 }
 
-/** Assemble the model without rendering — used by the UI's live preview (P11). */
-export async function buildModelForBundle(bundleId: string): Promise<{
-  model: WorksheetModel;
-  ctx: Omit<WorksheetContext, 'generatedByName' | 'generatedAt'>;
+/**
+ * Resolve a bundle's documents against their form schemas, once.
+ *
+ * Shared by the worksheet (P12) and the draft return (P17) so the two cannot disagree about
+ * which documents a bundle contains or which schema year read them.
+ */
+export async function loadMappedDocuments(bundleId: string): Promise<{
+  bundle: typeof bundles.$inferSelect;
+  taxYear: number;
+  mapped: MappedDocument[];
+  documentLabels: Map<string, string>;
+  rootDocumentCount: number;
 }> {
   const [bundle] = await db.select().from(bundles).where(eq(bundles.id, bundleId)).limit(1);
   if (!bundle) throw new Error(`no such bundle: ${bundleId}`);
@@ -68,7 +76,24 @@ export async function buildModelForBundle(bundleId: string): Promise<{
     );
   }
 
-  const model = await buildWorksheetModel(bundle.taxYear, mapped);
+  return {
+    bundle,
+    taxYear: bundle.taxYear,
+    mapped,
+    documentLabels,
+    rootDocumentCount: docRows.length,
+  };
+}
+
+/** Assemble the model without rendering — used by the UI's live preview (P11). */
+export async function buildModelForBundle(bundleId: string): Promise<{
+  model: WorksheetModel;
+  ctx: Omit<WorksheetContext, 'generatedByName' | 'generatedAt'>;
+}> {
+  const { bundle, taxYear, mapped, documentLabels, rootDocumentCount } =
+    await loadMappedDocuments(bundleId);
+
+  const model = await buildWorksheetModel(taxYear, mapped);
 
   const people = await db
     .select({ displayName: taxpayers.displayName, tinLast4: taxpayers.tinLast4 })
@@ -81,7 +106,7 @@ export async function buildModelForBundle(bundleId: string): Promise<{
     ctx: {
       bundleId,
       bundleLabel: bundle.label,
-      documentCount: docRows.length,
+      documentCount: rootDocumentCount,
       taxpayers: people,
       documentLabels,
       softAnnotations: await softAnnotations(bundleId),
@@ -154,7 +179,21 @@ export async function generateWorksheet(
   // The Excel workbook carries the per-form recap, document index, review items, checks and
   // provenance alongside the 1040 lines; the PDF stays the line worksheet (P12).
   const review = await loadReviewModel(bundleId, model.taxYear);
-  const [xlsx, pdf] = await Promise.all([buildXlsx(model, fullCtx, review), buildPdf(model, fullCtx)]);
+  // A computed draft return rides along as its own sheet when one exists (P17, §14). Imported
+  // lazily so this module has no static dependency on the engine client, which keeps a
+  // workbook buildable on a deployment where the draft return is switched off.
+  const { draftSheetForBundle } = await import('../draft/sheet.ts');
+  const draft = await draftSheetForBundle(bundleId);
+  // And, when there is a draft, the hand-check sheet: the same lines with the box on the
+  // document each contributing figure was read from, laid out for printing. P17 cannot exit
+  // until a person has checked a draft line by line against a known packet, and this is what
+  // turns that into ticking rather than hunting.
+  const { handCheckForBundle } = await import('../draft/hand-check.ts');
+  const handCheck = draft ? await handCheckForBundle(bundleId) : null;
+  const [xlsx, pdf] = await Promise.all([
+    buildXlsx(model, fullCtx, review, draft ?? undefined, handCheck ?? undefined),
+    buildPdf(model, fullCtx),
+  ]);
   const xlsxKey = keys.worksheetXlsx(bundleId, worksheetId);
   const pdfKey = keys.worksheetPdf(bundleId, worksheetId);
   await blobs.put(xlsxKey, xlsx);

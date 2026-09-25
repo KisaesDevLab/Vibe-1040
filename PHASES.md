@@ -1,6 +1,6 @@
 # Vibe 1040 — PHASES.md
 
-Sixteen phases, P0 through P15. Each phase lists its dependency, its deliverable, and the
+Eighteen phases, P0 through P17. Each phase lists its dependency, its deliverable, and the
 exit criteria that must pass before the next phase starts. A phase is not complete until
 its exit criteria are demonstrably met and STATE.md is updated.
 
@@ -357,6 +357,132 @@ appears in no layer. The appliance LAN-box check waits on Q19.
 
 ---
 
+## P17 — Draft return (OpenTax)
+
+**Depends on:** P6 (form schemas), P8 (bound field values), P9 (the gate it reuses), P10 and
+P12 (the reported totals a computed line is compared against), and P11 (the surface it renders
+on). **Severable**, like P15 and P16: with `DRAFT_RETURN_ENABLED` unset nothing in this phase
+runs, no OpenTax code is present, and the app behaves exactly as v0.10.0 did.
+**All three stages implemented 2026-09-25** (migration 0012); the phase has not exited — see
+STATE.md and the exit criteria below. **No Router work required** — the engine is
+deterministic, local, and involves no inference and no egress.
+
+Hands the amounts this app read to [OpenTax](https://opentax.filed.com/), a deterministic
+open-source federal 1040 engine distributed as a single binary, and shows the computed lines
+beside the worksheet's own reported totals. §1's comparison stops being an eyeball one without
+the app ever ingesting the prepared return. **CLAUDE.md §2 and §11 are amended for this phase
+and §14 is the contract; read it before touching any of this.**
+
+Three pieces, in order, each useful on its own.
+
+**Stage 1 — the translator, and nothing else.** `data/opentax-nodes/<year>.json` binds form
+types and field keys onto the engine's input-node catalogue, as data, because it changes every
+season for the same reason the line mappings do. `src/draft/nodes.ts` loads and validates it;
+`src/draft/translate.ts` is a pure function from resolved field values to engine nodes plus
+`omissions[]`. `GET /api/bundles/:id/draft-input` serves the result for a preparer who wants to
+run the engine themselves. No engine, no AGPL code, no computation — and fully testable with no
+binary, no Router and no database, which is why it comes first.
+
+The whole phase turns on the **omissions contract in §14**, and the rule that matters most is
+the first one: a null must never reach a calculation engine as a zero. That is the one place in
+this build where §5 could be destroyed silently, so the test for it is written to fail if the
+guard is removed.
+
+**Stage 2 — the engine, off by default.** A separate `opentax` compose service on a glibc base,
+fetching a pinned release verified by SHA-256 — the runtime image is Alpine and a `deno compile`
+binary will not run there. Invoked as a **separate process over JSON, never in-process**, which
+is both the arm's-length reading of its AGPL licence and what keeps the integration severable
+(QUESTIONS.md Q22). `src/draft/client.ts` handles failure by taxonomy rather than exit code, and
+an absent engine degrades and says so, as the Router-down parking does. `src/draft/compare.ts`
+aligns the engine's line numbers onto the existing `WorksheetLine.ref` space so computed and
+reported totals sit side by side. Migration 0012 stores the result. Draft returns are derived
+taxpayer data: they purge on the retention schedule and vanish with `DELETE /api/bundles/:id`,
+logged to the same `purge_log` a policy purge writes.
+
+**Stage 3 — the surfaces, and the harness.** A draft-return panel in the bundle view and a
+`Draft Return` sheet in the workbook, every computed figure labelled advisory with the engine
+and version named, and `omissions[]` open by default with its reason per item. Then
+`scripts/draft-check.mjs` scores computed lines against expected 1040 line values added to
+`test/fixtures/manifest.json`. That is the point of doing this now rather than waiting: a wrong
+total is far easier to spot on a 1040 line than in a field map, so the draft return is an
+end-to-end accuracy instrument for a pipeline that has never had one.
+
+Nothing here computes automatically. A draft return is an explicit, audited action and goes
+through `assertWorksheetAllowed` — the same door as the worksheet, with no `force` flag.
+
+Configuration surface: `DRAFT_RETURN_ENABLED` (default false), `OPENTAX_URL`,
+`OPENTAX_VERSION`, `OPENTAX_TIMEOUT_MS`. Environment keys, not `firm_settings` rows, and
+read-only in Admin → Settings with the reason shown.
+
+**Exit:** `npm run draft` scores every fixture bundle against expected 1040 line values and the
+report names the engine version and the node-map version that produced them. A draft return
+computed from a known packet is checked line by line **by a person** and agrees, or the
+disagreements are explained. The blank-is-not-zero guard is switched off and the tests for it
+fail. A bundle with an undispositioned hard failure is refused a draft return, and the refusal
+comes from `assertWorksheetAllowed`, not from a second check. With the engine stopped the app
+degrades and says so at `/health` rather than failing the bundle. Migration 0012 runs forward,
+back, and forward again. The node map's loader refuses a map that leaves a registered form type
+undeclared or a box neither mapped nor ignored — demonstrated, not argued. No TIN appears in any
+engine payload. `npm run check:providers` is clean. **And QUESTIONS.md Q21 is answered**, because
+until it is, the WISP says something about this app that is no longer true.
+
+---
+
+## P18 — Preparer-supplied inputs (dependents, Schedule A, business and rental summaries)
+
+**Depends on:** P17 (the translator, the node map, the engine and the comparison it feeds).
+**Severable** on the same flag: with `DRAFT_RETURN_ENABLED` unset, nothing in this phase runs and
+the entry surface is not reachable. **Implemented 2026-09-25** (migration 0013); the phase has
+not exited — see the exit criteria below. **No Router work required.**
+
+A draft return is structurally incomplete by construction, and P17's `translate.ts` already
+enumerates why: a source-document bundle carries no filing status, no dependents, no itemised
+deductions, no estimated payments, no basis and no carryovers. §14 rule 5 routed the first of
+those through the reviewer, because that is the preparer making the determination and the right
+place for it. This phase extends the same arrangement to the three biggest remaining holes, so
+the draft is worth more than a wages-and-withholding check.
+
+**It is data entry, not a feature.** Everything typed here is a determination the preparer has
+already made in the course of preparing the return. The app records the answer and supplies none:
+no control defaults, every determination is three-valued and starts at "not stated", an
+unanswered question is never read as "no", and a blank money box is absent from the engine
+payload rather than sent as zero. **CLAUDE.md §14's "What the preparer supplies" is the
+contract**; read it before touching any of this.
+
+**The stored record.** Migration 0013 adds `draft_inputs` and three child tables — dependents,
+one Schedule A row, and one row per business or property. Filing status **moves here** off the
+per-draft request, so a draft cannot be computed under a status the record disagrees with. No
+dependent TIN column exists: the engine marks a dependent's SSN, ITIN and ATIN optional and
+computes the child tax credit without one, so §7 survives intact. The inputs are typed by a
+person rather than derived from a page, so they purge on the **document** schedule, in both
+`runRetention` and `deleteBundle`, each of which enumerates its tables by hand.
+
+**The override.** Some engine fields can be fed from a document or from the preparer, and engine
+2.0.4 uses the document's figure and discards the typed one in silence. The app therefore sends
+one side and records the other as a `superseded_by_preparer` omission, which reuses the omissions
+contract rather than inventing a parallel mechanism — so it appears wherever the omissions
+already appear. The conflict map is data (`supersedes` in the node map), measured by
+`npm run draft:conflicts` rather than reasoned about. QUESTIONS.md **Q24** records why it is safe
+as built and what would make it unsafe.
+
+**The worksheet is untouched.** Nothing in this phase writes a worksheet line or a
+`worksheet_contribution`. The two derivations the preparer is comparing stay independent, which
+is the only thing that makes the comparison a check.
+
+**Exit:** a draft return computed from preparer inputs is checked line by line **by a person**
+against a known packet, including at least one dependent, one itemised deduction that overrides a
+document, and one business or rental summary. The blank-is-not-zero guard is switched off on the
+new inputs and a test fails. The override step is removed and a test fails. `npm run
+draft:conflicts` passes against the pinned engine. Migration 0013 runs forward, back and forward
+again, and a purged bundle leaves no input rows and writes a `purge_log` row from both
+`deleteBundle` and `runRetention`. No TIN appears in any engine payload, including in the
+dependents array. Every engine line the map declares nowhere is reported, and the shipped map
+reports none. **And QUESTIONS.md Q21 is answered for this scope**, not only for P17's —
+`docs/wisp-amendment.md` §4.1 was revised on 2026-09-25 to describe preparer-entered inputs and
+is still unapproved.
+
+---
+
 ## Sequencing notes
 
 P0–P13 are Router-independent — the multimodal capability P7 needs already shipped. The one
@@ -374,3 +500,13 @@ P15 is severable. Shipping P0–P14 is a complete, useful product.
 P16 is severable too, and additive by construction: with `VIBE_AUTH_MODE` unset the app behaves
 exactly as it did before the phase. Its one external gate is a published package, not Router
 work.
+
+P17 is severable and additive in the same way: with `DRAFT_RETURN_ENABLED` unset, no OpenTax code
+is present and no code path in the phase executes. It has no Router gate at all — the engine is
+deterministic and local — but it does have a compliance gate, Q21, and that one blocks live
+client data rather than development.
+
+P18 is severable on P17's flag and adds no gate of its own, but it **widens Q21 rather than
+sitting behind it**: the app now records preparer-made determinations about deductions and
+business income, which is the sentence §11 rests on carrying more weight. The WISP language was
+revised in the same change set for exactly that reason.

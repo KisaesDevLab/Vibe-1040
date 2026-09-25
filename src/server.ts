@@ -20,6 +20,8 @@ import { registerRoutes } from './api/routes.ts';
 import { attachUser } from './api/middleware.ts';
 import { env } from './config/env.ts';
 import { pool } from './db/client.ts';
+import { formatFindings } from './draft/catalog.ts';
+import { engineReadiness } from './draft/generate.ts';
 import { registerVibeAuth, vibeAuth } from './lib/vibeAuth.ts';
 import { closeQueues } from './queue/queues.ts';
 import {
@@ -29,6 +31,8 @@ import {
   setRouterReachable,
 } from './router/client.ts';
 import { registry } from './schemas/registry.ts';
+import { ZodError } from 'zod';
+import { DraftEngineError } from './draft/client.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -62,6 +66,62 @@ export async function buildServer() {
     void reply.header(
       'Content-Security-Policy',
       "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+    );
+  });
+
+  /**
+   * A malformed request is the client's fault, and must say so.
+   *
+   * Every route here validates with zod and calls `.parse`, which throws — and with no error
+   * handler Fastify turned all 51 of those call sites into a **500**. Found by the first test
+   * that posted a bad body over HTTP rather than calling the service directly: a reviewer
+   * mistyping a date got the same status as the database falling over, and every validation
+   * failure raised a server-error alarm.
+   *
+   * Only `ZodError` is mapped. Anything else keeps the status it already had, so a genuine 5xx
+   * is still a 5xx and is still logged in full.
+   *
+   * **The issues are returned without their values.** `path` and `message` say which field was
+   * wrong and why, which is what a client needs; `received` on some issue kinds would carry the
+   * figure itself into a response body and a log line, and a taxpayer amount does not belong in
+   * either (§11).
+   */
+  app.setErrorHandler((error, req, reply) => {
+    if (error instanceof ZodError) {
+      req.log.info({ issues: error.issues.map((i) => ({ path: i.path.join('.'), code: i.code })) }, 'invalid request');
+      return reply.code(400).send({
+        error: 'invalid_request',
+        message: 'The request body, query or path did not validate.',
+        issues: error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      });
+    }
+    /**
+     * A sidecar refusing an action is not this server failing.
+     *
+     * Found by rendering the staged-upgrade page: pressing "roll back" when there was nothing
+     * to roll back to produced a 500 and a red console error, for a state the sidecar reports
+     * perfectly clearly. `invalid_input` is the sidecar saying the request was wrong about the
+     * world — nothing staged, a digest that does not match, a version that disagrees — which is
+     * a 409; an unreachable engine is a 503, because an optional checking aid being down is a
+     * degraded state and not a failure (§3); anything else it says is a 502.
+     */
+    if (error instanceof DraftEngineError) {
+      req.log.warn({ code: error.code, detail: error.detail }, 'the draft engine refused');
+      const status = error.code === 'invalid_input' ? 409 : error.isUnavailable ? 503 : 502;
+      return reply.code(status).send({
+        error: error.code,
+        message: error.message,
+        detail: error.detail ?? null,
+      });
+    }
+
+    req.log.error({ err: error }, 'request failed');
+    const fastifyError = error as { statusCode?: number; code?: string; message?: string };
+    const status = fastifyError.statusCode ?? 500;
+    return reply.code(status).send(
+      status >= 500
+        ? { error: 'internal_error' }
+        : { error: fastifyError.code ?? 'request_failed', message: fastifyError.message },
     );
   });
 
@@ -164,6 +224,64 @@ async function main(): Promise<void> {
   const app = await buildServer();
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
   console.log(`[startup] listening on ${env.PORT}`);
+
+  /**
+   * Does the node map still match the engine it is pointed at? (P17, §14.)
+   *
+   * **After listening, and never fatal.** It spawns a child process per node type, so it must
+   * not sit in front of the port; and an optional checking aid may not take the appliance down
+   * with it — the precedent is router-down parking (§3). A mismatch withholds draft returns,
+   * which `generateDraftReturn` enforces on its own; the worksheet is untouched either way.
+   *
+   * It is said out loud at boot because the failure it catches is otherwise invisible: an
+   * engine field renamed between releases is accepted and ignored when it is optional, so the
+   * amount vanishes and the line reads as absent. Nobody goes looking for a number that is not
+   * there.
+   */
+  if (env.DRAFT_RETURN_ENABLED) {
+    void (async () => {
+      try {
+        const readiness = await engineReadiness();
+        if (!readiness.engine.ok) {
+          console.warn(
+            `[startup] draft return: engine unreachable at ${env.OPENTAX_URL} ` +
+              `(${readiness.engine.reason ?? 'no reason given'}). Draft returns park; nothing else is affected.`,
+          );
+          return;
+        }
+        if (!readiness.versionsAgree) {
+          console.warn(
+            `[startup] WARNING draft return: engine reports ${readiness.engine.version}, ` +
+              `OPENTAX_VERSION pins ${readiness.pins.environment}, node map ` +
+              `${readiness.pins.nodeMapVersion} was written against ${readiness.pins.nodeMap}. ` +
+              'See docs/opentax-draft-return.md, "Upgrading the engine".',
+          );
+        }
+        const check = readiness.check;
+        if (!check) return;
+        if (check.ok && check.findings.length === 0) {
+          console.log(
+            `[startup] draft return: engine ${check.engineVersion}, node map agrees on all ` +
+              `${check.nodeTypes.length} node types`,
+          );
+          return;
+        }
+        console.warn(
+          `[startup] WARNING draft return: the node map does not match engine ` +
+            `${check.engineVersion} — ${check.blocking.length} blocking, ` +
+            `${check.findings.length - check.blocking.length} advisory. ` +
+            (check.ok
+              ? 'Draft returns still compute.'
+              : 'DRAFT RETURNS ARE WITHHELD until this is resolved; the worksheet is unaffected.'),
+        );
+        for (const line of formatFindings(check)) console.warn(`          ${line}`);
+      } catch (err) {
+        console.warn(
+          `[startup] draft return: could not read the engine's node catalogue: ${(err as Error).message}`,
+        );
+      }
+    })();
+  }
 
   const shutdown = async (): Promise<void> => {
     vibeAuth.stop();

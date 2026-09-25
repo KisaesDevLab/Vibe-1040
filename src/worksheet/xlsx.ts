@@ -26,6 +26,7 @@
 import ExcelJS from 'exceljs';
 import { centsToDollars, formatCents } from '../lib/money.ts';
 import type { WorksheetModel } from '../mapping/engine.ts';
+import type { DraftSheetModel, HandCheckModel } from './draft-sheet.ts';
 import type { WorksheetContext } from './model.ts';
 import { compareFormTypes } from './form-order.ts';
 import { documentTitle, pagesLabel, type ReviewCheck, type ReviewDocument, type ReviewField, type ReviewModel } from './review.ts';
@@ -41,6 +42,7 @@ const FILL_MISMATCH = fill('FFF8CBAD'); // value not in the spans it cites — a
 const FILL_CORRECTED = fill('FFE2EFDA'); // a reviewer changed it; note shows the model's read
 const FILL_JUDGMENT = fill('FFDDEBF7'); // Judgment Required (§9)
 const FILL_UNREAD = fill('FFEDEDED'); // the binder never returned this field
+const FILL_COMPUTED = fill('FFEAD1DC'); // computed by the OpenTax engine — advisory (§14)
 
 const REVIEW_LABEL: Record<string, string> = {
   no_span: 'No layout span supports this value (§4). Confirm against the page.',
@@ -60,7 +62,7 @@ function headerRow(sheet: ExcelJS.Worksheet, row = 1): void {
 
 /** Excel sheet names: 31 chars, none of []:*?/\ */
 export function sheetNameFor(formType: string, taken: Set<string>): string {
-  let base = formType.replace(/[[\]:*?/\\]/g, '-').slice(0, 28);
+  const base = formType.replace(/[[\]:*?/\\]/g, '-').slice(0, 28);
   let name = base;
   let n = 2;
   while (taken.has(name)) name = `${base} (${n++})`;
@@ -221,7 +223,7 @@ function renderFormSheet(wb: ExcelJS.Workbook, plan: FormSheetPlan): void {
     let blank = 0;
     for (const doc of docs) {
       const f = doc.fields.find((x) => x.fieldKey === template.fieldKey);
-      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId)!);
+      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId));
       if (!f) continue;
       cell.value = cellValueFor(f);
       styleFieldCell(cell, f);
@@ -254,7 +256,7 @@ function renderFormSheet(wb: ExcelJS.Workbook, plan: FormSheetPlan): void {
     for (const doc of docs) {
       const c = doc.checks.find((x) => x.checkKey === key);
       if (!c) continue;
-      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId)!);
+      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId));
       cell.value = checkCellText(c);
       cell.alignment = { wrapText: true, vertical: 'top' };
       if (c.outcome === 'fail') {
@@ -278,7 +280,7 @@ function renderFormSheet(wb: ExcelJS.Workbook, plan: FormSheetPlan): void {
     sheet.getCell(row, 2).value = label;
     sheet.getCell(row, 2).font = { bold: true, size: 9 };
     for (const doc of docs) {
-      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId)!);
+      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId));
       cell.value = get(doc);
       cell.font = { size: 9 };
     }
@@ -541,9 +543,309 @@ function renderProvenance(wb: ExcelJS.Workbook, review: ReviewModel, ctx: Worksh
   sheet.addRow(['Bundle id', ctx.bundleId]);
 }
 
+// ── draft return (P17) ───────────────────────────────────────────────────────
+
+/**
+ * The engine's computed lines beside this app's reported totals (§14).
+ *
+ * Three things this sheet must not let a reader forget, because a spreadsheet full of tax
+ * figures reads as authoritative whatever the header says:
+ *
+ *  - Every computed figure is **advisory**, and the engine and its version are named.
+ *  - The draft is **incomplete**, and the omissions are on the same sheet rather than a
+ *    different one. A preparer who reads only this sheet must still see what is missing.
+ *  - **A withheld document leaves no mark on the figures.** The source line it would have fed
+ *    is simply absent, and every computed total — AGI, taxable income, total tax, the refund —
+ *    is a confident number computed as though it did not exist. That is why the omissions list
+ *    is on this sheet and not another one.
+ */
+/** One agreement vocabulary, shared by the Draft Return and Hand check sheets. */
+const VERDICT_LABEL: Record<string, string> = {
+  agrees: 'agrees',
+  differs: 'DIFFERS — look',
+  engine_silent: 'engine has nothing',
+  worksheet_silent: 'worksheet has nothing',
+  both_blank: 'neither',
+  computed_only: 'computed only',
+};
+
+function renderDraftReturn(wb: ExcelJS.Workbook, draft: DraftSheetModel): void {
+  const sheet = wb.addWorksheet('Draft Return');
+  sheet.columns = [
+    { header: 'Line', key: 'line', width: 16 },
+    { header: 'Description', key: 'label', width: 54 },
+    { header: 'Documents report', key: 'reported', width: 18, style: { numFmt: MONEY } },
+    { header: 'Engine computes', key: 'computed', width: 18, style: { numFmt: MONEY } },
+    { header: 'Difference', key: 'delta', width: 14, style: { numFmt: MONEY } },
+    { header: 'Agreement', key: 'verdict', width: 20 },
+    { header: 'Note', key: 'note', width: 80 },
+  ];
+  headerRow(sheet);
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  sheet.autoFilter = { from: 'A1', to: 'G1' };
+
+
+  for (const line of draft.lines) {
+    const row = sheet.addRow({
+      line: line.lineRef ?? '',
+      label: line.label,
+      reported: line.reportedCents === null ? null : centsToDollars(line.reportedCents),
+      computed: line.computedCents === null ? null : centsToDollars(line.computedCents),
+      delta:
+        line.reportedCents === null || line.computedCents === null
+          ? null
+          : centsToDollars(line.computedCents - line.reportedCents),
+      verdict: VERDICT_LABEL[line.verdict] ?? line.verdict,
+      note: line.note ?? '',
+    });
+    row.getCell('computed').fill = FILL_COMPUTED;
+    if (line.verdict === 'differs') {
+      row.getCell('verdict').font = { bold: true, color: { argb: 'FFC00000' } };
+    }
+  }
+
+  sheet.addRow([]);
+  const omissionHeader = sheet.addRow(['Not in this draft']);
+  omissionHeader.font = { bold: true, size: 12 };
+  const why = sheet.addRow([
+    'Everything below was left out of the computation, and the figures above are wrong by ' +
+      'whatever it would have contributed. The line it would have fed is simply absent, and ' +
+      'every total above — adjusted gross income, taxable income, total tax, the refund — was ' +
+      'computed as though it did not exist. Nothing in the numbers says so, which is why this ' +
+      'list is part of the answer rather than an appendix to it.',
+  ]);
+  why.font = { italic: true };
+  sheet.mergeCells(why.number, 1, why.number, 7);
+  why.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+  sheet.getRow(why.number).height = 46;
+
+  const cols = sheet.addRow(['Form', 'Field', 'Reason', 'Why', '', '', '']);
+  cols.font = { bold: true };
+
+  if (draft.omissions.length === 0) {
+    sheet.addRow(['—', '', '', 'Nothing was left out.']);
+  }
+  for (const o of draft.omissions) {
+    const row = sheet.addRow([
+      o.formType ?? '—',
+      o.fieldKey ?? '',
+      o.reason.replace(/_/g, ' '),
+      o.detail,
+    ]);
+    row.getCell(4).alignment = { wrapText: true, vertical: 'top' };
+  }
+
+  if (draft.validations.length > 0) {
+    sheet.addRow([]);
+    sheet.addRow(["Engine's own business-rule diagnostics"]).font = { bold: true, size: 12 };
+    const vcols = sheet.addRow(['Severity', 'Code', 'Message', '', '', '', '']);
+    vcols.font = { bold: true };
+    for (const v of draft.validations) {
+      const row = sheet.addRow([v.severity, v.code, v.message]);
+      if (v.severity === 'hard') row.getCell(1).font = { bold: true, color: { argb: 'FFC00000' } };
+    }
+  }
+}
+
+/**
+ * The hand-check sheet (P17 exit criterion).
+ *
+ * A person has to check a draft return line by line against a known packet before P17 can
+ * exit, and everything the machine can say about the draft has already been said. This sheet
+ * is for the part only a person can do, and its whole job is to make that a ticking exercise
+ * rather than a hunting one: every line carries what the documents report, what the engine
+ * computed, **and the box on the document each contributing figure was read from**.
+ *
+ * Laid out for printing — landscape, fitted to one page wide, headers repeated on every page —
+ * because it will be read beside the paper rather than on a screen.
+ *
+ * The omissions come first, as on every other surface (§14). Somebody reconciling totals that
+ * are wrong by a withheld pension, without being told a pension was withheld, is checking the
+ * wrong thing carefully.
+ */
+function renderHandCheck(wb: ExcelJS.Workbook, check: HandCheckModel): void {
+  const sheet = wb.addWorksheet('Hand check', {
+    pageSetup: {
+      orientation: 'landscape',
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      printTitlesRow: '1:1',
+      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 },
+    },
+  });
+  sheet.columns = [
+    { header: 'Line', key: 'line', width: 11 },
+    { header: 'Description', key: 'label', width: 44 },
+    { header: 'Documents report', key: 'reported', width: 17, style: { numFmt: MONEY } },
+    { header: 'Engine computes', key: 'computed', width: 17, style: { numFmt: MONEY } },
+    { header: 'Agreement', key: 'verdict', width: 18 },
+    { header: 'Read from', key: 'source', width: 52 },
+    { header: 'Amount', key: 'amount', width: 15, style: { numFmt: MONEY } },
+    { header: '✓', key: 'tick', width: 5 },
+  ];
+  headerRow(sheet);
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+  const caption = sheet.addRow([
+    `Draft return for tax year ${check.taxYear}, computed by OpenTax ${check.engineVersion} ` +
+      `on ${check.generatedAt.toISOString().slice(0, 10)} — node map ${check.nodeMapVersion}, ` +
+      `line mapping ${check.mappingVersion}, filing status ${check.filingStatus ?? 'not stated'}. ` +
+      `${check.documentsIncluded} document(s) computed, ${check.documentsWithheld} withheld. ` +
+      'Advisory, and never a finished return.',
+  ]);
+  caption.font = { italic: true };
+  sheet.mergeCells(caption.number, 1, caption.number, 8);
+  caption.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+  sheet.getRow(caption.number).height = 32;
+
+  // ── what is missing, before anything is reconciled ──────────────────────────
+  sheet.addRow([]);
+  sheet.addRow(['Check this first — what is NOT in the figures below']).font = { bold: true, size: 12 };
+  const why = sheet.addRow([
+    'Every total below is wrong by whatever these would have contributed, and nothing in the ' +
+      'numbers says so: the line each one would have fed is simply absent, which looks exactly ' +
+      'like the documents reporting nothing on it. Read this list against the packet before ' +
+      'reconciling a single figure.',
+  ]);
+  why.font = { italic: true };
+  sheet.mergeCells(why.number, 1, why.number, 8);
+  why.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+  sheet.getRow(why.number).height = 30;
+
+  if (check.omissions.length === 0) {
+    sheet.addRow(['—', 'Nothing was left out.']);
+  }
+  for (const o of check.omissions) {
+    const row = sheet.addRow({
+      line: o.formType ?? '—',
+      label: o.fieldKey ?? '',
+      reported: null,
+      computed: null,
+      verdict: o.reason.replace(/_/g, ' '),
+      source: o.detail,
+    });
+    sheet.mergeCells(row.number, 6, row.number, 8);
+    row.getCell('source').alignment = { wrapText: true, vertical: 'top' };
+    row.getCell('verdict').font = { bold: true, color: { argb: 'FF7A4B00' } };
+  }
+
+  // ── what a person typed, rather than what was read off a page ───────────────
+  //
+  // Its own block, because the two are checked differently: a document figure is checked
+  // against the paper, and this is checked against whatever the preparer worked it out from,
+  // which is not in the packet. A checker who could not tell them apart would hunt for a form
+  // that was never there.
+  if (check.preparerFigures.length > 0) {
+    sheet.addRow([]);
+    sheet.addRow(['Stated by the preparer — not read from any document']).font = {
+      bold: true,
+      size: 12,
+    };
+    const note = sheet.addRow([
+      'No source document carries a filing status, a dependent, an itemised deduction total or ' +
+        'a business summary. These were typed in. Check them against whatever they were worked ' +
+        'out from; there is nothing in the packet to tick them against.',
+    ]);
+    note.font = { italic: true };
+    sheet.mergeCells(note.number, 1, note.number, 8);
+    note.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+    sheet.getRow(note.number).height = 26;
+
+    let group = '';
+    for (const figure of check.preparerFigures) {
+      if (figure.group !== group) {
+        group = figure.group;
+        sheet.addRow({ line: group }).font = { bold: true };
+      }
+      const row = sheet.addRow({
+        label: figure.label,
+        // In the engine's column, because that is the side of the comparison it moved.
+        computed: figure.valueCents === null ? null : centsToDollars(figure.valueCents),
+        verdict: figure.supersedes === null ? 'preparer' : 'overrides a document',
+        source: figure.supersedes === null ? (figure.stated ?? '') : `replaces ${figure.supersedes}`,
+        tick: '',
+      });
+      row.getCell('computed').fill = FILL_COMPUTED;
+      row.getCell('source').alignment = { wrapText: true, vertical: 'top' };
+      row.getCell('tick').border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+      sheet.mergeCells(row.number, 6, row.number, 7);
+      if (figure.supersedes !== null) {
+        // The one thing in this block a checker must not skim past: a document in the pile in
+        // front of them was deliberately not used.
+        row.getCell('verdict').font = { bold: true, color: { argb: 'FFC00000' } };
+      }
+    }
+  }
+
+  // ── the lines ───────────────────────────────────────────────────────────────
+  sheet.addRow([]);
+  sheet.addRow(['Line by line']).font = { bold: true, size: 12 };
+
+  for (const line of check.rows) {
+    const first = sheet.addRow({
+      line: line.lineRef,
+      label: line.label,
+      reported: line.reportedCents === null ? null : centsToDollars(line.reportedCents),
+      computed: line.computedCents === null ? null : centsToDollars(line.computedCents),
+      verdict: VERDICT_LABEL[line.verdict] ?? line.verdict,
+      source: line.sources[0]?.document ?? '',
+      amount: line.sources[0]?.valueCents == null ? null : centsToDollars(line.sources[0].valueCents),
+      tick: '',
+    });
+    first.getCell('computed').fill = FILL_COMPUTED;
+    first.getCell('tick').border = {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' },
+    };
+    if (line.verdict === 'differs') {
+      first.getCell('verdict').font = { bold: true, color: { argb: 'FFC00000' } };
+    }
+    if (line.sources[0]) {
+      first.getCell('source').value =
+        `${line.sources[0].document} · ${line.sources[0].fieldLabel}` +
+        (line.sources[0].wasCorrected ? ' [corrected]' : '');
+    }
+
+    // One row per further contributing box, indented under the line it feeds. A blank box is
+    // listed too: that a source was read and empty is a fact about the packet, not a gap (§5).
+    for (const src of line.sources.slice(1)) {
+      const row = sheet.addRow({
+        source: `${src.document} · ${src.fieldLabel}${src.wasCorrected ? ' [corrected]' : ''}`,
+        amount: src.valueCents === null ? null : centsToDollars(src.valueCents),
+      });
+      row.getCell('source').font = { color: { argb: 'FF666666' } };
+    }
+
+    if (line.note) {
+      const row = sheet.addRow({ label: `Expected: ${line.note}` });
+      sheet.mergeCells(row.number, 2, row.number, 8);
+      row.getCell('label').font = { italic: true, color: { argb: 'FF7A4B00' } };
+      row.getCell('label').alignment = { wrapText: true, vertical: 'top' };
+    }
+  }
+
+  sheet.addRow([]);
+  const signoff = sheet.addRow(['Checked by ________________________    Date ______________']);
+  signoff.font = { bold: true };
+}
+
 // ── the workbook ─────────────────────────────────────────────────────────────
 
-export async function buildXlsx(model: WorksheetModel, ctx: WorksheetContext, review?: ReviewModel): Promise<Buffer> {
+export async function buildXlsx(
+  model: WorksheetModel,
+  ctx: WorksheetContext,
+  review?: ReviewModel,
+  draft?: DraftSheetModel,
+  handCheck?: HandCheckModel,
+): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Vibe 1040';
   wb.created = ctx.generatedAt;
@@ -718,6 +1020,11 @@ export async function buildXlsx(model: WorksheetModel, ctx: WorksheetContext, re
     renderChecks(wb, review);
     renderProvenance(wb, review, ctx);
   }
+
+  // Last, and only when a draft return has actually been computed. A workbook without this
+  // sheet is the normal case (§14: off by default).
+  if (draft) renderDraftReturn(wb, draft);
+  if (handCheck) renderHandCheck(wb, handCheck);
 
   const out = await wb.xlsx.writeBuffer();
   return Buffer.from(out);

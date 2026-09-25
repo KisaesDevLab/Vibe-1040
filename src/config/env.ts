@@ -122,6 +122,28 @@ const schema = z.object({
    */
   EXTRACT_ATTACH_PAGE_IMAGE: bool.default('false'),
 
+  /**
+   * Draft return through the OpenTax engine (P17, CLAUDE.md §14).
+   *
+   * Off by default, and an environment key rather than a `firm_settings` row on purpose: it
+   * changes what the app computes about a taxpayer, which is not a click. It also **must stay
+   * off wherever there is live client data until QUESTIONS.md Q21 is answered** — the WISP
+   * amendment's §7216 wording does not yet describe an app that computes a draft return.
+   *
+   * Enabling it adds no inference and no egress: the engine is deterministic, runs on the
+   * appliance, holds no credential and makes no network call.
+   */
+  DRAFT_RETURN_ENABLED: bool.default('false'),
+  /** Internal Docker network address of the opentax sidecar. Never routed through Caddy. */
+  OPENTAX_URL: z.string().url().default('http://opentax:8230'),
+  /**
+   * The engine release the node map was written against, asserted at startup against what the
+   * sidecar reports. A young, largely AI-maintained tax engine must not drift underneath a
+   * mapping nobody re-checked, so a mismatch warns loudly rather than passing quietly.
+   */
+  OPENTAX_VERSION: z.string().min(1).default('2.0.4'),
+  OPENTAX_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+
   RECONCILE_TOLERANCE_CENTS: z.coerce.number().int().nonnegative().default(100),
 
   RETENTION_RASTER_DAYS: z.coerce.number().int().positive().default(90),

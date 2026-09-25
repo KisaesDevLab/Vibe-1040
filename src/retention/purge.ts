@@ -12,15 +12,26 @@
  */
 import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
-import { env } from '../config/env.ts';
 import { db } from '../db/client.ts';
-import { bundles, pages, purgeLog, sourceFiles } from '../db/schema.ts';
+import {
+  bundles,
+  draftInputActivities,
+  draftInputDependents,
+  draftInputScheduleA,
+  draftInputs,
+  draftReturns,
+  pages,
+  purgeLog,
+  sourceFiles,
+} from '../db/schema.ts';
 import { setting } from '../settings/store.ts';
 import { blobs } from '../storage/index.ts';
 
 export interface PurgeSummary {
   rastersPurged: number;
   sourcesPurged: number;
+  /** Preparer-supplied draft inputs (P18). On the document schedule — they are not derived. */
+  inputsPurged: number;
   dryRun: boolean;
   errors: { key: string; message: string }[];
 }
@@ -82,6 +93,33 @@ export async function runRetention(): Promise<PurgeSummary> {
     }
   }
 
+  // A draft return holds computed taxpayer amounts and no blob — it is derived data that is
+  // regenerable while the documents live, so it goes on the raster schedule too (§11, §14).
+  // Its lines, omissions and diagnostics cascade with the row.
+  const staleDrafts = await db
+    .select({ id: draftReturns.id, bundleId: draftReturns.bundleId, at: draftReturns.createdAt })
+    .from(draftReturns)
+    .where(lt(draftReturns.createdAt, rasterCutoff));
+  for (const draft of staleDrafts) {
+    const ageDays = Math.floor((Date.now() - draft.at.getTime()) / 86_400_000);
+    try {
+      if (!dryRun) await db.delete(draftReturns).where(eq(draftReturns.id, draft.id));
+      await db.insert(purgeLog).values({
+        kind: 'draft_return',
+        entityType: 'draft_return',
+        entityId: draft.id,
+        bundleId: draft.bundleId,
+        policyDays: rasterDays,
+        ageDays,
+        storageKey: null,
+        dryRun,
+      });
+      rastersPurged += 1;
+    } catch (err) {
+      errors.push({ key: `draft_return:${draft.id}`, message: (err as Error).message });
+    }
+  }
+
   for (const page of staleRasters) {
     const ageDays = Math.floor((Date.now() - page.createdAt.getTime()) / 86_400_000);
     try {
@@ -105,6 +143,52 @@ export async function runRetention(): Promise<PurgeSummary> {
       rastersPurged += 1;
     } catch (err) {
       errors.push({ key: page.key!, message: (err as Error).message });
+    }
+  }
+
+  /**
+   * Preparer-supplied draft inputs (P18) go on the **document** schedule, not the raster one.
+   *
+   * The distinction matters and is the reason this is its own block. A draft return is derived:
+   * it can be recomputed from the documents, so purging it at 90 days costs nothing but a
+   * recompute. These were **typed by a person** and cannot be regenerated from anything — a
+   * preparer's Schedule C summary, a list of dependents. Putting them on the raster schedule
+   * would quietly delete somebody's work while the bundle they belong to is still open.
+   *
+   * They are still taxpayer data (names, dates of birth) and must not outlive the sources they
+   * were entered against, so they go when the source documents do. They also cascade with the
+   * bundle, which is what covers an ad-hoc delete.
+   */
+  const inputCutoff = daysAgo(documentDays);
+  let inputsPurged = 0;
+  const staleInputs = await db
+    .select({ id: draftInputs.id, bundleId: draftInputs.bundleId, at: draftInputs.createdAt })
+    .from(draftInputs)
+    .where(lt(draftInputs.createdAt, inputCutoff));
+  for (const row of staleInputs) {
+    const ageDays = Math.floor((Date.now() - row.at.getTime()) / 86_400_000);
+    try {
+      if (!dryRun) {
+        // Siblings do not cascade off `draft_inputs` — they hang off the bundle — so each is
+        // deleted explicitly. Missing one would leave a dependent's name behind.
+        await db.delete(draftInputDependents).where(eq(draftInputDependents.bundleId, row.bundleId));
+        await db.delete(draftInputScheduleA).where(eq(draftInputScheduleA.bundleId, row.bundleId));
+        await db.delete(draftInputActivities).where(eq(draftInputActivities.bundleId, row.bundleId));
+        await db.delete(draftInputs).where(eq(draftInputs.id, row.id));
+      }
+      await db.insert(purgeLog).values({
+        kind: 'draft_input',
+        entityType: 'draft_input',
+        entityId: row.id,
+        bundleId: row.bundleId,
+        policyDays: documentDays,
+        ageDays,
+        storageKey: null,
+        dryRun,
+      });
+      inputsPurged += 1;
+    } catch (err) {
+      errors.push({ key: `draft_input:${row.id}`, message: (err as Error).message });
     }
   }
 
@@ -149,6 +233,7 @@ export async function runRetention(): Promise<PurgeSummary> {
     detail: {
       rastersPurged,
       sourcesPurged,
+      inputsPurged,
       dryRun,
       rasterPolicyDays: rasterDays,
       documentPolicyDays: documentDays,
@@ -156,7 +241,7 @@ export async function runRetention(): Promise<PurgeSummary> {
     },
   });
 
-  return { rastersPurged, sourcesPurged, dryRun, errors };
+  return { rastersPurged, sourcesPurged, inputsPurged, dryRun, errors };
 }
 
 /** Operator-facing view of what the next run would do. */

@@ -10,17 +10,426 @@ do not infer progress from the commit log.
 
 **Phase:** P0–P15 — **all phases implemented 2026-08-26**; **P16 (single sign-on) implemented
 2026-09-19**, merged to main 2026-09-22 (PR #1, merge `84c3918`) and **released as v0.10.0**
-the same day so the appliance can register against a real image
-**Status:** code complete; **integration-unverified** (see below)
+the same day so the appliance can register against a real image. **P17 (draft return via
+OpenTax) — implemented 2026-09-25**, all three stages, carrying migration 0012. **P18
+(preparer-supplied inputs) — implemented 2026-09-25**, carrying migration 0013.
+**Status:** P0–P16 code complete and **integration-unverified**; P17 code complete and
+**scored against the real engine v2.0.4** — 13 of 13 comparable lines agree (see below); P18
+code complete and **driven end to end in a browser against that engine and a real database**.
 **Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
 lands (QUESTIONS.md Q11). P16 cannot *exit* until it has been signed into from a real browser
-against a real Vibe Auth (below).
+against a real Vibe Auth (below). P17 cannot *exit* until Q21 is answered and the fixture
+harness has scored; `DRAFT_RETURN_ENABLED` stays off wherever there is live client data. **P18
+cannot exit on the same condition and widens what Q21 has to cover** — `docs/wisp-amendment.md`
+§4.1 was revised for it on 2026-09-25 and is still unapproved.
 
 Router integration was verified against Vibe-AI-Router **v0.0.24** on 2026-08-26. Four of
 the five assumed Router dependencies already exist; the region-pinning one does not exist
 at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
+
+**Verified by execution on 2026-09-25 (fifth pass) — P18, and two things the build never had.**
+
+P18 (preparer-supplied inputs) is implemented and driven end to end; separately, two items that
+had been broken or missing since P0 were closed, and each found a real defect on its first run.
+
+- **`npm run lint` works, and runs in CI.** It has been in `package.json` since P0 with eslint
+  and typescript-eslint both installed, and no `eslint.config.*` was ever committed — so the
+  command failed outright for the whole build and CI omitted the step. The config is narrow on
+  purpose (a strict `tsc` does the heavy lifting) and its centre is the pair of syntaxes
+  `--experimental-strip-types` rejects: a parameter property or an enum compiles in the built
+  image and fails in `npm run dev`, the worker and the migration scripts. That CLAUDE.md rule
+  was enforced until now by reviewers remembering it; both guards are proven to fire.
+  **51 errors on the first run.** Five dead imports, three redundant regex escapes (both
+  rewritten classes proved equivalent against the strings they exist to match), 26 unnecessary
+  assertions, one test helper typing `sectionCode: null` outright so the 1099-B section-ordering
+  assertions were checking a field the type said could never be set, and `Record<string, any>`
+  in the wrapper test — which gave up the very thing that test exists to hold, since a renamed
+  key on the wire contract would have gone on compiling.
+- **The draft routes are tested over HTTP**, twelve tests against the real server via `inject`,
+  the real database and the wrapper the global setup starts, with a real session row rather than
+  a mocked `requireUser`. **It found that every malformed request on this API returned a 500.**
+  All 51 `.parse(req.*)` call sites throw, `buildServer` set no error handler, and so a reviewer
+  mistyping a date got the same status as the database falling over — and every validation
+  failure raised a 5xx alarm. `ZodError` now maps to 400 with the issue paths and messages, and
+  without the values, because `received` on some zod issue kinds would carry a taxpayer figure
+  into a response body and a log line (§11).
+- **P18 itself**: migration 0013 forward/back/forward with no residue, every route exercised
+  against the running dev API and the real engine at 2.0.4, the entry sheet driven in Chromium,
+  and a draft computed from stored inputs alone carrying both the `superseded_by_preparer`
+  omission and 4,400.00 of child tax credit. Four mutations checked, including the one that
+  matters most here: remove the field-omission step and the override silently reverts to the
+  document's figure.
+- **Two silent losses P18 created and closed**, both found by measuring rather than reasoning:
+  the child tax credit was computed by the engine and declared nowhere in the node map, so it
+  was netted into total tax and shown on no surface; and a money box read `15000` directly above
+  a warning reading `12,844.00`. Every draft now reports engine lines the map accounts for in no
+  way, which cannot be a load-time check because enumerating a release's output lines means
+  computing a return.
+
+- **The engine upgrade is a staged install now** (Q23, answered the other way on the second
+  ask). An admin names an exact version and an exact SHA-256; the sidecar verifies the digest
+  **before** running anything, reads the candidate's own field catalogue so the node map can be
+  checked against it, and serves nothing from it until a person activates. The outgoing binary
+  is kept for a one-press rollback. Off unless a deployment provides a staging volume and, for
+  the download form, outbound access — both WISP decisions (Q21). Two defects found by running
+  it rather than reading it: a staged binary renamed to `opentax.staged` would not start,
+  because a runtime that dispatches on the file name treats it differently from the thing it is
+  a copy of; and activation used a cross-filesystem `rename`, which works where both paths are
+  on `/tmp` and fails with `EXDEV` on a real appliance — the worst kind of bug, one that appears
+  only where it matters. Rendering it found a third: a sidecar refusing an action surfaced as a
+  **500**, so `DraftEngineError` now maps to 409/503/502 the way `ZodError` maps to 400.
+
+**Totals after this pass:** 409 tests across 31 files in the server package and 15 in the UI,
+none skipped, against a real Postgres at 0013. `npm run lint` clean. `npm run draft -- --truth` still 13 agreed, 0 disagreed.
+`npm run check:providers` clean. No fixture-manifest drift.
+
+**Still not verified, and none of it is small.** The extraction accuracy run still needs the
+Router, a vision model and an app token (see *Blocked on* below). `test/sso.test.ts` still cannot
+run in development. **No person has hand-checked a draft line by line**, and P18 widens what that
+check must cover. Q21 is unanswered and now covers both phases.
+
+**Verified by execution on 2026-09-25 (second pass) — the real engine, at last.**
+
+`opentax-linux-x64` from release **v2.0.4** (SHA-256 `7f0911050f7f34e1…aaaa02d4`) was downloaded,
+run, and driven through the wrapper over HTTP. Docker is unavailable in that environment so
+`opentax/Dockerfile` is still unbuilt, but the binary is glibc and the host is Ubuntu 24.04, so
+pointing `OPENTAX_BIN` at it proves the engine and the wrapper without the image.
+
+- **`npm run draft -- --truth` scores 13 agreed, 0 disagreed, 2 not compared, exit 0 — against
+  the real engine.** Every income and withholding line that was hand-derived from the printed
+  boxes now matches an engine figure exactly: line 1a at 127,000.00 and 255,000.00, line 25a at
+  15,440.00 and 34,260.00, line 2b at 1,946.00 and 764.00, line 3b at 16,114.00 and 3,187.00,
+  line 3a at 14,683.00 and 2,914.00.
+- Seeded with a misrouted node field (W-2 box 1 aimed at `box7_ss_tips`), it reports
+  `1040:1a expected 127,000.00, engine —` and exits 1. Restored, exit 0.
+- 330 tests pass across 27 files, none skipped, with a real Postgres, excluding `test/sso.test.ts`
+  (the token-gated package again; **CI run 47/48 ran it and were green**).
+- `npm run check:providers` clean. `python fixtures/generate.py` is idempotent and the drift check
+  passes.
+
+**Seven things the real engine corrected. Every one would have shipped as a silent defect, and
+the first is the one worth reading:**
+
+1. **`lines` is flat, keyed by line name — not nested by form.** The whole comparison layer read
+   `lines[form][line]` and got nothing. The reason it survived review is the instructive part:
+   `test/helpers/fake-opentax.mjs` encoded the same wrong assumption, so all 328 tests agreed
+   with the mistake and none of them could catch it. **A stand-in that shares your
+   misunderstanding tests nothing.** The stub now mirrors the engine's real shapes.
+2. **Some values arrive as a two-element array** — `[11420, 11420]`. `compare.ts` handled that
+   defensively; `scripts/draft-check.mjs` had its own copy of the conversion that did not, so
+   every array-valued line read as absent. The conversion is now exported and shared, not copied.
+3. **An unfed source line is absent, not zero.** The earlier claim that "an engine computes a
+   line it received no documents for as zero" came from the stub and is wrong. Verified: source
+   lines (`line5a_pension_gross`, `line2b_taxable_interest`) are **absent**; only computed
+   aggregates (`line10_adjustments`, `line21_credits_total`) come back as real `0`. The omissions
+   argument is stronger stated accurately — a withheld document leaves the source line absent
+   *and* every computed total a confident number, so a draft can show a plausible refund that is
+   wrong by the whole of a pension. Corrected in §14, the design doc, the workbook sheet and the
+   UI panel.
+4. **The filing-status vocabulary is `single | mfs | mfj | hoh | qss`.** The long names the UI and
+   the harness sent are refused at the `general` node, which loses the standard deduction and the
+   entire tax computation with it — every draft return would have failed. The codes now live in
+   the node map as data, are served to the UI so it cannot hardcode them again, and an unknown
+   value becomes a named omission instead of an engine rejection.
+5. **Engine 2.0.4's `f1099m` requires the taxpayer's own `recipient_tin`**, confirmed by probe.
+   §7 forbids forwarding a TIN anywhere, so **1099-MISC is now unmappable** under a new reason
+   code, `engine_requires_withheld_input`. The engine and this app disagree and §7 wins.
+6. **`f1099div` alone among the nodes uses camelCase** (`payerName`), has no `payer_tin`, and
+   requires `isNominee` and `box11`. Mapping it by the other nodes' convention would have had
+   every 1099-DIV rejected.
+7. **A required *checkbox* needs `false` when blank, and that is §5 read correctly rather than a
+   hole in it.** §5 is about money; §5 itself says an unticked box "is `false` and has nothing on
+   the page to cite". Without `falseWhenBlank`, requiring `box11` would have withheld every
+   1099-DIV whose box 11 is unticked — nearly all of them. The loader refuses the flag on any
+   field that is not a checkbox, so it can never reach a money field, and a test pins that.
+
+**Also observed, not this repo's to fix:** with a single 1098 of 12,844 and an MFJ standard
+deduction of 31,500, the engine reports `line12c_deduction_total = 12844` while
+`line15_taxable_income` correctly reflects 31,500. Line 12c looks like it should be the greater of
+the two. Worth reporting upstream; this app does not compare that line, and it is listed among the
+computed-only figures, so a draft would display it. Raised rather than worked around.
+
+**Governance written the same day, and neither question is answered:**
+
+- **Q21 carries a drafted proposal, not an answer.** `docs/wisp-amendment.md` has a new **§4.1**
+  setting out the §7216 position for the draft return in full, marked in its own first paragraph
+  as unapproved, and §1's data-capture sentence now points at it. The argument turns on the
+  disclosure analysis being unaffected — the engine is a binary on the appliance with no
+  credentials and no outbound connection, so the set of third parties receiving taxpayer
+  information is identical with the feature on and off. The distinction the firm must be willing
+  to defend (arithmetic from stated inputs is not a substantive determination) is stated plainly
+  rather than smoothed over. **`DRAFT_RETURN_ENABLED` stays off for live client data until Kurt
+  answers.**
+- **Q22 carries an inventory, not an answer.** Two files cannot be published as written:
+  `docs/wisp-amendment.md`, which names the firm's accepted exposures and the absence of a
+  US-region control, and `docs/sso.md`, which documents the break-glass account and its recovery.
+  The recommendation recorded there is to **split rather than sanitise**, keeping the
+  firm-specific half in a private sibling repository so it stays under version control. The
+  blocking half is not this repo's: AGPL §1 needs `@kisaes/vibe-ai-client` and
+  `@kisaesdevlab/vibe-auth` conveyable, which are decisions for those repositories. Nothing has
+  been published, moved or deleted.
+
+**Still not verified:**
+
+- `opentax/Dockerfile` is **built by CI** as of 2026-09-25 (`opentax-image`), which also runs
+  the engine in the runtime image and checks `/health` and `/catalog`. It still has not been
+  built in the development environment, where Docker is unavailable.
+- **P17 has not exited.** Q21 is unanswered, and the phase also wants a draft return hand-checked
+  line by line by a person against a known packet. A screenshot is not that check.
+- The sign-in and Admin → Authentication screens were **deliberately not captured**: the auth
+  package was stubbed to get the SPA to boot, so those two surfaces would have been showing a
+  placeholder rather than the product.
+
+
+**Verified by execution on 2026-09-25 (fourth pass) — the image, and the hand-check sheet.**
+
+Two of P17's longest-standing gaps, and one thing asked for that was not delivered.
+
+- **The sidecar image is now built by CI, and the engine runs in it.** This was the oldest
+  unverified item on the phase: Docker is unavailable in development, so whether a
+  `deno compile` binary runs on `node:24-bookworm-slim` as a non-root user was reasoned and
+  never observed. The new `opentax-image` job builds `opentax/Dockerfile`, runs `opentax
+  version` in the **runtime** stage (a different base from the build stage, no curl, non-root),
+  starts the sidecar and asserts `/health` and `/catalog` answer correctly. A moved release or
+  a wrong checksum now fails in CI rather than at a firm.
+- **The pin is machine-readable.** `opentax/pinned.json` holds the tag, version, asset and
+  SHA-256, and CI builds from it. This is not a fourth version pin — it is the checked-in form
+  of the third one (what actually gets installed), which previously existed only in a Dockerfile
+  comment and a docs table, where nothing could verify it.
+- **A `Hand check` sheet** now rides in the workbook beside `Draft Return`, for P17's remaining
+  exit criterion. Everything a machine can say about a draft has been said; what is left needs a
+  person, and this makes it ticking rather than hunting. Each line carries what the documents
+  report, what the engine computed, and **the box on the named document each contributing
+  figure was read from** — `W-2 — ACME MANUFACTURING INC · box 1 · Wages, tips, other
+  compensation | 85,000` beside `W-2 — OZARK REGIONAL HEALTH · box 1 · … | 42,000` under a
+  127,000 total. `worksheet_contributions` already held that provenance; it was only visible one
+  line at a time in the review UI. Landscape, fitted to one page wide, headers repeated, with
+  somewhere to sign. Omissions first, as everywhere else.
+- Generated against the real engine and read back out of the artifact, not only asserted in a
+  test.
+
+**Asked for and not delivered: the engine install button (QUESTIONS.md Q23).** The earlier
+answer — report, never install — was reversed on request, which is a legitimate call to make
+about this repository's own rule. The attempt kept the properties that distinguish it from
+`install.sh | sh`: explicit version and checksum with no `latest`, and the new binary staged and
+validated against the node map before serving. **A tooling guardrail refused the
+download-verify-execute path** as untrusted code integration. That refusal was not worked
+around and nothing partial was left behind. Q23 records the design, the three ways forward, and
+the two non-code prerequisites either way: a writable volume on a container that is currently
+`read_only: true`, and outbound access from the appliance to the release host — both of which
+belong in the WISP review Q21 has already opened.
+
+
+**Verified by execution on 2026-09-25 (third pass) — the engine catalogue check.**
+
+A question about how an engine upgrade would be handled turned up a real hole, found by probing
+the running 2.0.4 binary rather than by reading its source. A field renamed between engine
+releases fails in two very different ways:
+
+- **Required field renamed** → `form add` refuses the node, the wrapper reports it in
+  `rejected`, the app carries it into the omissions. Loud, and already handled.
+- **Optional field renamed** → the engine **accepts the payload and ignores the unknown key**.
+  Demonstrated: a 1099-INT box 1 of 12,345 sent as `box1_interest` rather than `box1` returns
+  `rejected: 0` and leaves `line2b_taxable_interest` **absent**. Absent is exactly what "the
+  documents reported nothing on this line" looks like. Nothing is rejected, nothing is logged,
+  and the omissions list does not mention it either — from the translator's side the field was
+  sent successfully. That is the silent omission this whole app exists to prevent, arriving
+  through the one door the omissions contract does not cover.
+
+Closed by comparing names before sending. `opentax/server.mjs` gained `GET /catalog`, which
+reads the engine's own `node inspect --node_type X --json`; `src/draft/catalog.ts` compares it
+against the node map. Blocking findings withhold draft returns — a wrong draft is worse than no
+draft, and the worksheet does not go through that path at all. Never fatal at boot (§3).
+
+- **All five finding kinds were mutation-checked against the real binary**, and the shipped map
+  is clean against 2.0.4: 0 findings across 14 node types. Break it and each fires — a renamed
+  field (blocking), a renamed node type (blocking), an `engineRequired` flag stale in either
+  direction (advisory), a required field the map sends nothing for (advisory).
+- **The refusal was proven end to end** (`test/draft-return.test.ts`, real database, real
+  wrapper): with `box1_wages` renamed in the map, generation throws `DraftEngineMismatchError`
+  naming the field, and computes again once restored. Mutation-checked: remove the guard and
+  that test alone fails.
+- **The route answers 409, not 502**, because the engine is healthy — what is wrong is this
+  app's map against the engine it is pointed at, and the findings go back with the refusal.
+- **Admin → Draft engine** renders it: both version pins, the running binary, and every finding
+  with its remedy. Captured in a browser in both states, healthy and mismatched.
+- **Parallelised in the wrapper**, bounded at four children: 9.4s → 2.9s for 14 node types.
+  Sequential was too slow to sit in front of a first draft; unbounded is a memory spike an
+  appliance should not take for a diagnostic.
+- **The stand-in binary now carries the full catalogue**, derived from the real one into
+  `test/helpers/fake-opentax-catalog.json`. It first carried three representative node types
+  and every draft-return test refused — the check correctly reporting the other eleven as
+  absent. The same lesson as the flat-`lines` mistake, from the other direction: a stand-in
+  that knows *less* than the engine is as misleading as one that knows it wrongly.
+
+**A hole in the check itself, found by reading the translator afterwards and closed.** The
+`general` node carries what the *reviewer* states — filing status and the age and blindness
+flags — so it is on no form's map and its five engine field names live in code. The first
+version checked only `filing_status`. The other four are **optional** on the engine, which is
+exactly the silent-drop case: rename one and it is accepted, ignored, and the additional
+standard deduction for an elderly or blind taxpayer disappears from every draft with nothing
+saying so. They are now exported as `GENERAL_NODE_FIELDS` and checked like any other, with a
+test that deletes each in turn.
+
+**What this is not:** a name check, not a behaviour check. It cannot see a field that kept its
+name and changed its meaning, or arithmetic that moved. `npm run draft -- --truth` is what
+measures behaviour; an upgrade needs both, and `docs/opentax-draft-return.md` §7 now says so as
+a procedure.
+
+**Not built, deliberately — QUESTIONS.md Q23.** The ask was for the upgrade procedure "as a
+simple button". The reporting half is built; a button that downloads and swaps the engine is
+not, and should not be. §14 pins the version and verifies the binary by checksum at image build
+precisely so nothing at runtime can move it, and a click that installed a release would be
+`install.sh | sh` with better manners. The app could not do it anyway — the engine is a separate
+compose service, which is what keeps the AGPL integration severable. Q23 records the reasoning
+and the one middle option not taken (checking the releases feed and reporting a new version
+without installing it), which is a network-policy and WISP question rather than a code one.
+
+
+**Verified by rendering, on 2026-09-25** (P17, the UI panel — the thing that had never been
+looked at):
+
+The panel was rendered in a real Chromium against the **real engine 2.0.4**, the real database
+at migration 0012, and the real API over HTTP, on a seeded `smith-joint-2025`-shaped bundle
+(two W-2s, a current and a prior-year 1098, a code-G 1099-R with "taxable amount not
+determined" ticked). `@kisaesdevlab/vibe-auth` was stubbed locally and uncommitted, because it
+needs a `read:packages` token this environment has none of; the stub's two React components
+render a visible "STUB — NOT THE REAL PACKAGE" marker and the capture asserts no such marker
+appears on any captured page. Authentication was bypassed by seeding a session row, so the
+stubbed sign-in path was never exercised.
+
+`/health` reported `2.0.4` before anything was captured, so every figure on screen came from
+the pinned binary. **Three defects the first render found, none of which any test caught:**
+
+1. **The filing-status control was dead.** `draftReturnStatus` defaulted to
+   `new Date().getFullYear()` — 2026 — the only node map is 2025's, and a bare `catch`
+   swallowed the miss. The select rendered with no options above a button that could never be
+   pressed, and nothing threw or logged. A preparer works last season's returns for most of a
+   year, so the wall-clock year is never the right default for a tax year here. Fixed:
+   `nodeMapYears` / `resolveNodeMap` fall back to the newest map and report which,
+   `filingStatusYear` is served rather than swallowed, the panel now says what is missing
+   instead of offering a dead control, and the UI passes the bundle's own year.
+2. **The comparison table was unusable.** The panel lives in the ~290px review aside, where a
+   four-column money table broke every 1040 line label one word per line and clipped the
+   agreement column off the right edge. Rebuilt as stacked blocks with the two figures side by
+   side, which is the comparison the panel exists to make.
+3. **`(§9)..`** — the schema's judgment reason already ends in a full stop and the translator
+   appended another. Fixed, and mutation-checked: revert the fix and the new test fails.
+
+**And one thing the render made unavoidable rather than broke.** Engine 2.0.4 reports
+`line12c_deduction_total` as the *itemised* total even when the standard deduction is larger
+and is what the same run applied to taxable income — on this bundle, 18,349 on line 12c against
+a 31,500 married-filing-jointly standard deduction, with taxable income correctly computed on
+31,500. The two figures do not reconcile on the face of the draft. This is the same suspected
+engine defect recorded above, now observed a second time on different numbers. **The engine's
+output is not corrected** — a draft return that edited it would be a check on nothing. The node
+map carries a `note` on that line instead, which the panel renders beside the figure and which
+is stored with the line so it reaches the workbook sheet too. Worth reporting upstream.
+
+What the capture confirmed positively: the filing-status select offers the engine's own codes
+(`single | mfj | mfs | hoh | qss`, not the long names the engine refuses); the omissions block
+is open by default and sits **above** the first figure (asserted by bounding box, not by
+reading); the withheld 1099-R and the off-year 1098 both appear in it with their reasons; line
+`1040:5a` shows 25,000.00 reported against nothing from the engine, which is §14's central
+warning made visible; and there were no console errors and no failed requests. The workbook
+generated for the same bundle carries the `Draft Return` sheet with the omissions on it.
+
+The suite was **335 across 27 files** after this pass (330 before it), and is **358 across 28**
+after the catalogue check above. `npm run check:providers` is clean and
+`python fixtures/generate.py test/fixtures` leaves `manifest.json` untouched.
+
+**Not verified by this:** the three draft-return routes were exercised by the browser and by
+`curl`, but not by an automated test over HTTP. `npm run typecheck`, `npm run build` and the UI
+build were run here against the **stubbed** auth package, so only CI's runs of them count.
+
+
+**Verified by execution on 2026-09-25** (P17, all three stages; carries **migration 0012**)
+— the **first pass, against a stand-in binary**. Its "Not verified" list below is a record of
+where this stood that afternoon, and the two blocks above have since falsified most of it: the
+real engine has been scored and the panel has been rendered. Kept as written rather than
+edited, because what a pass did not verify at the time is the whole point of recording it.
+
+- `npx vitest run`: **328 pass across 27 files, none skipped**, with a real Postgres.
+  **85 are new**, across seven new files. Nothing regressed.
+  **One file was excluded locally:** `test/sso.test.ts` cannot load
+  `@kisaesdevlab/vibe-auth`, which needs a `read:packages` token that was not available in
+  the development environment, and that absence also made `npm run build` and
+  `npm run typecheck` fail on implicit-`any` errors in `src/lib/vibeAuth*.ts`. Outside those
+  two files `tsc --noEmit` was clean and `dist/draft/` emitted.
+  **CI closed that gap** (run 47, all four jobs green): it has the token, so there it
+  type-checked, migrated up/down/up, ran the **whole** suite including `sso.test.ts`'s 47
+  tests, built, built the UI, and passed the fixture drift check. P16 is not disturbed.
+- **Two guarantees were checked by mutation**, not argued:
+  1. **A blank never becomes a zero at the engine boundary** (§5, §14 rule 1). Switch the
+     guard to zero-fill and exactly three tests fail: the optional blank box, the
+     engine-required blank box, and the partially-read 1095-A year.
+  2. **No taxpayer amount survives a draft-return request.** Remove the wrapper's state
+     cleanup and the test fails on a sentinel amount found on disk.
+- **Migration 0012 ran forward, back, and forward again** against a real Postgres: four
+  tables and their indexes appear, disappear with no residue (no leftover index rows), and
+  reappear. `schema_migrations` returns to 0011 and back to 0012.
+- **The wrapper and the client were driven over real HTTP against a real child process**
+  (`test/helpers/fake-opentax.mjs` standing in for the binary): the `create → add × n → get →
+  validate` sequence, a refused node reported without losing the rest of the draft,
+  diagnostics split with an unclassified one treated as hard, per-request state isolation
+  proven by two concurrent drafts not summing together, and the absent-engine path reporting
+  `engine_unreachable` rather than throwing something a route turns into a 500.
+- **The whole draft-return path ran end to end** (`test/draft-return.test.ts`, real database):
+  the gate refuses a blocked bundle and an unconfirmed identity and the refusals come from
+  `assertWorksheetAllowed`; the withheld SSA-1099 survives as a durable omission naming box 3;
+  computed-only figures store with no line ref; disposal is logged to `purge_log`.
+- **`npm run draft -- --truth` ran and scored**: 13 lines agreed, 0 disagreed, 2 not compared,
+  exit 0, across all five fixture bundles. Seeded with defects it caught each and exited 1 —
+  a misrouted node field (`1040:1a` expected 255,000.00, got 0.00) and the §9 judgment rule
+  removed (`1040:5a` expected 0.00, got 25,000.00). A third seeded defect was caught at
+  *load* instead, by the node map's own consistency check, before the harness ran.
+- The UI builds with the new panel (35 modules) and `ui/` type-checks — both with
+  `@kisaesdevlab/vibe-auth` externalised, because it cannot be installed here.
+- `npm run check:providers` clean. Enabling the draft return adds **no inference and no
+  egress**: the engine is deterministic and runs on the appliance.
+
+**Five things were found by running it, not by reading it:**
+
+1. **The wrapper's version regex truncated a prerelease** — `0.1.0-rc.1` reported as `0.1.0`,
+   which would have passed the `OPENTAX_VERSION` check that exists to catch exactly that.
+2. **A null `taxYear` coerced to 0** through `Number()`, so a draft could have been labelled
+   year 0 rather than refused.
+3. **Nothing stopped an off-year document feeding the engine.** The `1098_prior_year.pdf`
+   fixture would have added last season's mortgage interest to this season's computation. §6
+   flags the year mismatch as a soft failure precisely because it is a real preparer error, so
+   a new `off_year_document` rule now withholds it. The worksheet still reports it, annotated.
+4. **A hand-derived expectation was wrong**, and reading the line mapping caught it: the
+   fixture 1099-R has box 7's IRA/SEP/SIMPLE box unchecked, so its gross distribution is a
+   pension on line 5a, not an IRA distribution on 4a.
+5. **A withheld line's expected value is a computed zero, not nothing.** An engine computes a
+   line it received no documents for as `0`, and that zero is indistinguishable from a zero the
+   documents reported. This is the sharpest argument for the omissions contract being part of
+   the answer rather than an appendix to it, and it is now said that way in §14, in the
+   workbook sheet, and in the UI panel.
+
+**Not verified, and none of it is small:**
+
+- **No real OpenTax binary has ever run, so no draft return has been computed by the actual
+  engine.** Every figure in every test came from a stand-in that does plain sums with no
+  ordering, phase-out or characterization anywhere. `npm run draft` proves the *harness*
+  works; it says nothing yet about the engine's arithmetic.
+- **`opentax/Dockerfile` has never been built.** It needs a published release and its SHA-256,
+  and neither exists here. Whether `deno compile` output runs on `node:24-bookworm-slim` is
+  reasoned, not observed. *(Superseded 2026-09-25, fourth pass: CI builds the image and runs the
+  engine in the runtime stage. It does.)*
+- The `draft-input`, `draft-return` and `draft-return/status` routes have not been exercised
+  over HTTP. *(Superseded 2026-09-25, fifth pass: `test/draft-routes.test.ts` drives them
+  through the real server, and found that every malformed request returned a 500.)* They type-check and their gate wiring is covered at the service layer, not the
+  route layer. Two small route-level defects were found by reading rather than running, and
+  fixed: `?download=false` parsed as true (`z.coerce.boolean()` reads the *string* `'false'`
+  as true), and the node map's `engine.pinnedVersion` was declared and then read by nothing,
+  so a map written against one engine release could sit under another without a word.
+- **The UI panel has been compiled, not looked at.** No browser has rendered it.
+- The `Draft Return` workbook sheet is asserted against a parsed workbook, not opened in Excel.
+- **P17 has not exited, and neither of its gates has moved** — Q21 is unanswered and no real
+  engine has been scored.
 
 **Verified by execution on 2026-09-20** (P16 follow-up: break-glass guard, reset refusal and
 readiness check; no migration; same branch, merged 2026-09-22):
@@ -412,7 +821,7 @@ what a model returns.
 | P3 | Router SDK integration | implemented | SDK client, error taxonomy, parking, leakage check verified |
 | P4 | Page classification and bundle splitting | implemented | v1040_page_classify + grouping + consolidated containers; classifier model recorded (0003) |
 | P5 | Identity resolution | implemented | salted HMAC TIN, ITIN-aware, human confirmation gate |
-| P6 | Form schema registry | implemented | **27 form schemas**; all fields nullable; validated at load |
+| P6 | Form schema registry | implemented | **28 form schemas** (27 for TY2025 plus a TY2024 1098); all fields nullable; validated at load |
 | P7 | Layout pass | implemented | 0–1000 scale requested; convention detected per page and recorded; spans immutable, model recorded; values-only retry on truncation |
 | P8 | Field-binding extraction | implemented | multi-pass agreement (only signal per Q4); no-span forces review |
 | P9 | Arithmetic reconciliation gate | implemented | every §6 check; gate has one door and no bypass |
@@ -423,6 +832,8 @@ what a model returns.
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
 | P16 | Single sign-on (Vibe Auth) | implemented, released v0.10.0 (2026-09-22) | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
+| P17 | Draft return (OpenTax) | **implemented, scored against engine v2.0.4 and rendered in a browser, 2026-09-25**; carries migration 0012 | translator, node map, sidecar, comparison, workbook sheet, UI panel, harness. `npm run draft -- --truth` is 13/13 against the real engine. The panel has now been looked at, which found three defects no test caught (dead filing-status control, unreadable table in a 290px aside, `(§9)..`) — all fixed and regression-tested. **Cannot exit**: Q21 unanswered, the Dockerfile unbuilt, and no person has hand-checked a draft line by line. See Current position |
+| P18 | Preparer-supplied inputs (dependents, Schedule A, C/E/F summaries) | **implemented and driven in a browser, 2026-09-25**; carries migration 0013 | `draft_inputs` and three child tables, CRUD routes, audit on every mutation, a full-width entry sheet, and the `superseded_by_preparer` override (Q24). Filing status moved off the per-draft request onto the stored record. Found and fixed two silent losses the phase itself created: the child tax credit was computed and shown nowhere (the node map declared no such line), and a money box read `15000` above a warning reading `12,844.00`. **Cannot exit**: Q21 covers this scope now and is unanswered, and no person has hand-checked a draft built from preparer inputs |
 
 ---
 
@@ -447,6 +858,9 @@ historical — read this table first.
 | Vibe Auth client `@kisaesdevlab/vibe-auth` ≥ 1.0.4 on GitHub Packages | P16 | **published** — 1.0.0–1.0.4 listed 2026-09-19. Restricted package: installs need `read:packages`. CI's `GITHUB_TOKEN` reads it today (confirmed by PR #1's run); if that ever 403s, the package's *Manage Actions access* no longer grants this repo |
 | Vibe Auth broker ≥ 1.0.4 deployed and this app registered with it | P16 exit | **operator step** — `docs/sso.md`. Before 1.0.4 an MFA-enrolling sign-in carried no MFA `amr` and would be refused here (Q18) |
 | Vibe-Appliance manifest `sso` block + env-template keys for `vibe-1040` | P16 LAN-box check | **not started, outside this repo** — scoped out 2026-09-19 (Q19); checklist in `docs/sso.md`. **Unblocked 2026-09-22:** v0.10.0 is published, so the manifest change may now land without the release-ordering hazard in Vibe Auth's findings. **Added 2026-09-20:** the block now carries `breakglassStatusCommand`, which the appliance schema rejects under strict validation (`sso` is `additionalProperties: false`) and `lib/identity.sh` does not read — the schema key and the status-pill / `oidc_only`-guard wiring are appliance work, item 1 of the same checklist |
+| OpenTax engine, pinned version, verified by checksum | P17 stages 2–3 | **not started** — `filedcom/opentax`, AGPL v3, launched 2026-09-22 by the Open Tax Technology Alliance. A `deno compile` single binary, so it needs a glibc base and cannot live in this repo's Alpine runtime image. Young and largely AI-maintained: pin the release and verify the SHA-256, never `install.sh \| sh` into latest |
+| A revised WISP §4, signed off by whoever owns the WISP | P17 exit, and live client data | **not started** — Q21. The current wording ("makes no substantive determinations") is what the §7216 position rests on and is no longer accurate. `DRAFT_RETURN_ENABLED` stays off until it is revised |
+| Corresponding Source conveyable for `@kisaes/vibe-ai-client` and `@kisaesdevlab/vibe-auth` | publishing, §13 productization | **not started, sibling-repo decisions** — Q22. Neither is publicly available today; AGPL §1 requires both to reach anyone this app is conveyed to |
 | WISP amendment drafted — must name unscrubbed page-image egress | P14 | **drafted** — `docs/wisp-amendment.md` names DigitalOcean-hosted open models, their retention terms, and the region gap (Q12, Q13) |
 
 ---
@@ -471,7 +885,10 @@ requires an explicit decision entry below, not a silent implementation choice.
 - TIN stored as salted hash plus last four plaintext. No plaintext SSN in the database.
 - All form types in v1; K-1s boxes-as-printed only, sequenced last.
 - Single firm. Internal first, productize later.
-- No return ingestion, no diff engine, no tax calculation.
+- No return ingestion, no diff engine. No tax calculation **by this app** — amended 2026-09-25
+  to permit a separate, deterministic, locally-run engine as a checking aid (§14, P17). The app
+  itself still computes no tax and decides no characterization question.
+- AGPL-3.0-only since 2026-09-25, relicensed from BUSL-1.1 (Q22).
 
 ---
 
@@ -479,6 +896,143 @@ requires an explicit decision entry below, not a silent implementation choice.
 
 Append here when a locked decision changes or a significant implementation choice is made
 that future phases depend on. Date, decision, reason, phases affected.
+
+**2026-09-25 — A malformed request is a 400 across the whole API, not a 500.** (build)
+
+Found by the first test that posted a bad body over HTTP rather than calling a service directly.
+Every route validates with zod and calls `.parse`, which throws, and `buildServer` set no error
+handler — so all 51 of those call sites turned a client mistake into a server error. This is a
+client-visible contract change on every route in the app, which is why it is here: a caller can
+now distinguish "you sent something invalid" from "the server broke", and a validation failure
+no longer raises a 5xx alarm. Only `ZodError` is mapped; anything else keeps the status it had.
+
+The issues come back as path and message, never the value. `received` on some zod issue kinds
+would carry the figure itself into a response body and a log line, and a taxpayer amount belongs
+in neither (§11).
+
+**2026-09-25 — ESLint exists.** (build)
+
+`npm run lint` had been in `package.json` since P0, with both packages installed and no config
+ever committed, so it failed outright for the entire build and CI omitted the step. The config
+is deliberately narrow — a strict `tsc` already does the heavy lifting — and its centre is the
+one thing types cannot see here: `--experimental-strip-types` rejects parameter properties and
+enums, so either would compile in the built image and fail in `npm run dev`, the worker and the
+migration scripts. That CLAUDE.md rule now has something enforcing it besides memory. Rules are
+errors or they are absent; the two exceptions are scoped and carry their reason in the file.
+
+**2026-09-25 — The preparer supplies what no document carries, and may displace a document's
+figure with their own.** (P18)
+
+Kurt's call, on four questions put to him explicitly: engine inputs only (the worksheet's totals
+stay untouched and still trace to spans); minimal summaries for Schedule C, E and F rather than
+line-by-line schedules; document conflicts resolved as **a real override** rather than by
+declining to offer the field; and `docs/wisp-amendment.md` §4.1 revised for this scope **before**
+sign-off, so Q21 is answered once against what the app will actually do.
+
+**What this is.** A 1040 needs facts no W-2 or 1099 reports. §14 rule 5 already routed filing
+status and the age/blindness flags through the reviewer; this extends the same arrangement to
+dependents, itemised deduction totals, and business and rental summaries, stored per bundle so a
+preparer does not retype a Schedule C on every recompute. It is data entry, not a feature:
+nothing on those surfaces is computed, suggested, defaulted or carried over, every determination
+is three-valued and starts at "not stated", and no dependent TIN is asked for or storable (§7).
+
+**What was measured rather than assumed, and changed the design.** Sending both a document's
+figure and a preparer's for the same engine field makes engine 2.0.4 use the document's and
+**discard the preparer's in silence** — 1098 at 40,000 beats a typed 55,000, with no diagnostic
+anywhere. So the app sends one side and records the other as a `superseded_by_preparer` omission;
+where the engine requires the field, the whole document is withheld instead, because omitting a
+required field refuses the node. `npm run draft:conflicts` re-measures every declared pair on
+every engine upgrade. Q24 records why the override is safe as built.
+
+**Two silent losses this phase created and closed.** Dependents made the engine return
+`line20_nonrefundable_credits` — the child tax credit — and the node map declared no such line,
+so it was netted into total tax and shown nowhere: three dependents and a credit for two looked
+exactly like a correct return. Nine money lines are now declared, and **every draft reports any
+engine line the map accounts for in no way**, which cannot be a load-time check because
+enumerating a release's output lines means computing a return. Separately, the first browser
+render showed a money box reading `15000` directly above a warning reading `12,844.00` — the same
+quantity in two notations, which is how a figure gets misread by a factor of a hundred.
+
+**What this does not change.** The worksheet is untouched: nothing here writes a worksheet line
+or a contribution, so the two derivations being compared stay independent. The gate still has one
+door. The app still decides nothing — but §11's sentence is now carrying more weight than it was,
+which is why §4.1 was revised in the same change set rather than after it.
+
+**2026-09-25 — A draft return, computed locally by OpenTax. §2's "not a tax calculation engine"
+is narrowed, not repealed; this app is relicensed AGPL v3.** (P17 stage 1)
+
+The Open Tax Technology Alliance published OpenTax on 2026-09-22: a deterministic federal 1040
+engine, AGPL v3, a single binary, 186 registered nodes and 131 input types, TY2025, no account
+and no cloud. Fed the amounts this app already extracts it turns §1's eyeball comparison into an
+arithmetic one, and run against the fixture bundles it becomes the end-to-end accuracy
+instrument this build has never had. Kurt's call, on three questions put to him explicitly.
+
+**What changed in the boundaries, and what did not.** §2 now says the app computes no tax *of
+its own* and may hand what it read to a separate, deterministic, locally-run engine. §11's
+data-capture sentence is amended. Three boundaries are untouched and were checked rather than
+assumed: the prepared return is still never ingested and no MeF XML is parsed **or emitted**, so
+this is not a diff engine and not a filing product; `src/draft/compare.ts` compares the app's own
+two derivations of the same documents, which is internal consistency checking; and every §9
+judgment call is still refused rather than answered.
+
+**The §7216 analysis, which is the part worth recording.** The engine runs on the appliance,
+holds no credential and makes no network call, so **the set of third parties that see taxpayer
+data is unchanged** and §301.7216-2(d)'s disclosure analysis of the Router's providers is
+untouched. What changes is the *characterization* claim. The app still decides nothing: a
+populated `judgmentRequired` field withholds its whole document, which means an SSA-1099 is
+withheld every single time — box 3 is always printed, and the taxable portion of social security
+is precisely what §11 forbids computing. Filing status, dependents and the age and blindness
+flags come from the **reviewer**, never inferred from a pile of forms; that is the preparer making
+a determination, in the right place. But `docs/wisp-amendment.md` §4 now says something untrue
+about this app, so it must be revised and signed off before live client data — **QUESTIONS.md
+Q21, and `DRAFT_RETURN_ENABLED` stays off until then.**
+
+**The omissions contract is the design.** A draft from a documents-only bundle can never be a
+return, and one that looks authoritative while silently missing half a taxpayer's position would
+be worse than none. So incompleteness is an enumerated output. Six rules produce it (§14); the
+first matters most. The boundary into a calculation engine is the one place in this build where
+§5 could be destroyed silently, because engines want numbers and a blank is not a number. A null
+is never sent as zero: the box is left off, and where the engine requires it the **whole document
+is withheld** rather than zero-filled. A partially read 1095-A year is not padded with
+zero-premium months, which would report a month of no coverage as a month of no premium. **That
+guard was checked by mutation** — switched off, three tests fail and say why.
+
+**Relicensed AGPL-3.0-only, from BUSL-1.1.** `package.json` declared BUSL-1.1 and no licence text
+had ever been committed; the AGPL text is now `LICENSE`. This makes the integration unambiguous
+rather than arguable, and it is the Alliance's own framing — open products use it free, closed
+products pay. Two consequences are open in Q22 and neither blocks the build. Corresponding Source
+has to cover `@kisaes/vibe-ai-client` and `@kisaesdevlab/vibe-auth`, which are sibling-repo
+decisions. And a proprietary licence for the *combined* work is no longer Kisaes's alone to grant,
+which is why the engine is invoked as a separate process over JSON and stays a severable optional
+service — with the flag unset, no OpenTax code is present at all. The AGPL obliges offering source
+to network users, **not** a public repository, so this repo stays private while
+`docs/wisp-amendment.md` lives in it.
+
+**Sequenced now rather than after the accuracy run, deliberately.** Extraction accuracy has never
+been measured and the accuracy run is still blocked on the Router. Building a tax computation on
+unmeasured numbers is a real objection, and the answer is to invert it: the translator is a pure
+function testable with no engine, no Router and no database, and a wrong total is far easier to
+spot on a 1040 line than in a field map. Values flagged for review or citing no span never reach
+the engine, so an unchecked number cannot quietly feed a computed line. P17's exit criteria
+require the harness to have actually scored and a person to have checked a draft line by line.
+
+**Two findings from writing the node map**, both of which would have been silent guesses:
+
+1. **The engine's field names are not derivable by convention.** Its catalogue calls the first
+   money box `box1_wages` on `w2`, `box1` on `f1099int`, `box1_oid` on `f1099oid` and
+   `box_1_unemployment` on `f1099g`. Every pair is written out in data and checked at load.
+2. **Its `w2g` node numbers boxes differently from the 2025 W-2G revision this app reads** — its
+   `box2` is a wager type where the form's box 2 is a date. Mapping by number would have moved a
+   date into a wager type. Those boxes are `ignored` with the reason recorded, not guessed.
+
+**And three form types the engine cannot take**, recorded because each is a real limit rather than
+an oversight: 1099-B, because the engine's node is per-lot and this app extracts Form 8949 section
+subtotals only (§8); 1098-T, 1099-S, 1099-SA, 1099-Q, 1099-LTC, 5498 and 5498-SA, for which it
+has no input node; and every K-1 plus SSA-1042S, which have nodes that are deliberately not used
+because §8 keeps them as printed. All 28 registered form types are declared either mapped or
+unmappable-with-a-reason, and the loader refuses a map where one is missing.
+
+*Affects:* P6, P9, P10, P12, P17, §2, §5, §9, §11, §13, §14, WISP.
 
 **2026-08-26 — Router integration verified against v0.0.24; §3 rewritten.**
 The spec was written against assumptions that no longer hold. There is no OpenAPI spec (an
@@ -969,6 +1523,15 @@ and remains deferred.
 | Classifier misfires now block, and section splitting depends on the classifier reading the 8949 heading | P4, P9 | Text-layer pre-classification cross-checks native pages and logs disagreement; measure on the IRS-layout fixtures |
 | Base64 inflation pushes request bodies past Router limits during season | P7 | Largely retired — Router default is 10 MiB vs ~800 KB/page. Still measure encoded sizes at P2 exit and confirm the deployed value |
 | K-1 renderings differ across UltraTax, CCH, Lacerte | P15 | Three-rendering fixture requirement in P15 exit criteria |
+| **A draft return computed from a documents-only bundle is structurally incomplete, and looks authoritative** | P17 | Incompleteness is a first-class enumerated output (`omissions[]`, §14), not a footnote: filing status comes from the reviewer, every §9 judgment item withholds its whole document, and `complete` is false whenever anything was withheld. Every computed figure is labelled advisory |
+| **The engine is young and largely AI-maintained, and its arithmetic is only partly measured** | P17 | Pinned at v2.0.4 and checksummed. `npm run draft -- --truth` now scores 13/13 against it, which covers wages, withholding, interest and dividends — not tax, credits or phase-outs. One suspected engine defect now observed twice on different bundles (line 12c reports the itemised total while taxable income uses the larger standard deduction). It is surfaced as a node-map `note` beside the figure in the panel, the stored line and the workbook, never corrected. P17 still cannot exit until a person has checked a draft line by line |
+| A draft return is built on extraction accuracy that has never been measured | P7, P8, P17 | Accepted 2026-09-25 and inverted deliberately: the draft return is the accuracy instrument (P17 stage 3). Values flagged for review or citing no span never reach the engine, so an unchecked number cannot silently feed a computed line. `--truth` mode now isolates the two: the node map and engine are measured at 13/13, so a future disagreement on a real bundle is extraction |
+| **A preparer's typed figure displaces a document's, and a draft can be made to disagree with the documents on purpose** | P18 | Q24. It goes through the omissions contract rather than around it — enumerated on every surface, audited, and announced at the point of entry with the form and the amount it will displace. The worksheet still reports the document unchanged. `npm run draft:conflicts` re-measures the engine behaviour the design rests on |
+| **An entry screen headed "Itemised deductions" reads as the app deciding what is deductible** | P18, §11 | It does not: nothing is computed, suggested, defaulted or carried over, and an unanswered determination is stored as "not stated". Named explicitly in the revised `docs/wisp-amendment.md` §4.1 so the WISP's owner rules on the appearance as well as the mechanism. Still unapproved (Q21) |
+| **A figure a preparer entered can be accepted, ignored by the engine, and leave the total looking right** | P18 | Two guards, both from measured failures: the node map is checked against the engine's field catalogue before sending, and every draft reports engine lines the map declares nowhere. A dependent with no qualifying-child determination earns no credit, so the entry surface names them rather than letting the total quietly not move |
+| Relicensing to AGPL forecloses a proprietary licence for the combined work | P17, §13 | Q22. The engine is a separate process and a severable optional service; with the flag unset no OpenTax code is present at all. Do not move it in-process or vendor its source |
+| **An engine field renamed between releases disappears silently** | P17 | Verified on 2.0.4 by probe: a renamed *required* field is refused loudly, but a renamed **optional** one is accepted and ignored, so the amount never arrives and the line reads as absent — with nothing in `rejected`, the diagnostics or the omissions saying so. `src/draft/catalog.ts` compares the map's field names against the engine's own catalogue before sending, and a blocking mismatch withholds draft returns (the worksheet is unaffected). A **name** check only: `npm run draft -- --truth` measures behaviour, and `docs/opentax-draft-return.md` §7 requires both on every upgrade |
+| **A stand-in binary that shares a wrong assumption tests nothing** | P17 | Learned the hard way: the stub encoded a nested `lines` shape the engine does not use, so all 328 tests agreed with the mistake. `test/helpers/fake-opentax.mjs` now mirrors the engine's real shapes — flat keys, array-valued lines, absent source lines, present zero totals — and its comments say where each came from. Re-derive it against the binary whenever the pin moves | It must also know about **every** node type the map declares, not a representative few: carrying three made the catalogue check report the other eleven as absent and refuse every draft. `test/helpers/fake-opentax-catalog.json` is derived from the real binary for that reason |
 | Powered-off GPU droplets still bill if the Router ever provisions one | Router-side | Not this repo's concern, but flag to Router work |
 
 ---

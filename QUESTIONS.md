@@ -75,7 +75,342 @@ described accurately, and confirm the DigitalOcean DPA covers it.
 
 ---
 
+### Q21 — Does the §7216 position survive a locally computed draft return?
+**Gates:** P17 exit, **P18 exit**, and live client data through the draft return.
+**Raised:** 2026-09-25. **Scope widened the same day, before any answer was given.**
+
+> **Read this before answering.** The question below was written for P17, where the app computed
+> over amounts it had read off documents. P18 added the inputs a preparer types in — dependents,
+> itemised deduction totals, and business and rental summaries — so the app now **records
+> preparer-made determinations about deductions and business income**, and a preparer can
+> deliberately displace a document's figure with their own (Q24). `docs/wisp-amendment.md` §4.1
+> was revised on 2026-09-25 to describe all of that, so that this question is answered once
+> against what the app actually does rather than twice against two halves of it. The revision is
+> unapproved. **Answering Q21 means ruling on the revised §4.1, including its "the part of that
+> which is easiest to misread" paragraph**, which puts the appearance of an itemised-deduction
+> entry screen in front of the WISP's owner alongside its mechanism.
+
+`docs/wisp-amendment.md` §4 states the firm's position in one sentence: "Because the system
+performs data capture and makes no substantive determinations, the processing is intended to
+fall within the auxiliary service provider treatment of Treas. Reg. §301.7216-2(d), which
+does not require separate written taxpayer consent." CLAUDE.md §11 says the same thing, and
+so does §2's "Not a tax calculation engine".
+
+P17 computes a draft Form 1040 from the extracted amounts. The decision to build it is
+recorded (STATE.md decision log, 2026-09-25) and §2 has been narrowed rather than deleted,
+but **the WISP sentence as written is now inaccurate and has to be revised by whoever owns
+the WISP** — the same person as Q12.
+
+The argument for the position surviving, which needs confirming rather than assuming:
+
+1. §301.7216-2(d) governs **disclosure to a service provider**. OpenTax is a deterministic
+   binary running on the appliance. It makes no network call, holds no credential, and
+   discloses nothing to anybody. The set of third parties that see taxpayer data is
+   unchanged by P17, so the -2(d) analysis of the Router's providers is untouched.
+2. The *characterization* claim is what changes. The app still refuses every §9 judgment
+   call — every `judgmentRequired` field that is populated withholds its whole document from
+   the engine, and an SSA-1099 is therefore withheld every time, because the taxable portion
+   of social security is exactly the determination §11 forbids. What the engine does compute
+   is arithmetic over amounts a human has accepted, on inputs the preparer has stated.
+3. Filing status, dependents, blindness and age over 65 come from the reviewer, not from
+   inference. The app never reads a filing status off a pile of forms.
+
+Three things to settle:
+
+- Does the revised WISP language need to distinguish "computes arithmetic from stated inputs"
+  from "makes a substantive determination", and is that distinction one the firm is willing
+  to defend?
+- Is a draft return, marked advisory and incomplete, a "tax return preparation" activity that
+  changes anything about the §7216 posture, or is it a worksheet with more arithmetic on it?
+- Does the engine's presence need naming in the WISP's service-provider section at all, given
+  that it is software on the appliance rather than a service provider? §3 currently lists
+  parties that receive data; OpenTax receives none.
+
+Until this is answered, `DRAFT_RETURN_ENABLED` stays off in any deployment holding live
+client data, and P17 has not exited.
+
+**Proposal drafted 2026-09-25, awaiting sign-off — not an answer.** `docs/wisp-amendment.md`
+now carries a new **§4.1** setting the position out in full, and §1's data-capture sentence is
+amended to point at it. The subsection is marked as unapproved proposed language in its own
+first paragraph, and the file's status line names this question. Three things in it are worth
+reading before answering:
+
+- **The disclosure analysis is unaffected, and that is the material point.** The engine is a
+  binary on the firm's own appliance with no credentials and no outbound connection. The set of
+  third parties receiving taxpayer information is identical with the feature on and off. §3's
+  list does not change, so §301.7216-2(d) applies exactly as it did.
+- **The three controls that keep the app on the data-capture side are in code, not guidance**:
+  a populated judgment box withholds its whole document (so an SSA-1099 never reaches the
+  engine at all), filing status is supplied by the preparer rather than inferred, and a value
+  nobody has accepted does not feed the computation.
+- **The distinction the firm has to be willing to defend is stated plainly rather than
+  smoothed over**: the app now performs arithmetic over amounts a preparer has accepted, from
+  inputs a preparer has stated, and the position is that arithmetic from stated inputs is not a
+  substantive determination. §4.1 says so in those words rather than asserting the conclusion.
+
+One editorial question is left open in §4.1 rather than decided: whether OpenTax belongs in
+§3's service-provider list at all, given that it receives nothing and is software on the
+appliance rather than a provider. Naming it anyway may still help a reader of the WISP know
+what is installed and computing there.
+
+**A:**
+
+---
+
+### Q22 — What does relicensing this app AGPL v3 actually oblige, and who can still license it?
+**Gates:** publishing this repository, and §13 productization. **Raised:** 2026-09-25.
+
+`package.json` declared `BUSL-1.1` with no licence text ever committed. On 2026-09-25 it was
+relicensed to `AGPL-3.0-only` and the AGPL text added as `LICENSE`, so that OpenTax — verbatim
+AGPL v3 with no linking or classpath exception — can be used without ambiguity. Kisaes owns
+this repository's copyright outright, so the relicensing itself needs nobody's permission.
+Three consequences do need deciding.
+
+**1. Corresponding Source has to include the first-party packages.** AGPL §1 requires the
+source of "all the source code needed to generate, install, and … run the object code",
+including shared libraries the work is specifically designed to require. Two of those are not
+publicly available: `@kisaes/vibe-ai-client`, which is on no registry and is linked out of a
+sibling checkout by `scripts/install-deps.mjs`, and `@kisaesdevlab/vibe-auth`, which is on
+GitHub Packages and needs a `read:packages` token even to read. Both are Kisaes's to license,
+but the decision belongs to those repositories, not this one, and both would have to be
+conveyable to anyone this app is conveyed to.
+
+**2. AGPL does not require a public repository.** §13's network clause obliges offering
+Corresponding Source to users who interact with the program remotely over a network — the
+firm's own staff, today. It does not oblige publication to the world. That matters because
+STATE.md keeps this repository and both GHCR images private on a specific ground:
+`docs/wisp-amendment.md` "documents the firm's compliance posture and an accepted exposure,
+which is not something to publish." Staying private and offering source on request is
+compliant. Going public is a separate, deliberate decision, and it should not be taken
+without first moving or sanitising the WISP amendment and `docs/sso.md`.
+
+**3. A proprietary licence for the combined work is no longer Kisaes's alone to grant.**
+Kisaes can dual-license its own code — AGPL plus a commercial licence — exactly as Filed
+does. It cannot offer a proprietary licence for a work that *incorporates* AGPL OpenTax code
+without a commercial licence from Filed (`otta@filed.com`; the Alliance's framing is "open
+products use it free, closed products pay for it"). §13 says internal Kisaes use first,
+licensed Vibe product later, so this is a real fork in the road.
+
+The build is arranged to keep that road open rather than to close it: OpenTax is invoked as a
+**separate process over JSON, never in-process**, it is a severable optional service rather
+than a dependency of the app, and with `DRAFT_RETURN_ENABLED` unset the app contains and ships
+no OpenTax code at all. Whether that severability is enough is a question for a lawyer, not
+for this file. Do not move the integration in-process, and do not vendor the engine's source
+into `src/`, without answering this first.
+
+---
+
+**Inventory taken 2026-09-25, on the working assumption "prepare to go public". Nothing has been
+published, moved or deleted.** What follows is what publication would cost, so the decision can be
+made against specifics rather than an impression.
+
+**Two files cannot be published as written, and for the same reason: they document what this firm
+has accepted and how it recovers, not how the software works.**
+
+`docs/wisp-amendment.md` is the harder one. It names the firm's service providers and the terms
+they were accepted on; it records, in §3.1 and §4, two exposures the firm has consciously taken —
+page images carrying SSNs egressing unscrubbed to a cloud provider, and staff credentials crossing
+the office network in cleartext in LAN mode — and it states that the firm has **no technical
+control** guaranteeing US-only processing. Published, that is a map of where this firm is weakest,
+attributable to it. The software can be described without any of it.
+
+`docs/sso.md` documents the break-glass account by name (`vibe-breakglass`), where its password is
+printed, how it is rotated, and the window in which it exists with a password and no second factor.
+None of that is secret in the cryptographic sense, and all of it is operationally useful to someone
+who has found the appliance.
+
+**Two options, and they are not equivalent.**
+
+*Sanitise in place.* Both files can be rewritten to describe the mechanism without the firm's
+posture. What has to leave is the firm's own risk acceptances, the provider terms it relied on and
+the date it verified them, and the specific account name and recovery procedure. The result is a
+useful public document and a **materially less useful internal one** — the WISP amendment exists
+precisely to be pasted into the firm's WISP, and a version with the accepted exposures removed
+cannot serve that purpose. So sanitising is not editing; it is splitting one document into two.
+
+*Move the firm-specific half out of this repository.* `wisp-amendment.md` and the operator half of
+`sso.md` become firm records kept wherever the WISP is kept, and this repo keeps mechanism-only
+documents pointing at them. The cost is that they leave version control, which is exactly what has
+kept them accurate through nine releases.
+
+**Recommendation, for the firm to accept or reject:** split rather than sanitise, and keep the
+firm-specific documents in a **private sibling repository** rather than out of version control
+altogether. That preserves the history and the review discipline while letting this repository be
+published. It does mean the split happens before publication, not after.
+
+**No third-party content is in the way.** The fixtures are synthetic by rule (STATE.md: "All
+fixtures must be synthetic or fully de-identified"), the IRS-layout fixtures are generated from
+public forms, and no client document has ever been committed. No third-party copyright issue has
+been found.
+
+**What is still blocking, and it is not this repository's to decide.** AGPL §1 requires
+Corresponding Source for the first-party packages this app is built to require:
+`@kisaes/vibe-ai-client`, on no registry and linked out of a sibling checkout by
+`scripts/install-deps.mjs`, and `@kisaesdevlab/vibe-auth`, restricted on GitHub Packages.
+Publishing without resolving those would convey an AGPL work whose Corresponding Source cannot be
+obtained. **Those are decisions for `../Vibe-AI-Router` and Vibe Auth and should be raised there as
+questions of their own, not assumed here.**
+
+**The §13 tension is unchanged either way.** Going public forecloses nothing by itself — Kisaes
+owns this repository's copyright and can dual-license its own code. But a proprietary licence for a
+work that *incorporates* AGPL OpenTax still needs Filed's commercial licence
+(`otta@filed.com`), public repository or not. If the licensed-Vibe-product route is still wanted,
+that conversation is independent of this question and worth starting separately.
+
+**A:**
+
+---
+
 ## Non-blocking, working assumption recorded
+
+### Q24 — A preparer's figure displacing a document's: is the override safe as built?
+**Raised:** 2026-09-25 (P18). **Answered:** 2026-09-25.
+
+**A:** Yes — leave it as it is. No typed reason is required. (Kurt, 2026-09-25.) The override is
+already enumerated on every surface, audited with who changed what and when, and announced at
+the point of entry with the form and the amount it will displace; a mandatory free-text box
+would mostly collect "per client" and would add friction to a legitimate act. The override also
+stays available: not offering the field where a document feeds it was considered and rejected,
+twice.
+
+What stays true regardless, and is the part to re-check rather than re-argue: the design rests on
+measured engine behaviour, so `npm run draft:conflicts` must pass on every engine upgrade. A
+release that started *adding* the two figures, or letting the preparer's win, would make the
+withholding wrong and the omission text untrue.
+
+**Original working assumption, for the record:** yes, because it is enumerated, audited,
+announced before the typing, and never touches the worksheet.
+
+**The mechanism, and why there is one.** Some engine fields can be fed from two directions: a
+1098's box 1 is also Schedule A line 8a, and a W-2's box 17 is also line 5a. Measured against
+engine 2.0.4 — not assumed — supplying both makes the engine **use the document's figure and
+discard the preparer's, silently**: 1098 at 40,000 plus a typed 55,000 computes on 40,000, with
+no rejection and no diagnostic anywhere. So the app sends one side. Where the preparer has typed
+a figure, the document's is withheld and a `superseded_by_preparer` omission is recorded; where
+the engine requires that field on the node, withholding it alone refuses the whole node, so the
+whole document is withheld and the omission says which other boxes went with it.
+
+**Why this is the one thing in P18 worth writing down.** Everything else here records a
+determination the preparer already made. This is the single path by which a person can make the
+draft disagree with the documents on purpose — and a draft that quietly disagrees with the
+documents is worse than no draft, because the whole point is that two independent derivations
+are being compared. Four things keep it honest, and all four are in code:
+
+1. **It goes through the omissions contract rather than around it.** No parallel mechanism: it is
+   a `DraftOmissionReason` like any other, so it appears on every surface the omissions already
+   reach — the panel above the figures, the workbook, the hand-check sheet, and the stored
+   `draft_return_omissions` rows — naming the document, the box, the figure withheld and the
+   figure used instead.
+2. **It is announced before the typing, not after.** `documentBackedScheduleALines` reports which
+   lines a document in this bundle actually feeds, derived from a real translation rather than
+   from "is there a 1098 in this bundle" — so a prior-year 1098, or one withheld for review, is
+   not claimed as something the preparer is overriding. The entry surface shows the form, the box
+   and the amount beside the box.
+3. **It is audited.** Every change to a stored input writes an access-log row naming the staff
+   member and what changed. The amounts are not written to the log; they live on the record.
+4. **The worksheet is untouched.** The document's figure is still reported there, unchanged. Only
+   the engine's side of the comparison moves, which is what keeps the two sides independent.
+
+**What would make this unsafe, and what re-checks it.** A future engine release that started
+*adding* the two figures, or letting the preparer's win, would make the withholding wrong — the
+draft would then be short by the document's amount, and the omission would describe something
+that is no longer true. `scripts/probe-conflicts.mjs` (`npm run draft:conflicts`) re-measures
+every declared pair against a running engine and exits non-zero if the behaviour has changed. It
+is step 8's companion in `docs/opentax-draft-return.md` §7 and must be run on every upgrade. Do
+not add a `supersedes` entry to a node map without probing it first.
+
+**Open for the firm, not for the engineer:** whether a preparer overriding a source document in
+the draft is something the firm wants available at all, or whether the override should require a
+typed reason recorded with it. The mechanics are settled; the policy is not.
+
+### Q23 — Should upgrading the OpenTax engine ever be a button?
+**Raised:** 2026-09-25. **Answered:** 2026-09-25.
+
+**A:** Build it, as a staged install a human approves. (Kurt, 2026-09-25 — the second time this
+was asked and the second time the answer was yes.) Admin stages the pinned release into a
+separate volume, verifies its SHA-256, runs it once to read its version, checks the node map
+against its catalogue, and shows the result. **Nothing is served by the new binary until a person
+activates it**, and a staged binary that fails any step is deleted rather than kept.
+
+Two things this needs that are not code, and both belong in the Q21 WISP review rather than being
+decided here: **a writable volume** on a container that is currently `read_only: true`, and
+**outbound network access from the appliance to the release host**. Until those exist the feature
+is inert — which is the right default, and why the staging target is configuration with no value
+shipped.
+
+§14's rule is unchanged and is what makes this safe: the pin lives in the image build, so a
+staged install is an operator replacing a pinned artefact with another pinned artefact under
+their own hand, never a runtime that can move itself. There is still no "latest", and no
+`install.sh | sh`.
+
+**Original working assumption, for the record:** no — report, never install.
+
+The ask was for "the upgrade procedure as a simple button on the UI". What was built is the
+half that is safe: a read-only page showing which binary is running, what both version pins
+say, and every mismatch between the node map's field names and the engine's own catalogue, each
+with its remedy. It turns "read a doc and run CLI commands" into "look at a page", which is
+most of the value.
+
+What was **not** built is a button that downloads and swaps the engine, and this is why:
+
+1. **§14 forbids the shape of it.** "Pin the version and verify the binary by checksum. It is a
+   young, largely AI-maintained engine; `install.sh | sh` into a floating latest is not
+   acceptable here." A click that fetched and installed a release is that, with better manners.
+   The pin lives in the image build so that *nothing at runtime can move it*, which is the
+   property an upgrade button would remove.
+2. **The app cannot do it anyway.** The engine is a separate compose service on a glibc base,
+   deliberately (§13, Q22 — the process boundary is what keeps the AGPL integration severable).
+   The API container cannot rebuild an image or replace another container's binary, and giving
+   it the ability to would be a much larger change to the appliance's security posture than the
+   feature is worth.
+3. **It is the same category as `DRAFT_RETURN_ENABLED`**, which is an environment key rather
+   than a `firm_settings` row and renders read-only in Admin → Settings with its reason,
+   because "it changes what the app computes about a taxpayer, which is not a click". Which
+   engine computes it is, if anything, the stronger case.
+4. **A name check is not the whole procedure.** Even a perfect installer would leave steps a
+   button cannot do: re-deriving `test/helpers/fake-opentax.mjs` against the new binary, and
+   running `npm run draft -- --truth` to measure behaviour rather than names. An upgrade that
+   *looked* complete because a button went green would be worse than one that obviously needs a
+   person.
+
+**Say if this should go further.** A middle option exists and was not taken: the page could
+check the engine's releases feed and say "2.1.0 is available, here is its checksum", still
+installing nothing. That needs an outbound call to GitHub from the appliance, which is a WISP
+and network-policy question rather than a code one — hence a question rather than a choice.
+
+**Asked for, 2026-09-25, and not delivered — `add the install`.** The answer to the above was
+to build the installing half after all. That is a legitimate reversal to ask for; §14 is this
+repository's own rule and whoever owns it can change it. The attempt was made, with the two
+properties that keep it from being `install.sh | sh`: an explicit version and SHA-256 with no
+`latest`, and the new binary staged and validated against the node map *before* it serves
+anything.
+
+**It was refused by a tooling guardrail** — writing a download-verify-execute path into
+`opentax/server.mjs` was classified as untrusted code integration and blocked. That refusal was
+not worked around, and nothing partial was left behind: none of the endpoint, the admin route,
+the UI or the §14 amendment exists.
+
+So this stays open, and the decision is not mine. Three ways forward, in rough order of how
+much they cost:
+
+1. **Write the endpoint yourself.** The design above is the whole of it: `POST /install`
+   `{version, sha256}` → download to a writable volume, verify the checksum, exec `version` to
+   confirm, return the new binary's catalogue without switching; `POST /activate` to swap;
+   delete the file to roll back to the image's copy. The app side (admin route, audit, refusing
+   to activate unless the catalogue check is clean) is ordinary work I can do once the
+   downloading part exists.
+2. **Grant the permission** and ask again, if this environment's classifier can be configured
+   to allow it for this repository.
+3. **Leave it.** The CI job added on 2026-09-25 now builds the sidecar image against
+   `opentax/pinned.json` and runs the engine in it, so moving the pin is a one-file change that
+   CI verifies end to end. That is not a button, but it does make an upgrade a small, checked
+   edit rather than a shell session.
+
+Note that (1) and (2) both need two things this deployment does not have today and which are
+not code: a **writable volume** on a container that is currently `read_only: true`, and
+**outbound access from the appliance to the release host**. Both belong in the WISP review that
+Q21 has already opened.
+
 
 ### Q20 — How far should the app go in protecting the break-glass account from its own admins?
 **Raised:** 2026-09-20. **Working assumption:** block what strands the firm or falsifies the

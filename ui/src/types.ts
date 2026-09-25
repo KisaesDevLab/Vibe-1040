@@ -203,3 +203,247 @@ export interface FactorState {
   /** The firm permits authenticators, so an undeliverable factor has a way out. */
   totpAvailable: boolean;
 }
+
+// ── draft return (P17, §14) ──────────────────────────────────────────────────
+
+export type DraftVerdict =
+  | 'agrees'
+  | 'differs'
+  | 'engine_silent'
+  | 'worksheet_silent'
+  | 'both_blank'
+  | 'computed_only';
+
+export interface DraftComparedLine {
+  lineRef: string;
+  label: string;
+  sortOrder: number;
+  engineForm: string;
+  engineLine: string;
+  reportedCents: number | null;
+  computedCents: number | null;
+  deltaCents: number | null;
+  verdict: DraftVerdict;
+  /** Why a disagreement on this line may be expected rather than a defect. */
+  note?: string;
+}
+
+export interface DraftComputedOnly {
+  engineForm: string;
+  engineLine: string;
+  label: string;
+  computedCents: number | null;
+  /** How to read this figure when it is confident and still misleading. Shown, never hidden. */
+  note?: string;
+}
+
+export interface DraftOmission {
+  documentId: string | null;
+  formType: string | null;
+  fieldKey: string | null;
+  reason: string;
+  detail: string;
+}
+
+/** What `POST /api/bundles/:id/draft-return` returns. */
+export interface DraftReturn {
+  draftReturnId: string;
+  taxYear: number;
+  engineVersion: string;
+  nodeMapVersion: string;
+  complete: boolean;
+  documentsIncluded: number;
+  documentsWithheld: number;
+  comparison: {
+    toleranceCents: number;
+    lines: DraftComparedLine[];
+    computedOnly: DraftComputedOnly[];
+    counts: Record<DraftVerdict, number>;
+    differing: DraftComparedLine[];
+  };
+  omissions: DraftOmission[];
+  validation: { hard: { code: string; message: string }[]; soft: { code: string; message: string }[] };
+  engineSummary: Record<string, number>;
+}
+
+/** What `GET /api/bundles/:id/draft-return` returns — the stored rows, as stored. */
+export interface StoredDraftReturn {
+  draftReturn: {
+    id: string;
+    taxYear: number;
+    engineVersion: string;
+    nodeMapVersion: string;
+    mappingVersion: string;
+    filingStatus: string | null;
+    complete: boolean;
+    documentsIncluded: number;
+    documentsWithheld: number;
+    createdAt: string;
+  };
+  lines: {
+    lineRef: string | null;
+    lineLabel: string;
+    sortOrder: number;
+    engineForm: string;
+    engineLine: string;
+    reportedCents: number | null;
+    computedCents: number | null;
+    verdict: string;
+    note: string | null;
+  }[];
+  omissions: { formType: string | null; fieldKey: string | null; reason: string; detail: string }[];
+  validations: { severity: string; code: string; message: string }[];
+}
+
+// ── draft-return engine readiness (P17, Admin -> Draft engine) ───────────────
+
+export type CatalogFindingKind =
+  | 'node_type_absent'
+  | 'field_unknown'
+  | 'required_field_unmapped'
+  | 'required_flag_stale';
+
+export interface CatalogFinding {
+  severity: 'blocking' | 'advisory';
+  kind: CatalogFindingKind;
+  formType: string;
+  nodeType: string;
+  engineField?: string;
+  detail: string;
+}
+
+export interface CatalogCheck {
+  engineVersion: string;
+  nodeTypes: string[];
+  findings: CatalogFinding[];
+  blocking: CatalogFinding[];
+  ok: boolean;
+}
+
+/**
+ * What `GET /api/admin/draft-engine` reports. Read-only by design: the version is pinned and
+ * checksum-verified when the sidecar image is built, so nothing here can replace the binary.
+ */
+export interface DraftEngineReadiness {
+  enabled: boolean;
+  engine: { ok: boolean; version: string | null; reason?: string };
+  pins: { environment: string; nodeMap: string | null; nodeMapVersion: string | null };
+  versionsAgree: boolean;
+  check: CatalogCheck | null;
+  error: string | null;
+}
+
+
+// ── preparer-supplied draft inputs (P18, CLAUDE.md §14) ──────────────────────
+
+/**
+ * Every money figure is cents and every one is nullable, end to end. `null` means the preparer
+ * has not stated it, which is not zero (§5) — and for a determination it means "not stated",
+ * which is not "no" (§9). Nothing in this file may default one to the other.
+ */
+export interface DraftDependent {
+  id: string;
+  firstName: string;
+  lastName: string;
+  middleInitial: string | null;
+  /** `YYYY-MM-DD`. No identification number is held for a dependent, ever (§7). */
+  dob: string;
+  relationship: string;
+  monthsInHome: number;
+  qualifyingChildForCtc: boolean | null;
+  disabled: boolean | null;
+  fullTimeStudent: boolean | null;
+  taxpayerProvidedOverHalfSupport: boolean | null;
+  dependentOnAnotherReturn: boolean | null;
+  grossIncomeCents: number | null;
+}
+
+export interface DraftActivity {
+  id: string;
+  kind: string;
+  description: string;
+  activityCode: string | null;
+  accountingMethod: string | null;
+  materialParticipation: boolean | null;
+  propertyType: string | null;
+  fairRentalDays: number | null;
+  personalUseDays: number | null;
+  grossCents: number | null;
+  expensesCents: number | null;
+  expensesDescription: string | null;
+}
+
+export type DraftScheduleA = Record<string, number | boolean | null>;
+
+/** A field descriptor served from the node map, so a column added there has a place to type it. */
+export interface DraftInputField {
+  column: string;
+  label: string;
+  required: boolean;
+  money: boolean;
+}
+
+export interface DraftActivityKind {
+  kind: string;
+  label: string;
+  accountingMethods: { code: string; label: string }[];
+  propertyTypes: { code: string; label: string }[];
+  fields: DraftInputField[];
+  /** Columns the engine refuses the node without. Shown as required at the point of entry. */
+  requires: string[];
+}
+
+/**
+ * An itemised line a document in this bundle already feeds, and with what.
+ *
+ * The engine uses the document's figure and discards a typed one silently, so the app sends one
+ * side and records the other as an omission. Which means typing into one of these boxes is an
+ * override rather than an addition, and the surface has to say so before the typing, not after.
+ */
+export interface DraftDocumentBackedLine {
+  column: string;
+  nodeField: string;
+  sources: {
+    documentId: string | null;
+    documentLabel: string;
+    formType: string;
+    fieldKey: string;
+    cents: number;
+  }[];
+}
+
+export interface DraftInputs {
+  filingStatus: string | null;
+  taxpayerAge65OrOlder: boolean | null;
+  spouseAge65OrOlder: boolean | null;
+  taxpayerBlind: boolean | null;
+  spouseBlind: boolean | null;
+  dependents: DraftDependent[];
+  scheduleA: DraftScheduleA | null;
+  activities: DraftActivity[];
+  updatedAt: string | null;
+  filingStatuses: { code: string; label: string }[];
+  relationships: { code: string; label: string; note?: string }[];
+  scheduleAFields: { column: string; label: string; group: string | null; money: boolean }[];
+  dependentFields: DraftInputField[];
+  activityKinds: DraftActivityKind[];
+  /** An activity this engine release refuses, with the measured reason. Offered, not hidden. */
+  unsupportedActivities: { kind: string; label: string; reason: string; detail: string }[];
+  documentBacked: DraftDocumentBackedLine[];
+}
+
+// ── staged engine install (Q23) ──────────────────────────────────────────────
+
+export interface StagedEngineReport {
+  state: {
+    /** False unless the deployment gave the sidecar a staging directory. */
+    allowed: boolean;
+    staged: { version: string | null; sha256: string; stagedAt: string; path: string } | null;
+    live: { version: string; path: string } | null;
+    /** True when an activation left a binary to roll back to. */
+    previous: boolean;
+  };
+  check: CatalogCheck | null;
+  findings: string[];
+  nodeMap: { taxYear: number; version: string } | null;
+}

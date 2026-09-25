@@ -219,3 +219,133 @@ a.button.sso-button:hover { filter: brightness(1.08); background: var(--accent);
 a.button.sso-button[aria-disabled='true'] { opacity: 0.6; }
 .sso-divider { text-align: center; font-size: 0.85rem; }
 .sso-note { font-size: 0.85rem; margin: 0; }
+
+/* ── draft return (P17, §14) ───────────────────────────────────────────────── */
+/* Deliberately quieter than the worksheet it sits under: these figures are advisory, and
+   should not read as the more authoritative half of the screen. */
+.draft-pane { border-top: 2px solid #e6e9ef; margin-top: 18px; padding-top: 12px; }
+.draft-caveat { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0 0 10px; }
+.draft-meta { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+
+.draft-start { background: #f7f9fc; border: 1px solid #e6e9ef; border-radius: 6px; padding: 10px; }
+.draft-start label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; }
+.draft-start select { max-width: 320px; }
+.draft-hint { font-size: 11px; color: var(--muted); line-height: 1.45; margin: 6px 0 8px; }
+
+/* Shown instead of the filing-status control when no node map is installed. A dead select
+   above an unpressable button says nothing; this says what is missing. */
+.draft-unavailable { background: #f7f9fc; border: 1px solid #e6e9ef; border-radius: 6px; padding: 10px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.draft-unavailable code { font-size: 11px; }
+
+/* Omissions sit above the figures and open by default, because the figures are wrong by
+   whatever is in here. Same reasoning as Judgment Required in the worksheet preview. */
+.draft-omissions { background: #fff4ed; border: 1px solid #f3d9c6; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+.draft-omissions > summary { font-weight: 600; font-size: 12px; cursor: pointer; }
+.draft-omission { border-top: 1px solid #f3d9c6; padding: 6px 0; }
+.draft-omission-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 600; }
+.draft-reason { font-family: ui-monospace, monospace; font-size: 10px; color: #7a4b00; text-transform: uppercase; }
+.draft-omission-why { font-size: 11px; color: #7a4b00; line-height: 1.45; margin-top: 2px; }
+
+.draft-differs { font-size: 12px; font-weight: 600; color: #b42318; margin-bottom: 8px; }
+
+/* Stacked blocks, not a table: this panel is in the ~290px review aside, where a four-column
+   money table breaks every label one word per line and clips the agreement column away. The
+   two figures still sit side by side, because comparing them is the whole point. */
+.draft-lines { font-size: 12px; }
+.draft-line { border-bottom: 1px solid #f0f2f5; padding: 7px 0; }
+.draft-line-differs { background: #fef3f2; margin: 0 -6px; padding-left: 6px; padding-right: 6px; }
+.draft-line-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.draft-ref { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted); }
+.draft-label { display: block; line-height: 1.35; }
+/* An expected disagreement says so, or the panel cries wolf and gets ignored wholesale. */
+.draft-note { display: block; font-size: 10px; color: #7a4b00; line-height: 1.4; margin-top: 3px; }
+
+.draft-figures { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 5px 0 0; }
+.draft-figures > div { border: 1px solid #eef1f5; border-radius: 4px; padding: 3px 6px; min-width: 0; }
+.draft-figures dt { font-size: 9px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--muted); }
+.draft-figures dd { margin: 0; }
+.draft-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; display: block; }
+.draft-computed { font-weight: 600; }
+.draft-figures .draft-computed { background: #fbf3f6; }
+
+.draft-computed-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.draft-computed-row .draft-label { flex: 1; min-width: 0; }
+
+.draft-verdict { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.draft-verdict-differs { color: #b42318; font-weight: 600; }
+.draft-verdict-agrees { color: #067647; }
+
+.draft-validation { margin-top: 10px; font-size: 12px; }
+.draft-validation > summary { cursor: pointer; color: var(--muted); }
+.draft-diag { font-size: 11px; padding: 3px 0; border-bottom: 1px solid #f0f2f5; }
+.draft-diag code { font-size: 10px; color: var(--muted); margin-right: 6px; }
+.draft-again { margin-top: 10px; }
+
+/* ── Admin → Draft engine (P17) ──────────────────────────────────────────────
+   A report, never a control: there is deliberately no install button here, so the only
+   affordance styled is "check again". */
+.engine-pins { border-collapse: collapse; font-size: 12px; margin: 10px 0; }
+.engine-pins th { text-align: left; font-weight: 600; padding: 4px 14px 4px 0; white-space: nowrap; color: var(--muted); }
+.engine-pins td { padding: 4px 0; font-variant-numeric: tabular-nums; }
+.engine-good { font-size: 12px; color: #067647; margin: 10px 0; }
+.engine-bad { font-size: 12px; color: #b42318; font-weight: 600; margin: 10px 0; line-height: 1.45; }
+.engine-finding { border-left: 3px solid #e6e9ef; padding: 6px 0 6px 10px; margin-bottom: 8px; }
+.engine-finding.engine-blocking { border-left-color: #b42318; background: #fef3f2; }
+.engine-finding.engine-advisory { border-left-color: #b45309; background: #fff8ef; }
+.engine-finding-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 600; align-items: baseline; }
+.engine-finding-head code { font-weight: 400; }
+/* `.card` is a flex column, so a button stretches to full width unless told otherwise. */
+.engine-recheck { align-self: flex-start; }
+
+/* preparer-supplied draft inputs (P18) — a full-width sheet, not a pane in the 290px aside */
+.pi-scrim { position: fixed; inset: 0; background: rgba(26,29,33,0.45); display: flex; align-items: flex-start; justify-content: center; z-index: 40; padding: 24px 16px; }
+.pi-sheet { background: var(--panel); border-radius: 10px; width: 100%; max-width: 980px; max-height: 100%; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
+.pi-head { display: flex; align-items: baseline; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.pi-head h2 { margin: 0; }
+.pi-head .muted { font-size: 12px; max-width: 520px; line-height: 1.45; }
+.pi-body { overflow-y: auto; padding: 4px 18px 18px; }
+.pi-section { border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+.pi-section:last-child { border-bottom: none; }
+.pi-hint { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0 0 10px; max-width: 760px; }
+
+.pi-dets { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.pi-det { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; }
+.pi-det span { color: var(--muted); font-weight: 500; }
+.pi-det select, .pi-det input { min-width: 150px; }
+
+.pi-group { margin-bottom: 12px; }
+.pi-group-head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid #f0f2f5; padding-bottom: 3px; margin-bottom: 6px; }
+/* Label left, box right, on one row: a Schedule A line label is a sentence and must not wrap
+   into a column the width of a number. */
+.pi-field { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 4px 12px; padding: 3px 0; }
+.pi-field label { display: contents; }
+.pi-field-label { font-size: 13px; }
+.pi-money { width: 130px; text-align: right; font-variant-numeric: tabular-nums; }
+/* The override warning sits under its own box, spanning both columns, because it is about that
+   box and a reviewer must not have to look elsewhere to find out what they are displacing. */
+.pi-conflict { grid-column: 1 / -1; font-size: 11px; line-height: 1.5; background: #fff4ed; color: var(--soft); border-left: 3px solid var(--soft); padding: 5px 8px; border-radius: 0 4px 4px 0; margin: 2px 0 6px; }
+
+.pi-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+.pi-row-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.pi-row-head .muted { font-size: 12px; }
+.pi-new { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.pi-new input { max-width: 170px; }
+.pi-actions { display: flex; align-items: center; gap: 10px; }
+.pi-unsupported { font-size: 12px; line-height: 1.5; background: #f7f9fc; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-top: 10px; color: var(--muted); }
+
+.draft-inputs-summary { display: flex; flex-direction: column; gap: 3px; font-size: 12px; margin-bottom: 8px; }
+.draft-inputs-summary .muted { font-size: 11px; }
+.pi-conflict-block { grid-column: auto; margin-bottom: 8px; border-left-color: var(--hard); color: var(--hard); background: #fee4e2; }
+/* Amber, not red: a determination the preparer has not made yet is not an error. Red is kept
+   for the one thing here that cannot be saved at all — both deduction elections set to yes. */
+.pi-note-block { grid-column: auto; margin-bottom: 8px; }
+
+/* staged engine upgrade (Q23) */
+.staged-engine { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
+.staged-engine h4 { margin: 0 0 6px; font-size: 13px; }
+.staged-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; font-size: 13px; margin-bottom: 8px; }
+.staged-sha { font-size: 11px; color: var(--muted); word-break: break-all; }
+.staged-check { font-size: 12px; line-height: 1.5; border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; }
+.staged-check.good { background: #e7f6ec; color: var(--ok); }
+/* Red, because activating over a blocking finding withholds every draft return. */
+.staged-check.bad { background: #fee4e2; color: var(--hard); }

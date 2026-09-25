@@ -9,7 +9,7 @@ import { classifyFailure } from '../src/router/client.ts';
  */
 describe('classifyFailure on codes outside the SDK union', () => {
   it('treats invalid_response as permanent and carries the router reason', () => {
-    const err = new VibeAiError('invalid_response' as never, 502, 'forced-JSON response was truncated', undefined, {
+    const err = new VibeAiError('invalid_response', 502, 'forced-JSON response was truncated', undefined, {
       reason: 'json_truncated',
     });
     expect(classifyFailure(err)).toEqual({
@@ -21,12 +21,12 @@ describe('classifyFailure on codes outside the SDK union', () => {
   });
 
   it('omits reason when the router sent none', () => {
-    const err = new VibeAiError('invalid_response' as never, 502, 'not valid JSON');
+    const err = new VibeAiError('invalid_response', 502, 'not valid JSON');
     expect(classifyFailure(err)).toEqual({ kind: 'permanent', code: 'invalid_response', message: 'not valid JSON' });
   });
 
   it('parks no_vision_provider — an admin fixes that by probing the model', () => {
-    const err = new VibeAiError('no_vision_provider' as never, 409, 'no vision-capable model bound');
+    const err = new VibeAiError('no_vision_provider', 409, 'no vision-capable model bound');
     expect(classifyFailure(err).kind).toBe('park');
   });
 });

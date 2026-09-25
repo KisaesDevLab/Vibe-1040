@@ -1,7 +1,8 @@
 # WISP amendment — Vibe 1040
 
 **Status: DRAFT. Requires review by whoever owns the firm's WISP before live client data.**
-Tracked as QUESTIONS.md Q12.
+Tracked as QUESTIONS.md **Q12** (unscrubbed page-image egress) and **Q21** (§4.1, the optional
+draft return). §4.1 in particular is proposed language that has not been reviewed.
 
 This document states what Vibe 1040 actually does with taxpayer data, so the firm's Written
 Information Security Program can describe it accurately. It is written to be pasted into
@@ -16,10 +17,22 @@ Vibe 1040 accepts a bundle of a client's tax source documents (W-2s, 1099s, 1098
 Form 1040 and schedule line numbers. Firm staff upload the documents; there is no
 client-facing interface and no client account.
 
-The system performs **data capture only**. It makes no substantive determination about
-filing status, income characterization, deductions, or credits. Items whose treatment
-requires professional judgment are listed, unresolved, in a "Judgment Required" section of
-the worksheet.
+The system performs **data capture**. It makes no substantive determination about filing
+status, income characterization, deductions, or credits. Items whose treatment requires
+professional judgment are listed, unresolved, in a "Judgment Required" section of the
+worksheet.
+
+**Since 2026-09-25 the system can also produce an optional draft Form 1040** by passing the
+amounts it read to a separate calculation engine that runs on the appliance. It is off by
+default, and §4.1 below describes it and the §7216 analysis it requires. Nothing about that
+feature causes taxpayer data to reach any party that did not already receive it.
+
+**That feature also accepts figures the preparer types in**, because a 1040 needs facts no
+source document carries: filing status, dependents, itemised deductions, and summaries of
+business, rental and farm activity. These are determinations the preparer has already made in
+the course of preparing the return; the system records them so the engine can do arithmetic
+over them, and makes none of them itself. §4.1 covers this; §2 lists the new information it
+causes to be stored.
 
 ## 2. Categories of information processed
 
@@ -30,7 +43,13 @@ the worksheet.
 | Extracted field values (dollar amounts, dates, codes) | Postgres | With the source documents |
 | Layout spans (text + coordinates) | Postgres | With the source documents |
 | Taxpayer identifying numbers | **Salted HMAC-SHA256 hash plus last four digits only** | With the source documents |
+| Preparer-entered draft inputs (filing status, dependent names and dates of birth, itemised deduction totals, business and rental summaries) | Postgres | With the source documents |
 | Staff access log | Postgres, append-only | Per firm policy |
+
+**A dependent's identifying number is not collected at all.** The calculation engine treats a
+dependent's SSN, ITIN and ATIN as optional and computes the child tax credit without one, so the
+system does not ask for one and the table that holds dependents has no column that could store
+one. A dependent's name and date of birth are held, because the engine requires both.
 
 **No plaintext SSN or ITIN is written to the database.** The plaintext exists in process
 memory only long enough to derive the hash and the last four digits, and is then discarded.
@@ -112,6 +131,107 @@ refuses to start otherwise.
 > requests; the §7216 position rests on DigitalOcean's published terms (§3) and the executed
 > DPA. Revisit when Router R6 lands (QUESTIONS.md Q11) or if the firm moves to DigitalOcean
 > dedicated inference in a named US region.
+
+### 4.1 The optional draft return (added 2026-09-25, revised the same day for preparer-entered
+inputs — DRAFT LANGUAGE, NOT YET APPROVED)
+
+> **This subsection is a proposal.** It was drafted by the engineer who built the feature and
+> **has not been reviewed or approved by the firm.** It is tracked as QUESTIONS.md **Q21**, which
+> is open. Until Q21 is answered, the feature is disabled (`DRAFT_RETURN_ENABLED=false`) in any
+> deployment holding live client data, and the paragraphs below must not be relied on.
+
+The system can pass the dollar amounts it has read to **OpenTax**, an open-source federal Form
+1040 calculation engine (AGPL v3), and display the lines that engine computes beside the
+system's own reported totals. A preparer uses it to check the two against each other.
+
+**No new disclosure occurs.** This is the material point for §7216. The engine is a single
+binary running on the firm's own appliance, alongside the application and inside the same
+network boundary. It holds no credentials, opens no outbound connection, and transmits nothing.
+The set of third parties that receive taxpayer information is therefore **exactly the same with
+the feature on as with it off** — the service providers listed in §3, and no others. The
+§301.7216-2(d) analysis in §3 and above is unaffected.
+
+**The system still makes no substantive determination.** Three controls enforce this, and all
+three are in code rather than in guidance:
+
+1. **Anything requiring professional judgment is withheld from the engine entirely**, by
+   document and not by field. If any box on a document is one the system marks as needing a
+   preparer's judgment and that box is filled in, the **whole document** is withheld. In
+   practice this means an SSA-1099 or RRB-1099 never reaches the engine at all, because the
+   gross-benefit box is always printed and the taxable portion of Social Security is precisely
+   the determination the system does not make. The same applies to every Schedule K-1, to
+   SSA-1042S, to a 1099-R marked "taxable amount not determined", and to a 1099-G reporting a
+   state or local tax refund.
+2. **What no document carries is supplied by the preparer**, not inferred. No source document
+   states a filing status, and the system will not guess: it asks, and computes nothing until a
+   person answers. Since 2026-09-25 the same applies, on the same basis, to age-65 and blindness
+   status, to dependents and the determinations about each of them, to itemised deduction
+   totals, and to summaries of business and rental activity. Every one of these is a
+   determination the preparer has already made; the system records the answer and never
+   supplies one. Where a question is left unanswered the system stores "not stated", which is a
+   different value from "no" and is never treated as one — a dependent whose qualifying-child
+   question is unanswered earns no credit, and the entry surface says so by name rather than
+   letting the total quietly not move.
+3. **A value no person has accepted does not feed the computation.** A figure flagged for
+   review, or one the system cannot tie back to a specific location on the page, withholds its
+   document.
+
+**Where a preparer's figure and a document disagree, the document is displaced deliberately and
+the draft says so.** Some figures can be fed from two directions — a 1098's mortgage interest is
+also a Schedule A line, and a W-2's state withholding is also a state-tax deduction. Measured
+against the engine, supplying both makes it use the document's figure and discard the preparer's
+without a word. The system therefore sends one side only: where the preparer has typed a figure,
+the document's is withheld, and that withholding is recorded as a named omission listed beside
+the figures, stored in the database, carried onto the workbook, and shown at the point of entry
+before the typing, naming the form and the amount being displaced. **The worksheet is not
+affected**: it continues to report what the document says, unchanged, so the two derivations the
+preparer is comparing stay independent of each other.
+
+**Every change to a preparer-entered figure is attributed and logged.** Adding, amending or
+removing a dependent, a Schedule A line or a business summary writes an access-log row naming
+the staff member, the bundle and what was changed. The amounts themselves are not written into
+the log — they live on the record, and an access log is not a place for taxpayer figures.
+
+**Every figure is presented as advisory and incomplete.** A draft produced from source
+documents alone cannot be a return: no bundle carries itemised deductions, estimated tax
+payments, cost basis, prior-year carryovers or dependents. The system therefore lists
+everything it left out, beside the figures rather than in a footnote, and states on each
+surface that the totals are wrong by whatever was withheld. The engine and its version are
+named on the artifact.
+
+**No return is transmitted or filed.** The engine is capable of producing an e-file (MeF) XML
+document; the system does not use that capability, does not transmit anything to the IRS or to
+any transmitter, and has no electronic filing identification number or related surface.
+
+**The position, stated plainly and for the firm to accept or reject.** What changed on
+2026-09-25 is that the system now performs *arithmetic* over amounts a preparer has accepted,
+from inputs a preparer has stated, on the firm's own hardware. It did not previously do so. The
+firm's position is that computing arithmetic from stated inputs is not a substantive
+determination about filing status, income characterization, deductions or credits — the
+determinations are made by the preparer, before the arithmetic runs, and every question the
+system cannot answer without making one is withheld and reported instead. **Whoever owns this
+WISP should satisfy themselves that this distinction is one the firm is prepared to defend**,
+because it is the distinction the §301.7216-2(d) treatment now rests on.
+
+**And the part of that which is easiest to misread, stated separately.** A reader who sees a
+screen headed *Itemised deductions* with a box for medical expenses and another for charitable
+gifts may reasonably ask whether the system has started deciding what is deductible. It has not.
+Nothing on that screen is computed, suggested, defaulted or carried over from a prior year; the
+boxes start empty and stay empty until a preparer types a figure they have already determined.
+The system's contribution is to add them up in the engine and show the result beside what the
+documents say. The same is true of the business and rental summaries — gross, one total for
+expenses, and the identifying facts the engine refuses the activity without — and of the
+dependents, where every determination offered is a three-way answer whose third state is "the
+preparer has not said". If the firm concludes that recording a preparer's determinations in a
+form suitable for arithmetic is itself too close to making them, the feature stays off; that is
+the decision this subsection exists to put in front of whoever owns the WISP.
+
+**One question deliberately left open.** §3 lists the parties that receive taxpayer
+information. OpenTax receives none — it is software installed on the appliance, not a service
+provider, and on that reading it does not belong in §3 at all. It may nonetheless be worth
+naming there for completeness, so that a reader of the WISP knows what is installed and
+computing on the appliance. That is an editorial choice for the WISP's owner.
+
 
 ## 5. Safeguards Rule controls implemented in this system
 

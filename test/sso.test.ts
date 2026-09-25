@@ -293,8 +293,8 @@ describe.skipIf(!dbAvailable)('single sign-on (P16)', () => {
 
       await expect(
         b.vibeAuthSession.create(
-          { ip: '203.0.113.9', headers: {}, cookies: {} } as never,
-          { setCookie } as never,
+          { ip: '203.0.113.9', headers: {}, cookies: {} },
+          { setCookie },
           { id: userId, email, role: 'staff', active: true },
           identity,
         ),

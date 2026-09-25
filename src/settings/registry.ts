@@ -413,6 +413,21 @@ export function readOnlyEnvironment(): { key: string; value: string; why: string
         'layout. Registers a task class at startup, so it lives in the environment.',
     },
     {
+      key: 'DRAFT_RETURN_ENABLED',
+      value: String(env.DRAFT_RETURN_ENABLED),
+      why:
+        'Whether the bundle view offers a draft return computed by the OpenTax engine (§14). ' +
+        'It changes what the app computes about a taxpayer, so it is not a UI toggle, and it ' +
+        'must stay off wherever there is live client data until QUESTIONS.md Q21 is answered.',
+    },
+    {
+      key: 'OPENTAX_VERSION',
+      value: env.OPENTAX_VERSION,
+      why:
+        'The engine release the node map was written against. A mismatch against what the ' +
+        'sidecar reports is logged at startup — a mapping must not drift under the engine.',
+    },
+    {
       key: 'ROUTER_EXPECTED_SENSITIVITY',
       value: env.ROUTER_EXPECTED_SENSITIVITY,
       why: 'The task-class tier this deployment expects. Widening happens in the router admin UI, not here.',

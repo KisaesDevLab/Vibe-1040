@@ -1,0 +1,2171 @@
+{
+  "taxYear": 2025,
+  "version": "2025.1",
+  "engine": {
+    "name": "opentax",
+    "formType": "f1040",
+    "pinnedVersion": "2.0.4"
+  },
+  "notes": [
+    "Form type and field mapping onto the OpenTax input-node catalogue (PHASES.md P17).",
+    "Data, not code: adding a tax year is a data change, exactly as for data/line-mappings.",
+    "Engine field names are NOT derivable by convention -- the catalogue uses box1_wages on w2, box1 on f1099int, box1_oid on f1099oid and box_1_unemployment on f1099g. Every pair below is explicit for that reason.",
+    "Amounts are stored here in cents and converted to dollars at the boundary. A null is never sent as zero (CLAUDE.md §5); it is reported as an omission.",
+    "Every field of every mapped form type appears in exactly one of fields, codeGroups, monthlyArrays or ignored. The loader refuses a file where one does not.",
+    "W-2G boxes 2, 3, 5, 6, 7, 8 and 10 are ignored because the engine's w2g node numbers those boxes differently from the 2025 form revision this app reads; mapping them by number would move a date into a wager type.",
+    "RRB-1099 binds to the ssa1099 node with is_rrb set. Box 4 (net SSEB tier 1 paid) is the gross benefit, box 5 the repayment.",
+    "lines.comparable pairs this app's worksheet line refs with the engine's output keys, so a computed figure can sit beside the reported total it should equal. Mapped by MEANING, not by line number -- see the SCH1:21 note.",
+    "lines.computedOnly are engine figures with no worksheet counterpart -- AGI, taxable income, total tax, refund or amount owed. They are the new information a draft return adds, and they are displayed, never compared.",
+    "Engine 2.0.4 observed directly, not read off documentation. Three things it forced, each of which would have produced a rejected node or a silently wrong draft: f1099div alone among the nodes uses camelCase (payerName) and requires isNominee and box11; f1099m requires the taxpayer's own recipient_tin, so it is unmappable under §7; and filing_status is single|mfs|mfj|hoh|qss, not the long names.",
+    "falseWhenBlank on 1099-DIV box 11 only: engine 2.0.4 requires that checkbox, and §5 stores an unticked box as blank, so without it every 1099-DIV with box 11 unticked would be withheld. The loader refuses the flag on any field that is not a checkbox.",
+    "Engine 2.0.4's `lines` is flat and carries Form 1040 lines only — a 1099-G's unemployment reaches line8_additional_income with no Schedule 1 line surfaced beside it. So every SCH1 ref is notCompared, and engineForm is a label for a reader rather than part of the lookup."
+  ],
+  "forms": [
+    {
+      "formType": "W-2",
+      "nodeType": "w2",
+      "fields": [
+        {
+          "fieldKey": "employer_ein",
+          "nodeField": "employer_ein"
+        },
+        {
+          "fieldKey": "employer_name",
+          "nodeField": "employer_name"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_wages",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_fed_withheld",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_ss_wages"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_ss_withheld"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_medicare_wages"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_medicare_withheld"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7_ss_tips"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_allocated_tips"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10_dep_care"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11_nonqual_plans"
+        },
+        {
+          "fieldKey": "box_13_statutory",
+          "nodeField": "box13_statutory_employee"
+        },
+        {
+          "fieldKey": "box_13_retirement",
+          "nodeField": "box13_retirement_plan"
+        },
+        {
+          "fieldKey": "box_13_sick_pay",
+          "nodeField": "box13_third_party_sick"
+        },
+        {
+          "fieldKey": "box_15_state",
+          "nodeField": "box15_state"
+        },
+        {
+          "fieldKey": "box_16",
+          "nodeField": "box16_state_wages"
+        },
+        {
+          "fieldKey": "box_17",
+          "nodeField": "box17_state_withheld"
+        },
+        {
+          "fieldKey": "box_18",
+          "nodeField": "box18_local_wages"
+        },
+        {
+          "fieldKey": "box_19",
+          "nodeField": "box19_local_withheld"
+        }
+      ],
+      "codeGroups": [
+        {
+          "nodeField": "box12_entries",
+          "pairs": [
+            {
+              "code": "box_12a_code",
+              "amount": "box_12a_amount"
+            },
+            {
+              "code": "box_12b_code",
+              "amount": "box_12b_amount"
+            },
+            {
+              "code": "box_12c_code",
+              "amount": "box_12c_amount"
+            },
+            {
+              "code": "box_12d_code",
+              "amount": "box_12d_amount"
+            }
+          ]
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "employee_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "employee_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_14_other",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_15_state_id",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_20",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "W-2G",
+      "nodeType": "w2g",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name"
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_ein"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_winnings"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_15",
+          "nodeField": "box15_state_withheld"
+        },
+        {
+          "fieldKey": "box_13_state_id",
+          "nodeField": "box14_state_id"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "winner_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "winner_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_2",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_3",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_5",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_6",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_7",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_8",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_10",
+          "reason": "engine_box_numbering_differs"
+        },
+        {
+          "fieldKey": "box_14",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_16",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_17",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_18",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-INT",
+      "nodeType": "f1099int",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_tin"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box9"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11"
+        },
+        {
+          "fieldKey": "box_12",
+          "nodeField": "box12"
+        },
+        {
+          "fieldKey": "box_13",
+          "nodeField": "box13"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7"
+        },
+        {
+          "fieldKey": "box_14",
+          "nodeField": "box14"
+        },
+        {
+          "fieldKey": "box_17",
+          "nodeField": "box17"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "account_number",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_15_state",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_16_state_id",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-OID",
+      "nodeType": "f1099oid",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_tin"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_oid"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_other_interest"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_early_withdrawal_penalty"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_market_discount"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_acquisition_premium"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7_description"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_oid_treasury"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box9_investment_expenses"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10_bond_premium"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11_tax_exempt_oid"
+        },
+        {
+          "fieldKey": "box_14",
+          "nodeField": "box12_state_tax"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "account_number",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_12_state",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_13_state_id",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-DIV",
+      "nodeType": "f1099div",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payerName",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_1a",
+          "nodeField": "box1a",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_1b",
+          "nodeField": "box1b"
+        },
+        {
+          "fieldKey": "box_2a",
+          "nodeField": "box2a"
+        },
+        {
+          "fieldKey": "box_2b",
+          "nodeField": "box2b"
+        },
+        {
+          "fieldKey": "box_2c",
+          "nodeField": "box2c"
+        },
+        {
+          "fieldKey": "box_2d",
+          "nodeField": "box2d"
+        },
+        {
+          "fieldKey": "box_2e",
+          "nodeField": "box2e"
+        },
+        {
+          "fieldKey": "box_2f",
+          "nodeField": "box2f"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box9"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11",
+          "engineRequired": true,
+          "falseWhenBlank": true
+        },
+        {
+          "fieldKey": "box_12",
+          "nodeField": "box12"
+        },
+        {
+          "fieldKey": "box_13",
+          "nodeField": "box13"
+        },
+        {
+          "fieldKey": "box_16",
+          "nodeField": "box16"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "account_number",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_14_state",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_15_state_id",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "payer_tin",
+          "reason": "no_engine_field"
+        }
+      ],
+      "constants": {
+        "isNominee": false
+      }
+    },
+    {
+      "formType": "1099-R",
+      "nodeType": "f1099r",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_ein",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "account_number",
+          "nodeField": "account_number"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_gross_distribution",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_2a",
+          "nodeField": "box2a_taxable_amount"
+        },
+        {
+          "fieldKey": "box_2b_not_determined",
+          "nodeField": "box2b_not_determined"
+        },
+        {
+          "fieldKey": "box_2b_total_distribution",
+          "nodeField": "box2b_total_dist"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_capital_gain"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_employee_contributions"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_nua"
+        },
+        {
+          "fieldKey": "box_7_code",
+          "nodeField": "box7_distribution_code",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_7_ira_sep_simple",
+          "nodeField": "box7_ira_simple_indicator"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_other"
+        },
+        {
+          "fieldKey": "box_9a",
+          "nodeField": "box9a_pct_total"
+        },
+        {
+          "fieldKey": "box_9b",
+          "nodeField": "box9b_total_employee_contributions"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10_irr_within_5yr"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11_first_year_roth"
+        },
+        {
+          "fieldKey": "box_12_fatca",
+          "nodeField": "box12_fatca"
+        },
+        {
+          "fieldKey": "box_14",
+          "nodeField": "box14_state_tax"
+        },
+        {
+          "fieldKey": "box_15_state",
+          "nodeField": "box15_payer_state"
+        },
+        {
+          "fieldKey": "box_16",
+          "nodeField": "box16_state_distribution"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_15_state_id",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-G",
+      "nodeType": "f1099g",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name"
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_tin"
+        },
+        {
+          "fieldKey": "account_number",
+          "nodeField": "account_number"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box_1_unemployment"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box_2_state_refund"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box_3_tax_year"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box_4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box_5_rtaa"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box_6_taxable_grants"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box_7_agriculture"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box_8_trade_or_business"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box_9_market_gain"
+        },
+        {
+          "fieldKey": "box_10a_state",
+          "nodeField": "box_10a_state"
+        },
+        {
+          "fieldKey": "box_10b_state_id",
+          "nodeField": "box_10b_state_id"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box_11_state_withheld"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    },
+    {
+      "formType": "1099-NEC",
+      "nodeType": "f1099nec",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "payer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "payer_tin",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_nec"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_direct_sales"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "account_number",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_5",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_6_state",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_7",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1099-K",
+      "nodeType": "f1099k",
+      "fields": [
+        {
+          "fieldKey": "payer_name",
+          "nodeField": "pse_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "payer_tin",
+          "nodeField": "pse_tin"
+        },
+        {
+          "fieldKey": "account_number",
+          "nodeField": "account_number"
+        },
+        {
+          "fieldKey": "box_1a",
+          "nodeField": "box1a_gross_payments"
+        },
+        {
+          "fieldKey": "box_1b",
+          "nodeField": "box1b_card_not_present"
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_merchant_category_code"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_transaction_count"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_federal_withheld"
+        },
+        {
+          "fieldKey": "box_6_state",
+          "nodeField": "box6_state"
+        },
+        {
+          "fieldKey": "box_7_state_id",
+          "nodeField": "box7_state_id"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_state_withheld"
+        },
+        {
+          "fieldKey": "box_5_january",
+          "nodeField": "box5a_january"
+        },
+        {
+          "fieldKey": "box_5_february",
+          "nodeField": "box5b_february"
+        },
+        {
+          "fieldKey": "box_5_march",
+          "nodeField": "box5c_march"
+        },
+        {
+          "fieldKey": "box_5_april",
+          "nodeField": "box5d_april"
+        },
+        {
+          "fieldKey": "box_5_may",
+          "nodeField": "box5e_may"
+        },
+        {
+          "fieldKey": "box_5_june",
+          "nodeField": "box5f_june"
+        },
+        {
+          "fieldKey": "box_5_july",
+          "nodeField": "box5g_july"
+        },
+        {
+          "fieldKey": "box_5_august",
+          "nodeField": "box5h_august"
+        },
+        {
+          "fieldKey": "box_5_september",
+          "nodeField": "box5i_september"
+        },
+        {
+          "fieldKey": "box_5_october",
+          "nodeField": "box5j_october"
+        },
+        {
+          "fieldKey": "box_5_november",
+          "nodeField": "box5k_november"
+        },
+        {
+          "fieldKey": "box_5_december",
+          "nodeField": "box5l_december"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    },
+    {
+      "formType": "1098",
+      "nodeType": "f1098",
+      "fields": [
+        {
+          "fieldKey": "recipient_name",
+          "nodeField": "lender_name"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_mortgage_interest",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_outstanding_principal"
+        },
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_origination_date"
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_refund_overpaid"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_mip"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_points_paid"
+        },
+        {
+          "fieldKey": "box_7",
+          "nodeField": "box7_property_address_same"
+        },
+        {
+          "fieldKey": "box_8",
+          "nodeField": "box8_property_address"
+        },
+        {
+          "fieldKey": "box_9",
+          "nodeField": "box9_number_of_properties"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box10_other"
+        },
+        {
+          "fieldKey": "box_11",
+          "nodeField": "box11_acquisition_date"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "payer_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "borrower_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    },
+    {
+      "formType": "1098-E",
+      "nodeType": "f1098e",
+      "fields": [
+        {
+          "fieldKey": "lender_name",
+          "nodeField": "lender_name"
+        },
+        {
+          "fieldKey": "box_1",
+          "nodeField": "box1_student_loan_interest",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_2",
+          "nodeField": "box2_origination_fees_excluded"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "borrower_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "borrower_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "corrected",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    },
+    {
+      "formType": "SSA-1099",
+      "nodeType": "ssa1099",
+      "fields": [
+        {
+          "fieldKey": "box_3",
+          "nodeField": "box3_gross_benefits",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box4_repaid"
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box5_net_benefits"
+        },
+        {
+          "fieldKey": "box_6",
+          "nodeField": "box6_federal_withheld"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "beneficiary_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "beneficiary_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_7",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_8",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "RRB-1099",
+      "nodeType": "ssa1099",
+      "constants": {
+        "is_rrb": true
+      },
+      "fields": [
+        {
+          "fieldKey": "box_4",
+          "nodeField": "box3_gross_benefits",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "box_5",
+          "nodeField": "box4_repaid"
+        },
+        {
+          "fieldKey": "box_10",
+          "nodeField": "box6_federal_withheld"
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        },
+        {
+          "fieldKey": "box_6",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_7",
+          "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "box_8",
+          "reason": "no_engine_field"
+        }
+      ]
+    },
+    {
+      "formType": "1095-A",
+      "nodeType": "f1095a",
+      "fields": [
+        {
+          "fieldKey": "policy_issuer_name",
+          "nodeField": "issuer_name",
+          "engineRequired": true
+        },
+        {
+          "fieldKey": "marketplace_id",
+          "nodeField": "policy_number"
+        },
+        {
+          "fieldKey": "annual_premium",
+          "nodeField": "annual_premium"
+        },
+        {
+          "fieldKey": "annual_slcsp",
+          "nodeField": "annual_slcsp"
+        },
+        {
+          "fieldKey": "annual_aptc",
+          "nodeField": "annual_aptc"
+        }
+      ],
+      "monthlyArrays": [
+        {
+          "nodeField": "monthly_premiums",
+          "fieldKeys": [
+            "monthly_january_premium",
+            "monthly_february_premium",
+            "monthly_march_premium",
+            "monthly_april_premium",
+            "monthly_may_premium",
+            "monthly_june_premium",
+            "monthly_july_premium",
+            "monthly_august_premium",
+            "monthly_september_premium",
+            "monthly_october_premium",
+            "monthly_november_premium",
+            "monthly_december_premium"
+          ]
+        },
+        {
+          "nodeField": "monthly_slcsps",
+          "fieldKeys": [
+            "monthly_january_slcsp",
+            "monthly_february_slcsp",
+            "monthly_march_slcsp",
+            "monthly_april_slcsp",
+            "monthly_may_slcsp",
+            "monthly_june_slcsp",
+            "monthly_july_slcsp",
+            "monthly_august_slcsp",
+            "monthly_september_slcsp",
+            "monthly_october_slcsp",
+            "monthly_november_slcsp",
+            "monthly_december_slcsp"
+          ]
+        },
+        {
+          "nodeField": "monthly_aptcs",
+          "fieldKeys": [
+            "monthly_january_aptc",
+            "monthly_february_aptc",
+            "monthly_march_aptc",
+            "monthly_april_aptc",
+            "monthly_may_aptc",
+            "monthly_june_aptc",
+            "monthly_july_aptc",
+            "monthly_august_aptc",
+            "monthly_september_aptc",
+            "monthly_october_aptc",
+            "monthly_november_aptc",
+            "monthly_december_aptc"
+          ]
+        }
+      ],
+      "ignored": [
+        {
+          "fieldKey": "recipient_tin",
+          "reason": "tin_withheld"
+        },
+        {
+          "fieldKey": "recipient_name",
+          "reason": "identity_or_metadata"
+        }
+      ]
+    }
+  ],
+  "unmappable": [
+    {
+      "formType": "1099-B",
+      "reason": "engine_shape_mismatch",
+      "detail": "The engine's f1099b node is per-lot and requires description, date_acquired, date_sold, proceeds and cost_basis for every transaction. This app extracts Form 8949 section subtotals only and does not extract per-lot rows in v1 (CLAUDE.md §8), so there is nothing to populate a lot with."
+    },
+    {
+      "formType": "1099-CONSOLIDATED",
+      "reason": "container",
+      "detail": "A consolidated package is a container whose sub-forms are separate documents (CLAUDE.md §4). The sub-forms map on their own; the summary page exists to foot against them, not to feed a computation."
+    },
+    {
+      "formType": "K-1-1065",
+      "reason": "policy_boxes_as_printed",
+      "detail": "K-1 v1 scope is boxes as printed with no line dispersion (CLAUDE.md §8). The engine has a k1_partnership node, but populating it would disperse lettered sub-codes and footnote statements this app deliberately does not parse."
+    },
+    {
+      "formType": "K-1-1120S",
+      "reason": "policy_boxes_as_printed",
+      "detail": "As K-1-1065. The engine's k1_s_corp node is deliberately not used."
+    },
+    {
+      "formType": "K-1-1041",
+      "reason": "policy_boxes_as_printed",
+      "detail": "As K-1-1065. The engine's k1_trust node is deliberately not used."
+    },
+    {
+      "formType": "SSA-1042S",
+      "reason": "policy_boxes_as_printed",
+      "detail": "Boxes as printed only, with no 1040 line mapping at all (CLAUDE.md §8, QUESTIONS.md Q16). Whether the benefit belongs on a 1040 or a 1040-NR, and at what rate or under which treaty, is not decided here."
+    },
+    {
+      "formType": "1098-T",
+      "reason": "no_engine_node",
+      "detail": "The engine has no 1098-T input node; its f8863 node takes already-determined qualified expenses, which is the netting question CLAUDE.md §9 refuses to answer."
+    },
+    {
+      "formType": "1099-S",
+      "reason": "no_engine_node",
+      "detail": "No engine input node. Gross proceeds depend on the §121 exclusion, which CLAUDE.md §2 forbids this app from applying."
+    },
+    {
+      "formType": "1099-SA",
+      "reason": "no_engine_node",
+      "detail": "No engine input node for HSA/MSA distributions; the engine's form8889 is an output node fed from W-2 box 12 codes."
+    },
+    {
+      "formType": "1099-Q",
+      "reason": "no_engine_node",
+      "detail": "No engine input node for qualified education program distributions."
+    },
+    {
+      "formType": "1099-LTC",
+      "reason": "no_engine_node",
+      "detail": "No engine input node. The engine's ltc_premium node is a premium deduction input, not the 1099-LTC benefit statement."
+    },
+    {
+      "formType": "5498",
+      "reason": "no_engine_node",
+      "detail": "No engine input node. A 5498 is informational; contributions reach the return through the taxpayer's own records, not the form."
+    },
+    {
+      "formType": "5498-SA",
+      "reason": "no_engine_node",
+      "detail": "No engine input node. Informational, as 5498."
+    },
+    {
+      "formType": "1099-MISC",
+      "reason": "engine_requires_withheld_input",
+      "detail": "Engine 2.0.4's f1099m node requires payer_name, payer_tin AND recipient_tin, all non-optional — confirmed by probe: omitting recipient_tin is rejected with \"Required\". recipient_tin is the taxpayer's own number, and CLAUDE.md §7 forbids forwarding a TIN anywhere: it is extracted for identity resolution, never persisted and never sent. The engine and this app disagree, and §7 wins. Revisit if a future release makes recipient_tin optional; the field mapping is recorded in the repository history if so."
+    }
+  ],
+  "lines": {
+    "comparable": [
+      {
+        "lineRef": "1040:1a",
+        "engineForm": "f1040",
+        "engineLine": "line1a_wages"
+      },
+      {
+        "lineRef": "1040:1b",
+        "engineForm": "f1040",
+        "engineLine": "line1b_household_wages"
+      },
+      {
+        "lineRef": "1040:1z",
+        "engineForm": "f1040",
+        "engineLine": "line1z_total_wages"
+      },
+      {
+        "lineRef": "1040:2a",
+        "engineForm": "f1040",
+        "engineLine": "line2a_tax_exempt"
+      },
+      {
+        "lineRef": "1040:2b",
+        "engineForm": "f1040",
+        "engineLine": "line2b_taxable_interest"
+      },
+      {
+        "lineRef": "1040:3a",
+        "engineForm": "f1040",
+        "engineLine": "line3a_qualified_dividends"
+      },
+      {
+        "lineRef": "1040:3b",
+        "engineForm": "f1040",
+        "engineLine": "line3b_ordinary_dividends"
+      },
+      {
+        "lineRef": "1040:4a",
+        "engineForm": "f1040",
+        "engineLine": "line4a_ira_gross"
+      },
+      {
+        "lineRef": "1040:4b",
+        "engineForm": "f1040",
+        "engineLine": "line4b_ira_taxable"
+      },
+      {
+        "lineRef": "1040:5a",
+        "engineForm": "f1040",
+        "engineLine": "line5a_pension_gross"
+      },
+      {
+        "lineRef": "1040:5b",
+        "engineForm": "f1040",
+        "engineLine": "line5b_pension_taxable"
+      },
+      {
+        "lineRef": "1040:6a",
+        "engineForm": "f1040",
+        "engineLine": "line6a_ss_gross",
+        "note": "This app withholds every SSA-1099 and RRB-1099 from the engine (§9), so a disagreement here is expected whenever the bundle holds one: the worksheet reports the gross benefit and the engine sees nothing."
+      },
+      {
+        "lineRef": "1040:6b",
+        "engineForm": "f1040",
+        "engineLine": "line6b_ss_taxable",
+        "note": "The worksheet never reports a taxable portion, so this side is always blank here. The engine's figure is informational only."
+      },
+      {
+        "lineRef": "1040:7",
+        "engineForm": "f1040",
+        "engineLine": "line7_capital_gain",
+        "note": "1099-B is unmappable (per-lot vs section subtotals, §8), so the engine sees no sales. Expect a disagreement whenever the bundle holds a 1099-B."
+      },
+      {
+        "lineRef": "1040:8",
+        "engineForm": "f1040",
+        "engineLine": "line8_additional_income"
+      },
+      {
+        "lineRef": "1040:13b",
+        "engineForm": "f1040",
+        "engineLine": "line13b_additional_deductions"
+      },
+      {
+        "lineRef": "1040:25a",
+        "engineForm": "f1040",
+        "engineLine": "line25a_w2_withheld"
+      },
+      {
+        "lineRef": "1040:25b",
+        "engineForm": "f1040",
+        "engineLine": "line25b_withheld_1099"
+      },
+      {
+        "lineRef": "1040:25c",
+        "engineForm": "f1040",
+        "engineLine": "line25c_additional_medicare_withheld"
+      }
+    ],
+    "notCompared": [
+      {
+        "lineRef": "SCH1:8b",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:8f",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:8z",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:1",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:2",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:3",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:4",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1A:total",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCHA:5a",
+        "reason": "engine_takes_it_as_a_determined_input"
+      },
+      {
+        "lineRef": "SCHA:8a",
+        "reason": "engine_takes_it_as_a_determined_input"
+      },
+      {
+        "lineRef": "SCHA:8c",
+        "reason": "engine_takes_it_as_a_determined_input"
+      },
+      {
+        "lineRef": "SCHA:8d",
+        "reason": "engine_takes_it_as_a_determined_input"
+      },
+      {
+        "lineRef": "SCHB:1",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCHB:5",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCHD:13",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCHD:PROCEEDS",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "F2441:12",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "F8889:9",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "F8889:14a",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "F8962:11",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "INFO:state_wages",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:state_withholding",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:local_wages",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:local_withholding",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:ss_wages",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:ss_withheld",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:medicare_wages",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:medicare_withheld",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:ira_fmv",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:section_199a",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:box12_deferrals",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:foreign_tax_paid",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "INFO:foreign_source_income",
+        "reason": "informational_detail"
+      },
+      {
+        "lineRef": "JUDGMENT",
+        "reason": "not_a_line"
+      },
+      {
+        "lineRef": "SCH1:1",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:3",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:5",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:7",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:18",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:20",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:21",
+        "reason": "engine_does_not_surface_it"
+      }
+    ],
+    "computedOnly": [
+      {
+        "engineForm": "f1040",
+        "engineLine": "line9_total_income",
+        "label": "Total income"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line10_adjustments",
+        "label": "Adjustments to income"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line11_agi",
+        "label": "Adjusted gross income"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line12a_standard_deduction",
+        "label": "Standard deduction",
+        "note": "The standard deduction for the stated filing status, including any additional amount for age or blindness. Read together with line 12c and line 12e this resolves what 2.0.4 leaves ambiguous on its own: 12c reports the itemised total whether or not it was used, while 12e reports the itemised amount actually applied — so 12e at zero beside a figure on 12a means the standard deduction won."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line12c_deduction_total",
+        "label": "Standard or itemized deduction",
+        "note": "Engine 2.0.4 reports the itemised total here even when the standard deduction is larger and is what the same run actually applied to taxable income, so this figure and taxable income need not reconcile on the face of the draft. Verified 2026-09-25 on a bundle whose only Schedule A items came to 18,349 against a 31,500 married-filing-jointly standard deduction: this line read 18,349 while taxable income was computed on 31,500. Reported as the engine produced it, not corrected — and the app decides neither deduction (§14)."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line12e_itemized_deductions",
+        "label": "Itemized deductions applied",
+        "note": "Zero when the standard deduction was larger and was the one applied, which is what makes this the line that disambiguates 12c. Verified against engine 2.0.4 on 2026-09-25."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line13_qbi_deduction",
+        "label": "Qualified business income deduction"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line14_deductions_qbi_total",
+        "label": "Deductions plus QBI",
+        "note": "Carries the same caveat as line 12c, which it includes."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line15_taxable_income",
+        "label": "Taxable income"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line16_income_tax",
+        "label": "Tax"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line18_total_tax_before_credits",
+        "label": "Tax before credits"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line20_nonrefundable_credits",
+        "label": "Nonrefundable credits",
+        "note": "Where the child tax credit and the credit for other dependents land. This line is the only place a draft shows that the dependents a preparer entered were counted at all — the credit is otherwise netted into total tax, where an unapplied dependent and a correctly applied one look identical."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line21_credits_total",
+        "label": "Total credits"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line22_tax_after_credits",
+        "label": "Tax after credits"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line23_other_taxes",
+        "label": "Other taxes",
+        "note": "Self-employment tax on a Schedule C or F summary lands here."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line24_total_tax",
+        "label": "Total tax"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line25d_total_withholding",
+        "label": "Total withholding"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line32_refundable_credits_total",
+        "label": "Refundable credits",
+        "note": "The refundable portion of the child tax credit, the earned income credit and the American opportunity credit, to the extent the engine computes them from what it was sent."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line33_total_payments",
+        "label": "Total payments"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line34_overpayment",
+        "label": "Overpayment"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line35a_refund",
+        "label": "Refund"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line37_amount_owed",
+        "label": "Amount owed"
+      }
+    ],
+    "ignoredLines": [
+      {
+        "engineLine": "filing_status",
+        "reason": "echoes_an_input",
+        "detail": "The filing status the reviewer stated, echoed back. Shown on the draft already, as the reviewer's own statement rather than as a computed figure."
+      },
+      {
+        "engineLine": "dependent_count",
+        "reason": "not_a_money_figure",
+        "detail": "A count of the dependents the reviewer entered, echoed back. The dependents are listed on the entry surface and their effect is visible on line 20."
+      },
+      {
+        "engineLine": "qualifying_child_tax_credit_count",
+        "reason": "not_a_money_figure",
+        "detail": "How many of the entered dependents the engine treated as qualifying children. Not shown as a figure; the credit it produces is on line 20."
+      },
+      {
+        "engineLine": "other_dependent_count",
+        "reason": "not_a_money_figure",
+        "detail": "How many of the entered dependents the engine treated as other dependents. Same as above: the credit is on line 20."
+      },
+      {
+        "engineLine": "taxpayer_age_65_or_older",
+        "reason": "echoes_an_input",
+        "detail": "The age and blindness statements the reviewer made, echoed back. They are shown on the entry surface as the reviewer's own answers, and their effect is in the standard deduction on line 12a."
+      },
+      {
+        "engineLine": "spouse_age_65_or_older",
+        "reason": "echoes_an_input",
+        "detail": "The age and blindness statements the reviewer made, echoed back. They are shown on the entry surface as the reviewer's own answers, and their effect is in the standard deduction on line 12a."
+      },
+      {
+        "engineLine": "taxpayer_blind",
+        "reason": "echoes_an_input",
+        "detail": "The age and blindness statements the reviewer made, echoed back. They are shown on the entry surface as the reviewer's own answers, and their effect is in the standard deduction on line 12a."
+      },
+      {
+        "engineLine": "spouse_blind",
+        "reason": "echoes_an_input",
+        "detail": "The age and blindness statements the reviewer made, echoed back. They are shown on the entry surface as the reviewer's own answers, and their effect is in the standard deduction on line 12a."
+      }
+    ]
+  },
+  "filingStatuses": [
+    {
+      "code": "single",
+      "label": "Single"
+    },
+    {
+      "code": "mfj",
+      "label": "Married filing jointly"
+    },
+    {
+      "code": "mfs",
+      "label": "Married filing separately"
+    },
+    {
+      "code": "hoh",
+      "label": "Head of household"
+    },
+    {
+      "code": "qss",
+      "label": "Qualifying surviving spouse"
+    }
+  ],
+  "preparerInputs": {
+    "$comment": [
+      "What the preparer supplies because no source document carries it (P18, CLAUDE.md §14).",
+      "Data, not code, for the same reason as everything else here: the engine's field names are not derivable by convention and change per release.",
+      "Every pair below was MEASURED against engine 2.0.4, not read off documentation. `npm run draft:conflicts` re-verifies the supersedes pairs and is part of the upgrade procedure."
+    ],
+    "dependents": {
+      "nodeType": "general",
+      "nodeField": "dependents",
+      "$comment": [
+        "An optional array on the `general` node. The engine marks ssn/itin/atin optional, which is the only reason this is buildable at all: §7 forbids forwarding a taxpayer identification number, and a dependent's is no different."
+      ],
+      "fields": [
+        {
+          "column": "firstName",
+          "nodeField": "first_name",
+          "label": "First name",
+          "engineRequired": true
+        },
+        {
+          "column": "lastName",
+          "nodeField": "last_name",
+          "label": "Last name",
+          "engineRequired": true
+        },
+        {
+          "column": "middleInitial",
+          "nodeField": "middle_initial",
+          "label": "Middle initial"
+        },
+        {
+          "column": "dob",
+          "nodeField": "dob",
+          "label": "Date of birth",
+          "engineRequired": true
+        },
+        {
+          "column": "relationship",
+          "nodeField": "relationship",
+          "label": "Relationship to the taxpayer",
+          "engineRequired": true
+        },
+        {
+          "column": "monthsInHome",
+          "nodeField": "months_in_home",
+          "label": "Months lived in the taxpayer’s home",
+          "engineRequired": true,
+          "numeric": true
+        },
+        {
+          "column": "qualifyingChildForCtc",
+          "nodeField": "qualifying_child_for_ctc",
+          "label": "Qualifying child for the child tax credit"
+        },
+        {
+          "column": "disabled",
+          "nodeField": "disabled",
+          "label": "Permanently and totally disabled"
+        },
+        {
+          "column": "fullTimeStudent",
+          "nodeField": "full_time_student",
+          "label": "Full-time student"
+        },
+        {
+          "column": "taxpayerProvidedOverHalfSupport",
+          "nodeField": "taxpayer_provided_over_half_support",
+          "label": "Taxpayer provided over half of their support"
+        },
+        {
+          "column": "dependentOnAnotherReturn",
+          "nodeField": "dependent_on_another_return",
+          "label": "Claimed as a dependent on another return"
+        },
+        {
+          "column": "grossIncomeCents",
+          "nodeField": "gross_income",
+          "label": "Gross income",
+          "money": true
+        }
+      ],
+      "relationships": [
+        {
+          "code": "son",
+          "label": "Son"
+        },
+        {
+          "code": "daughter",
+          "label": "Daughter"
+        },
+        {
+          "code": "stepchild",
+          "label": "Stepchild"
+        },
+        {
+          "code": "foster",
+          "label": "Foster child"
+        },
+        {
+          "code": "sibling",
+          "label": "Brother or sister"
+        },
+        {
+          "code": "stepsibling",
+          "label": "Stepbrother or stepsister"
+        },
+        {
+          "code": "halfsibling",
+          "label": "Half-brother or half-sister"
+        },
+        {
+          "code": "grandchild",
+          "label": "Grandchild"
+        },
+        {
+          "code": "parent",
+          "label": "Parent"
+        },
+        {
+          "code": "stepparent",
+          "label": "Stepparent"
+        },
+        {
+          "code": "other",
+          "label": "Other qualifying person",
+          "note": "Engine 2.0.4 refuses niece, nephew, aunt, uncle and grandparent, though each can be a qualifying relative under §152. They are entered here, and the draft says so rather than mapping them silently. Verified by probe; the CLI listing truncates this enum with an ellipsis."
+        }
+      ]
+    },
+    "scheduleA": {
+      "nodeType": "schedule_a",
+      "$comment": [
+        "Nineteen flat optional money fields. `supersedes` names a document field that feeds the same engine line: where one is present, engine 2.0.4 uses the DOCUMENT and silently discards the preparer's figure, so the app sends only one and records the other as an omission.",
+        "Measured, not assumed. f1098 box 5, box 6 and box 10 do NOT reach Schedule A, and neither does state withholding on W-2G, 1099-OID, 1099-R, 1099-G or 1099-K — so none of those are conflicts and the preparer's figure is free."
+      ],
+      "fields": [
+        {
+          "column": "medicalCents",
+          "nodeField": "line_1_medical",
+          "label": "1. Medical and dental expenses",
+          "group": "Medical and dental",
+          "money": true
+        },
+        {
+          "column": "stateIncomeTaxCents",
+          "nodeField": "line_5a_state_income_tax",
+          "label": "5a. State and local income taxes",
+          "group": "Taxes you paid",
+          "supersedes": [
+            {
+              "formType": "W-2",
+              "nodeType": "w2",
+              "nodeField": "box17_state_withheld",
+              "fieldKey": "box_17"
+            },
+            {
+              "formType": "W-2",
+              "nodeType": "w2",
+              "nodeField": "box19_local_withheld",
+              "fieldKey": "box_19"
+            }
+          ],
+          "money": true
+        },
+        {
+          "column": "salesTaxCents",
+          "nodeField": "line_5a_sales_tax",
+          "label": "5a. State and local general sales taxes",
+          "group": "Taxes you paid",
+          "money": true
+        },
+        {
+          "column": "realEstateTaxCents",
+          "nodeField": "line_5b_real_estate_tax",
+          "label": "5b. State and local real estate taxes",
+          "group": "Taxes you paid",
+          "money": true
+        },
+        {
+          "column": "personalPropertyTaxCents",
+          "nodeField": "line_5c_personal_property_tax",
+          "label": "5c. State and local personal property taxes",
+          "group": "Taxes you paid",
+          "money": true
+        },
+        {
+          "column": "otherTaxesCents",
+          "nodeField": "line_6_other_taxes",
+          "label": "6. Other taxes",
+          "group": "Taxes you paid",
+          "money": true
+        },
+        {
+          "column": "mortgageInterest1098Cents",
+          "nodeField": "line_8a_mortgage_interest_1098",
+          "label": "8a. Home mortgage interest reported on Form 1098",
+          "group": "Interest you paid",
+          "supersedes": [
+            {
+              "formType": "1098",
+              "nodeType": "f1098",
+              "nodeField": "box1_mortgage_interest",
+              "fieldKey": "box_1"
+            }
+          ],
+          "money": true
+        },
+        {
+          "column": "mortgageInterestNo1098Cents",
+          "nodeField": "line_8b_mortgage_interest_no_1098",
+          "label": "8b. Home mortgage interest not reported on Form 1098",
+          "group": "Interest you paid",
+          "money": true
+        },
+        {
+          "column": "pointsNo1098Cents",
+          "nodeField": "line_8c_points_no_1098",
+          "label": "8c. Points not reported on Form 1098",
+          "group": "Interest you paid",
+          "money": true
+        },
+        {
+          "column": "investmentInterestCents",
+          "nodeField": "line_9_investment_interest",
+          "label": "9. Investment interest",
+          "group": "Interest you paid",
+          "money": true
+        },
+        {
+          "column": "cashContributionsCents",
+          "nodeField": "line_11_cash_contributions",
+          "label": "11. Gifts by cash or check",
+          "group": "Gifts to charity",
+          "money": true
+        },
+        {
+          "column": "noncashContributionsCents",
+          "nodeField": "line_12_noncash_contributions",
+          "label": "12. Gifts other than by cash or check",
+          "group": "Gifts to charity",
+          "money": true
+        },
+        {
+          "column": "contributionCarryoverCents",
+          "nodeField": "line_13_contribution_carryover",
+          "label": "13. Carryover from prior year",
+          "group": "Gifts to charity",
+          "money": true
+        },
+        {
+          "column": "casualtyTheftLossCents",
+          "nodeField": "line_15_casualty_theft_loss",
+          "label": "15. Casualty and theft losses",
+          "group": "Casualty and theft",
+          "money": true
+        },
+        {
+          "column": "otherDeductionsCents",
+          "nodeField": "line_16_other_deductions",
+          "label": "16. Other itemized deductions",
+          "group": "Other",
+          "money": true
+        }
+      ],
+      "flags": [
+        {
+          "column": "forceItemized",
+          "nodeField": "force_itemized",
+          "label": "Itemise even if the standard deduction is larger",
+          "group": "Election"
+        },
+        {
+          "column": "forceStandard",
+          "nodeField": "force_standard",
+          "label": "Take the standard deduction even if itemising is larger",
+          "group": "Election"
+        }
+      ]
+    },
+    "activities": [
+      {
+        "kind": "schedule_c",
+        "nodeType": "schedule_c",
+        "label": "Business (Schedule C)",
+        "$comment": [
+          "Verified: gross 120,000 with 45,000 in line_27b_other_expenses nets 75,000 onto total income."
+        ],
+        "fields": [
+          {
+            "column": "description",
+            "nodeField": "line_a_principal_business",
+            "label": "A. Principal business or profession",
+            "engineRequired": true
+          },
+          {
+            "column": "activityCode",
+            "nodeField": "line_b_business_code",
+            "label": "B. Business code",
+            "engineRequired": true
+          },
+          {
+            "column": "accountingMethod",
+            "nodeField": "line_f_accounting_method",
+            "label": "F. Accounting method",
+            "engineRequired": true
+          },
+          {
+            "column": "materialParticipation",
+            "nodeField": "line_g_material_participation",
+            "label": "G. Materially participated in this business",
+            "engineRequired": true
+          },
+          {
+            "column": "grossCents",
+            "nodeField": "line_1_gross_receipts",
+            "label": "1. Gross receipts or sales",
+            "engineRequired": true,
+            "money": true
+          },
+          {
+            "column": "expensesCents",
+            "nodeField": "line_27b_other_expenses",
+            "label": "Total expenses",
+            "money": true
+          }
+        ],
+        "accountingMethods": [
+          {
+            "code": "cash",
+            "label": "Cash"
+          },
+          {
+            "code": "accrual",
+            "label": "Accrual"
+          },
+          {
+            "code": "other",
+            "label": "Other"
+          }
+        ]
+      },
+      {
+        "kind": "schedule_e",
+        "nodeType": "schedule_e",
+        "label": "Rental property (Schedule E)",
+        "$comment": [
+          "Verified: rent 36,000 less 14,000 in expense_other_lines nets 22,000.",
+          "property_type is a NUMBER 1-8, not a string, and activity_type is an enum A-D. Both were wrong on the first attempt and the engine refused the whole node, which is the loud failure — unlike a wrong optional field name, which it accepts and ignores.",
+          "A 1098 does NOT reach Schedule E's rental income, so there is no conflict here; expense_mortgage_interest is the preparer's to state."
+        ],
+        "expenseArray": "expense_other_lines",
+        "fields": [
+          {
+            "column": "description",
+            "nodeField": "property_description",
+            "label": "Property description",
+            "engineRequired": true
+          },
+          {
+            "column": "propertyType",
+            "nodeField": "property_type",
+            "label": "Type of property",
+            "engineRequired": true,
+            "numeric": true
+          },
+          {
+            "column": "fairRentalDays",
+            "nodeField": "fair_rental_days",
+            "label": "Fair rental days",
+            "engineRequired": true,
+            "numeric": true
+          },
+          {
+            "column": "personalUseDays",
+            "nodeField": "personal_use_days",
+            "label": "Personal use days",
+            "engineRequired": true,
+            "numeric": true
+          },
+          {
+            "column": "grossCents",
+            "nodeField": "rent_income",
+            "label": "3. Rents received",
+            "engineRequired": true,
+            "money": true
+          }
+        ],
+        "constants": {
+          "tsj": "T",
+          "activity_type": "A",
+          "form_1099_payments_made": false
+        },
+        "propertyTypes": [
+          {
+            "code": "1",
+            "label": "Single family residence"
+          },
+          {
+            "code": "2",
+            "label": "Multi-family residence"
+          },
+          {
+            "code": "3",
+            "label": "Vacation or short-term rental"
+          },
+          {
+            "code": "4",
+            "label": "Commercial"
+          },
+          {
+            "code": "5",
+            "label": "Land"
+          },
+          {
+            "code": "6",
+            "label": "Royalties"
+          },
+          {
+            "code": "7",
+            "label": "Self-rental"
+          },
+          {
+            "code": "8",
+            "label": "Other"
+          }
+        ]
+      }
+    ],
+    "unsupportedActivities": [
+      {
+        "kind": "schedule_f",
+        "label": "Farm (Schedule F)",
+        "reason": "engine_refuses_node",
+        "detail": "Engine 2.0.4 refuses a schedule_f node with `Node type schedule_f is not a valid input for f1040/2025`, although the node exists in its catalogue and is marked implemented. Measured across tax years: 2025 is the only year the engine computes at all, and it will not take a farm. Farm income cannot be included in a draft return until the engine accepts it, so it is listed as an omission rather than entered and silently dropped."
+      }
+    ]
+  }
+}

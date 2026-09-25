@@ -2,6 +2,13 @@ import type {
   AuditRow,
   Bundle,
   CheckRow,
+  DraftActivity,
+  DraftDependent,
+  DraftEngineReadiness,
+  DraftInputs,
+  DraftReturn,
+  StagedEngineReport,
+  StoredDraftReturn,
   DocumentRow,
   EnvSetting,
   FactorState,
@@ -122,6 +129,13 @@ export const api = {
   auditActions: () => request<string[]>('/api/admin/audit/actions'),
 
   retentionForecast: () => request<{ rastersDue: number; sourcesDue: number }>('/api/admin/retention'),
+
+  /**
+   * The draft-return engine's upgrade picture. Read-only: it reports which binary is running
+   * and whether the node map still matches it, and cannot install or switch anything.
+   */
+  draftEngine: (taxYear?: number | null) =>
+    request<DraftEngineReadiness>(`/api/admin/draft-engine${taxYear ? `?taxYear=${taxYear}` : ''}`),
 
   runRetention: () =>
     request<Record<string, unknown>>('/api/admin/retention/run', { method: 'POST' }),
@@ -282,6 +296,131 @@ Proceed and discard them?`)) return { ok: false };
       rejected: { filename: string; reason: string }[];
     }>;
   },
+
+  // ── draft return (P17, §14) ───────────────────────────────────────────────
+
+  /**
+   * Whether this deployment offers a draft return at all, and whether the engine is up.
+   *
+   * `taxYear` is the bundle's, not the browser's clock. The node map is per season and the
+   * server falls back to the newest one it has, reporting which in `filingStatusYear`.
+   */
+  draftReturnStatus: (taxYear?: number | null) =>
+    request<{
+      enabled: boolean;
+      engine: { ok: boolean; version: string | null; reason?: string } | null;
+      expectedVersion: string;
+      filingStatuses: { code: string; label: string }[];
+      filingStatusYear: number | null;
+    }>(`/api/draft-return/status${taxYear ? `?taxYear=${taxYear}` : ''}`),
+
+  /**
+   * Compute a draft return. `filingStatus` is stated by the reviewer because no source
+   * document carries it — that is the preparer making a determination, not the app inferring
+   * one from a pile of forms (§11).
+   */
+  /**
+   * Compute a draft return from the bundle's stored preparer inputs (P18).
+   *
+   * No filing status on the wire: it lives on the stored record, so one draft cannot be computed
+   * under a status the record disagrees with. The server layers any per-request override on top,
+   * and nothing in the UI sends one.
+   */
+  computeDraftReturn: (bundleId: string) =>
+    request<DraftReturn>(`/api/bundles/${bundleId}/draft-return`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  // ── preparer-supplied draft inputs (P18) ───────────────────────────────────
+  //
+  // Money is cents on the wire, as everywhere else. A key left out of a PATCH leaves the stored
+  // figure alone; `null` clears it. Both reach the engine as absent, but only one of them
+  // forgets what a preparer typed, so the two are never collapsed here either.
+
+  draftInputs: (bundleId: string) => request<DraftInputs>(`/api/bundles/${bundleId}/draft-inputs`),
+
+  saveDraftInputRoot: (
+    bundleId: string,
+    values: Partial<Pick<DraftInputs, 'filingStatus' | 'taxpayerAge65OrOlder' | 'spouseAge65OrOlder' | 'taxpayerBlind' | 'spouseBlind'>>,
+  ) =>
+    request<DraftInputs>(`/api/bundles/${bundleId}/draft-inputs`, {
+      method: 'PATCH',
+      body: JSON.stringify(values),
+    }),
+
+  addDependent: (bundleId: string, values: Omit<DraftDependent, 'id'>) =>
+    request<{ id: string }>(`/api/bundles/${bundleId}/draft-inputs/dependents`, {
+      method: 'POST',
+      body: JSON.stringify(values),
+    }),
+
+  updateDependent: (bundleId: string, dependentId: string, values: Partial<Omit<DraftDependent, 'id'>>) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/draft-inputs/dependents/${dependentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(values),
+    }),
+
+  removeDependent: (bundleId: string, dependentId: string) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/draft-inputs/dependents/${dependentId}`, {
+      method: 'DELETE',
+    }),
+
+  saveScheduleA: (bundleId: string, values: Record<string, number | boolean | null>) =>
+    request<DraftInputs>(`/api/bundles/${bundleId}/draft-inputs/schedule-a`, {
+      method: 'PUT',
+      body: JSON.stringify(values),
+    }),
+
+  addActivity: (bundleId: string, values: Omit<DraftActivity, 'id'>) =>
+    request<{ id: string }>(`/api/bundles/${bundleId}/draft-inputs/activities`, {
+      method: 'POST',
+      body: JSON.stringify(values),
+    }),
+
+  updateActivity: (bundleId: string, activityId: string, values: Partial<Omit<DraftActivity, 'id'>>) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/draft-inputs/activities/${activityId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(values),
+    }),
+
+  removeActivity: (bundleId: string, activityId: string) =>
+    request<{ ok: boolean }>(`/api/bundles/${bundleId}/draft-inputs/activities/${activityId}`, {
+      method: 'DELETE',
+    }),
+
+  /** The most recent stored draft return, or null when none has been computed. */
+  draftReturn: async (bundleId: string): Promise<StoredDraftReturn | null> => {
+    const res = await fetch(`/api/bundles/${bundleId}/draft-return`, { credentials: 'same-origin' });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`draft return failed: ${res.status}`);
+    return res.json() as Promise<StoredDraftReturn>;
+  },
+
+  // ── staged engine install (Q23) ────────────────────────────────────────────
+  //
+  // The read-only check above is unchanged. These four are the staged upgrade: a caller names
+  // an exact version and an exact SHA-256, nothing is served by a staged binary until
+  // `activateStagedEngine`, and the outgoing one is kept so a bad upgrade is one button to
+  // undo rather than a rebuild.
+
+  stagedEngine: (taxYear?: number | null) =>
+    request<StagedEngineReport>(`/api/admin/draft-engine/staged${taxYear ? `?taxYear=${taxYear}` : ''}`),
+
+  stageEngine: (spec: { version: string; sha256: string; url?: string; file?: string; taxYear?: number }) =>
+    request<{ staged: { version: string; sha256: string; from: string }; report: StagedEngineReport }>(
+      '/api/admin/draft-engine/staged',
+      { method: 'POST', body: JSON.stringify(spec) },
+    ),
+
+  activateStagedEngine: () =>
+    request<{ version: string; path: string }>('/api/admin/draft-engine/staged/activate', { method: 'POST', body: '{}' }),
+
+  rollbackEngine: () =>
+    request<{ version: string; path: string }>('/api/admin/draft-engine/staged/rollback', { method: 'POST', body: '{}' }),
+
+  discardStagedEngine: () =>
+    request<{ discarded: boolean }>('/api/admin/draft-engine/staged', { method: 'DELETE' }),
 
   renameBundle: (id: string, label: string) =>
     request<{ ok: boolean; label: string }>(`/api/bundles/${id}/label`, {

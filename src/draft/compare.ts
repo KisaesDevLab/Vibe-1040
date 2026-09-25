@@ -1,0 +1,199 @@
+/**
+ * Putting the engine's computed lines beside the worksheet's reported totals (P17).
+ *
+ * This is where the phase earns its place. The worksheet says "the documents report $X on line
+ * 1z"; the engine says "line 1z computes to $Y". When they differ, one of them is wrong, and a
+ * disagreement on a 1040 line is far easier to see than a defect buried in a field map. That is
+ * also why this doubles as the accuracy harness the pipeline has never had.
+ *
+ * **This is not §2's diff engine.** Both sides are derived by this app from the same source
+ * documents. Nothing is read out of a prepared return.
+ *
+ * Every figure here is advisory. A disagreement is a prompt to look, not a verdict, and several
+ * are expected by construction — the node map's `note` field says which and why, because an
+ * expected disagreement presented as a defect trains a reviewer to ignore the whole panel.
+ */
+import { formatCents } from '../lib/money.ts';
+import type { WorksheetModel } from '../mapping/engine.ts';
+import type { EngineResult } from './client.ts';
+import type { NodeMapFile } from './nodes.ts';
+
+export type ComparisonVerdict =
+  /** Both sides present and inside tolerance. */
+  | 'agrees'
+  /** Both sides present and outside tolerance. Look at this one. */
+  | 'differs'
+  /** The worksheet reports a figure the engine has nothing for. */
+  | 'engine_silent'
+  /** The engine computed a figure the worksheet does not report. */
+  | 'worksheet_silent'
+  /** Neither side has anything. Not shown by default. */
+  | 'both_blank';
+
+export interface ComparedLine {
+  lineRef: string;
+  label: string;
+  sortOrder: number;
+  engineForm: string;
+  engineLine: string;
+  reportedCents: number | null;
+  computedCents: number | null;
+  deltaCents: number | null;
+  verdict: ComparisonVerdict;
+  /** Why a disagreement here may be expected rather than a defect. */
+  note?: string;
+}
+
+export interface ComputedOnlyFigure {
+  engineForm: string;
+  engineLine: string;
+  label: string;
+  computedCents: number | null;
+  /** From the node map: how to read this figure when it is confident and still misleading. */
+  note?: string;
+}
+
+export interface DraftComparison {
+  toleranceCents: number;
+  lines: ComparedLine[];
+  computedOnly: ComputedOnlyFigure[];
+  counts: Record<ComparisonVerdict, number>;
+  /** Lines worth a reviewer's attention: a real disagreement, note or no note. */
+  differing: ComparedLine[];
+  /**
+   * Engine lines this return carried that the node map declares nowhere — not comparable, not
+   * computed-only, not ignored with a reason.
+   *
+   * This exists because of a measured loss, not a hypothetical one. When preparer-supplied
+   * dependents landed (P18), engine 2.0.4 began returning `line20_nonrefundable_credits` — the
+   * child tax credit for every dependent entered — and the map declared no such line, so the
+   * figure was netted into total tax and shown nowhere. A preparer could not tell an applied
+   * dependent from an ignored one. That is the silent-absence failure this app exists to
+   * prevent, arriving through the engine's output instead of its input.
+   *
+   * The map's field rule is checked at load. This cannot be: the only way to enumerate the lines
+   * a release emits is to compute a return. So it is checked on every draft instead, which also
+   * means an engine upgrade cannot add a line without the next draft saying so.
+   */
+  undeclaredLines: string[];
+}
+
+/**
+ * The engine reports dollars; everything in this app is integer cents.
+ *
+ * Rounding rather than truncating, and `null` for anything that is not a finite number — an
+ * absent line is absent, and must not become a zero on the way in any more than on the way out
+ * (§5). The engine does emit real zeros for lines it computed to zero, and those are kept.
+ *
+ * **A value may arrive as a two-element array of the same figure** — `[11420, 11420]` — which
+ * is why the first element is taken. Verified against engine 2.0.4: `line1a_wages` is a bare
+ * number while `line25a_w2_withheld` and `line2b_taxable_interest` are arrays. Exported
+ * because the harness needs exactly this and a second copy of it got the array case wrong.
+ */
+export function toCents(value: unknown): number | null {
+  const n = Array.isArray(value) ? value[0] : value;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  return Math.round(n * 100);
+}
+
+/**
+ * The engine's `lines` map is **flat** — keyed by line name (`line1a_wages`), not nested by
+ * form. Verified against engine 2.0.4 directly; the earlier nested reading was an assumption
+ * that the stand-in binary happened to share, so every test agreed with it and none caught it.
+ * `engineForm` on the map is documentation for a reader, not part of the lookup.
+ */
+function engineCents(result: EngineResult, _form: string, line: string): number | null {
+  return toCents(result.lines[line]);
+}
+
+/**
+ * Every line key the engine returned that the map accounts for in no way at all.
+ *
+ * Sorted, so a report of it is stable, and a line the engine returns as `null` still counts:
+ * the question is whether the map knows the line exists, not whether this return had a figure
+ * for it.
+ */
+function undeclaredEngineLines(file: NodeMapFile, result: EngineResult): string[] {
+  const declared = new Set<string>([
+    ...file.lines.comparable.map((c) => c.engineLine),
+    ...file.lines.computedOnly.map((c) => c.engineLine),
+    ...file.lines.ignoredLines.map((c) => c.engineLine),
+  ]);
+  return Object.keys(result.lines)
+    .filter((line) => !declared.has(line))
+    .sort();
+}
+
+export function compareDraft(
+  file: NodeMapFile,
+  worksheet: WorksheetModel,
+  result: EngineResult,
+  toleranceCents: number,
+): DraftComparison {
+  const reported = new Map(worksheet.lines.map((l) => [l.lineRef, l]));
+
+  const lines: ComparedLine[] = [];
+  for (const map of file.lines.comparable) {
+    const line = reported.get(map.lineRef);
+    const reportedCents = line?.totalCents ?? null;
+    const computedCents = engineCents(result, map.engineForm, map.engineLine);
+
+    let verdict: ComparisonVerdict;
+    let deltaCents: number | null = null;
+    if (reportedCents === null && computedCents === null) verdict = 'both_blank';
+    else if (computedCents === null) verdict = 'engine_silent';
+    else if (reportedCents === null) verdict = 'worksheet_silent';
+    else {
+      deltaCents = computedCents - reportedCents;
+      verdict = Math.abs(deltaCents) <= toleranceCents ? 'agrees' : 'differs';
+    }
+
+    lines.push({
+      lineRef: map.lineRef,
+      label: line?.label ?? map.lineRef,
+      sortOrder: line?.sortOrder ?? Number.MAX_SAFE_INTEGER,
+      engineForm: map.engineForm,
+      engineLine: map.engineLine,
+      reportedCents,
+      computedCents,
+      deltaCents,
+      verdict,
+      ...(map.note === undefined ? {} : { note: map.note }),
+    });
+  }
+  lines.sort((a, b) => a.sortOrder - b.sortOrder);
+
+  const counts: Record<ComparisonVerdict, number> = {
+    agrees: 0,
+    differs: 0,
+    engine_silent: 0,
+    worksheet_silent: 0,
+    both_blank: 0,
+  };
+  for (const line of lines) counts[line.verdict] += 1;
+
+  return {
+    toleranceCents,
+    lines,
+    computedOnly: file.lines.computedOnly.map((c) => ({
+      engineForm: c.engineForm,
+      engineLine: c.engineLine,
+      label: c.label,
+      computedCents: engineCents(result, c.engineForm, c.engineLine),
+      ...(c.note ? { note: c.note } : {}),
+    })),
+    counts,
+    // `engine_silent` is usually a withheld document rather than a defect, and is listed
+    // separately in the omissions rather than dressed up as a disagreement here.
+    differing: lines.filter((l) => l.verdict === 'differs'),
+    undeclaredLines: undeclaredEngineLines(file, result),
+  };
+}
+
+/** One line of prose per disagreement, for the harness report and the workbook. */
+export function describeDifference(line: ComparedLine): string {
+  const reported = line.reportedCents === null ? 'nothing' : formatCents(line.reportedCents);
+  const computed = line.computedCents === null ? 'nothing' : formatCents(line.computedCents);
+  const head = `${line.lineRef}: worksheet reports ${reported}, engine computes ${computed}`;
+  return line.note ? `${head}. Expected: ${line.note}` : `${head}.`;
+}

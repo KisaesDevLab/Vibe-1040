@@ -5,9 +5,16 @@ dollar amounts off each form, and emits a **standardized worksheet of totals key
 1040 and schedule line numbers**. A preparer opens the worksheet next to the prepared
 return and eyeball-compares.
 
-It does not ingest the prepared return, does not compute tax, and does not decide
-characterization questions. See `CLAUDE.md` §2 for the scope boundaries and §9 for what
-lands in Judgment Required instead of being guessed at.
+It does not ingest the prepared return and does not decide characterization questions. See
+`CLAUDE.md` §2 for the scope boundaries and §9 for what lands in Judgment Required instead
+of being guessed at.
+
+Since P17 it can also hand the amounts it read to [OpenTax](https://opentax.filed.com/), a
+deterministic open-source 1040 engine that runs on the appliance, and show the computed lines
+beside the worksheet's reported totals. That is a checking aid, off by default, and it is
+never a finished return: everything in Judgment Required is withheld from the engine and
+listed as an omission, and a bundle cannot know filing status, dependents, basis, estimated
+payments or carryovers. See `CLAUDE.md` §14 and `docs/opentax-draft-return.md`.
 
 ---
 
@@ -150,6 +157,9 @@ Three data files, no code:
    back to the most recent earlier year otherwise.
 2. `data/line-mappings/<year>.json`
 3. `data/tax-tables/<year>.json`
+4. `data/opentax-nodes/<year>.json` — the OpenTax input-node map, if the draft return is in
+   use. The loader refuses a map that leaves any registered form type undeclared or any box
+   neither mapped nor explicitly ignored.
 
 ## Operations
 
@@ -157,6 +167,7 @@ Three data files, no code:
 npm run db:migrate      # forward
 npm run db:rollback     # back one migration
 npm run retention       # purge per the retention schedule; RETENTION_DRY_RUN=true to preview
+npm run draft -- --truth   # score the draft return against the fixture ground truth (P17)
 ```
 
 Retention runs on the operator's schedule — there are no auto-update timers. Rasterized
@@ -171,3 +182,15 @@ refuses to start if that ordering is inverted.
 - `QUESTIONS.md` — open items, including the two that block P14 and live client data
 - `docs/wisp-amendment.md` — the WISP language this deployment requires
 - `docs/runbook.md` — install, upgrade, rollback, incident response
+- `docs/opentax-draft-return.md` — the draft return: design, node-map upkeep, licence posture
+
+## Licence
+
+AGPL-3.0-only. See `LICENSE`.
+
+Relicensed from BUSL-1.1 on 2026-09-25 so that the OpenTax engine, which is AGPL v3 with no
+linking exception, can be used without ambiguity (STATE.md decision log). Two consequences
+are recorded in QUESTIONS.md Q22 and are not settled: conveying Corresponding Source has to
+cover the first-party packages this app is built to require, and a proprietary licence for
+the *combined* work is no longer Kisaes's alone to grant. The AGPL does not require a public
+repository — only source offered to those who use the service over a network.

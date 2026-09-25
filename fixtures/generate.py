@@ -159,9 +159,129 @@ def consolidated_1099(
     return doc, truths
 
 
+
+# ── draft-return expectations (P17) ───────────────────────────────────────────
+#
+# Hand-derived 1040 line values for `npm run draft`, in cents, keyed by bundle name.
+#
+# Worked out by ADDITION from the printed boxes above — never by running the app's own code,
+# or the harness would be scoring the mapping against itself. `engineVisible` is what the
+# engine should see once CLAUDE.md §14's withholding rules have run; `worksheetReported` is
+# what the worksheet reports from every document; `withheldBecause` names the rule when they
+# differ.
+#
+# A withheld line's engineVisible is 0, not None: an engine computes a line it received no
+# documents for as zero, and that zero is indistinguishable from a zero the documents
+# reported. The divergence from worksheetReported is the signal, and the omissions list is
+# what explains it.
+DRAFT_EXPECTATIONS: dict = {
+    "smith-joint-2025": {
+        "note": "Two W-2s, a current and a prior-year 1098, a code-G 1099-R with 'taxable amount not determined' checked, and a full-year 1095-A.",
+        "lines": {
+            "1040:1a": {
+                "engineVisible": 12700000,
+                "worksheetReported": 12700000
+            },
+            "1040:25a": {
+                "engineVisible": 1544000,
+                "worksheetReported": 1544000
+            },
+            "SCHA:8a": {
+                "engineVisible": 1284400,
+                "worksheetReported": 2626300,
+                "withheldBecause": "off_year_document",
+                "why": "Two 1098s. The worksheet reports both and annotates the year mismatch; only the 2025 one belongs in a 2025 computation."
+            },
+            "1040:5a": {
+                "engineVisible": None,
+                "worksheetReported": 2500000,
+                "withheldBecause": "judgment_required",
+                "why": "1099-R box 7's IRA/SEP/SIMPLE box is unchecked on this fixture, so the gross distribution is a pension on line 5a rather than an IRA distribution on 4a. It is withheld anyway: box 2b 'taxable amount not determined' is checked, so the whole document goes to Judgment Required (§9). A withheld source line comes back absent, not zero — verified against engine 2.0.4 — which looks exactly like \"the documents reported nothing on this line\". Worse, the engine's computed totals are confident numbers regardless: AGI, taxable income, total tax and the refund are all computed as though the withheld document did not exist. A draft can therefore show a plausible refund that is wrong by the whole of a pension. That is why the omissions list is part of the answer rather than an appendix to it."
+            }
+        }
+    },
+    "brokerage-packages-2025": {
+        "note": "Three consolidated packages. Interest and dividends follow from the sub-forms; proceeds do not, because 1099-B is unmappable (the engine wants per-lot rows, this app reads Form 8949 section subtotals, §8).",
+        "lines": {
+            "1040:2b": {
+                "engineVisible": 194600,
+                "worksheetReported": 194600,
+                "why": "Sub-form 1099-INT box 1 across the three packages: 124,500 + 8,900 + 61,200. Brokerage B's summary says 11,400 and deliberately does not tie to its sub-form — that is a hard footing check, not an input."
+            },
+            "1040:3b": {
+                "engineVisible": 1611400,
+                "worksheetReported": 1611400,
+                "why": "318,700 + 1,204,300 + 88,400."
+            },
+            "1040:3a": {
+                "engineVisible": 1468300,
+                "worksheetReported": 1468300,
+                "why": "291,400 + 1,102,800 + 74,100."
+            },
+            "SCHD:PROCEEDS": {
+                "engineVisible": None,
+                "worksheetReported": 10537500,
+                "withheldBecause": "form_type_unmappable",
+                "why": "Every 1099-B section is withheld (§8). 2,454,500 + 2,240,000 + 4,410,000 + 318,000 + 1,115,000. A withheld source line comes back absent, not zero — verified against engine 2.0.4 — which looks exactly like \"the documents reported nothing on this line\". Worse, the engine's computed totals are confident numbers regardless: AGI, taxable income, total tax and the refund are all computed as though the withheld document did not exist. A draft can therefore show a plausible refund that is wrong by the whole of a pension. That is why the omissions list is part of the answer rather than an appendix to it."
+            }
+        }
+    },
+    "corrected-1099-2025": {
+        "note": "A single CORRECTED 1099-INT.",
+        "lines": {
+            "1040:2b": {
+                "engineVisible": 76400,
+                "worksheetReported": 76400
+            }
+        }
+    },
+    "k1-renderings-2025": {
+        "note": "Three K-1 renderings. Every one is withheld: K-1 v1 scope is boxes as printed, with no line dispersion (§8).",
+        "lines": {}
+    },
+    "irs-official-forms-2025": {
+        "note": "Three renderings of the same W-2 as three separate documents, plus 1099-INT, 1099-DIV, 1099-R, 1098, 1099-NEC, 1099-MISC, a cover letter and a blank page.",
+        "lines": {
+            "1040:1a": {
+                "engineVisible": 25500000,
+                "worksheetReported": 25500000,
+                "why": "Three separate W-2 documents carrying the same employer data, so three times box 1. Not a duplicate to collapse — the fixture is three renderings as three files."
+            },
+            "1040:25a": {
+                "engineVisible": 3426000,
+                "worksheetReported": 3426000
+            },
+            "1040:2b": {
+                "engineVisible": 76400,
+                "worksheetReported": 76400
+            },
+            "1040:3b": {
+                "engineVisible": 318700,
+                "worksheetReported": 318700
+            },
+            "1040:3a": {
+                "engineVisible": 291400,
+                "worksheetReported": 291400
+            },
+            "1040:5a": {
+                "engineVisible": None,
+                "worksheetReported": 2500000,
+                "withheldBecause": "judgment_required",
+                "why": "1099-R box 7's IRA/SEP/SIMPLE box is unchecked on this fixture, so the gross distribution is a pension on line 5a rather than an IRA distribution on 4a. It is withheld anyway: box 2b 'taxable amount not determined' is checked, so the whole document goes to Judgment Required (§9). A withheld source line comes back absent, not zero — verified against engine 2.0.4 — which looks exactly like \"the documents reported nothing on this line\". Worse, the engine's computed totals are confident numbers regardless: AGI, taxable income, total tax and the refund are all computed as though the withheld document did not exist. A draft can therefore show a plausible refund that is wrong by the whole of a pension. That is why the omissions list is part of the answer rather than an appendix to it."
+            }
+        }
+    }
+}
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    manifest: dict = {"note": "All data is invented. Never replace these with client documents.",
+    manifest: dict = {"note": "All data is invented. Never replace these with client documents."
+                              " expectedDraftReturn holds hand-derived 1040 line values for the"
+                              " draft-return harness (P17): engineVisible is what the engine should"
+                              " see after §14 withholding, worksheetReported is what the worksheet"
+                              " reports from every document, and withheldBecause names the rule when"
+                              " they differ. Derived by addition from the printed boxes, never by"
+                              " running this repo's own code.",
                       "taxYear": 2025, "bundles": []}
 
     def save(doc: pymupdf.Document, name: str) -> None:
@@ -442,6 +562,13 @@ def main() -> None:
         {"file": "w2_robert_native.pdf", "derivedFrom": None,
          "expectedRoute": "text_layer", "why": "native digital PDF with an embedded text layer"},
     ]
+
+    # Attach the draft-return expectations by bundle name (P17). Kept out of the bundle
+    # literals above so the numbers sit together and can be re-derived in one place.
+    for bundle in manifest["bundles"]:
+        expectation = DRAFT_EXPECTATIONS.get(bundle["name"])
+        if expectation is not None:
+            bundle["expectedDraftReturn"] = expectation
 
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 

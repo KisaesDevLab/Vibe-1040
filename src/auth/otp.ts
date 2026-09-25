@@ -185,7 +185,7 @@ export async function factorDestination(
   const allowed = await setting<string[]>('auth.allowed_mfa_methods');
   if (!allowed.includes(user.mfaMethod)) {
     return {
-      channel: user.mfaMethod as Channel | 'totp',
+      channel: user.mfaMethod,
       destination: null,
       usable: false,
       why: `${user.mfaMethod} is no longer a permitted second factor at this firm`,
