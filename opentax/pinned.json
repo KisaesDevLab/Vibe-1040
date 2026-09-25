@@ -1,0 +1,14 @@
+{
+  "$comment": [
+    "The engine release this repository is built and tested against (P17, CLAUDE.md §14).",
+    "Machine-readable so CI can build the sidecar image against the same pin that ships, rather than a checksum that lives only in a comment and a docs table.",
+    "This is not a fourth version pin. It is the checked-in form of the third one: what actually gets installed. OPENTAX_VERSION still says what a deployment intends to run, and data/opentax-nodes/<year>.json's engine.pinnedVersion still says what that node map was written against.",
+    "Two forms of the version, and they are not interchangeable: the download URL wants the release TAG (v2.0.4), while the binary reports 2.0.4 and that is what OPENTAX_VERSION is compared against. The app strips a leading v before comparing, so either form is accepted there.",
+    "Verified 2026-09-25 by downloading the asset and running it. Record every new pair here and in docs/opentax-draft-return.md §6 when the pin moves — see §7 for the whole upgrade procedure."
+  ],
+  "tag": "v2.0.4",
+  "version": "2.0.4",
+  "asset": "opentax-linux-x64",
+  "sha256": "7f0911050f7f34e10c149330e4bff9a1001a9eba5a70f50621e7c2c3aaaa02d4",
+  "verifiedOn": "2026-09-25"
+}

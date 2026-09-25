@@ -221,7 +221,9 @@ on every draft — a node map must not drift under the engine. Check `/health`: 
   closed against it (its issue #8, Form 8959 reading the wrong Schedule SE line). Version-pinning
   is what makes a harness score mean anything.
 
-  **Verified 2026-09-25**, by downloading the asset and running it:
+  **Verified 2026-09-25**, by downloading the asset and running it. The pair is checked in at
+  `opentax/pinned.json`, which is what CI builds the image from — a checksum that lives only in
+  a table is one nothing verifies:
 
   | release | asset | SHA-256 | `opentax version` prints |
   |---|---|---|---|
@@ -323,6 +325,20 @@ returns** until resolved; the worksheet is never affected.
 7. **Run the suite** (`npx vitest run`) and re-read `lines.comparable` and `lines.computedOnly`
    in the node map: an engine that surfaces new 1040 lines may make a `notCompared` line
    comparable, and one that stops surfacing a line will make a comparison go quietly silent.
+
+### The hand check
+
+P17's remaining exit criterion is a person checking a draft line by line against a known
+packet. Generating a worksheet for a bundle that has a draft return now adds a **`Hand check`**
+sheet to the workbook for exactly that: each line carries what the documents report, what the
+engine computed, and the box on the named document each contributing figure was read from, so
+the check is ticking rather than hunting. Landscape, fitted to one page wide, headers repeated,
+omissions first, and somewhere to sign.
+
+The figures come from the **stored** draft, not a freshly computed one — the point is to check
+the draft the preparer is looking at. The provenance is rebuilt from the documents as they
+stand now, so if a field has been corrected since, the checker sees that rather than having it
+hidden.
 
 ### What Admin → Draft engine does and does not do
 

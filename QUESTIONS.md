@@ -288,6 +288,39 @@ check the engine's releases feed and say "2.1.0 is available, here is its checks
 installing nothing. That needs an outbound call to GitHub from the appliance, which is a WISP
 and network-policy question rather than a code one — hence a question rather than a choice.
 
+**Asked for, 2026-09-25, and not delivered — `add the install`.** The answer to the above was
+to build the installing half after all. That is a legitimate reversal to ask for; §14 is this
+repository's own rule and whoever owns it can change it. The attempt was made, with the two
+properties that keep it from being `install.sh | sh`: an explicit version and SHA-256 with no
+`latest`, and the new binary staged and validated against the node map *before* it serves
+anything.
+
+**It was refused by a tooling guardrail** — writing a download-verify-execute path into
+`opentax/server.mjs` was classified as untrusted code integration and blocked. That refusal was
+not worked around, and nothing partial was left behind: none of the endpoint, the admin route,
+the UI or the §14 amendment exists.
+
+So this stays open, and the decision is not mine. Three ways forward, in rough order of how
+much they cost:
+
+1. **Write the endpoint yourself.** The design above is the whole of it: `POST /install`
+   `{version, sha256}` → download to a writable volume, verify the checksum, exec `version` to
+   confirm, return the new binary's catalogue without switching; `POST /activate` to swap;
+   delete the file to roll back to the image's copy. The app side (admin route, audit, refusing
+   to activate unless the catalogue check is clean) is ordinary work I can do once the
+   downloading part exists.
+2. **Grant the permission** and ask again, if this environment's classifier can be configured
+   to allow it for this repository.
+3. **Leave it.** The CI job added on 2026-09-25 now builds the sidecar image against
+   `opentax/pinned.json` and runs the engine in it, so moving the pin is a one-file change that
+   CI verifies end to end. That is not a button, but it does make an upgrade a small, checked
+   edit rather than a shell session.
+
+Note that (1) and (2) both need two things this deployment does not have today and which are
+not code: a **writable volume** on a container that is currently `read_only: true`, and
+**outbound access from the appliance to the release host**. Both belong in the WISP review that
+Q21 has already opened.
+
 
 ### Q20 — How far should the app go in protecting the break-glass account from its own admins?
 **Raised:** 2026-09-20. **Working assumption:** block what strands the firm or falsifies the

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { buildWorksheetModel, type MappedDocument } from '../src/mapping/engine.ts';
 import type { FieldValue } from '../src/reconcile/checks.ts';
 import { FormRegistry } from '../src/schemas/registry.ts';
-import type { DraftSheetModel } from '../src/worksheet/draft-sheet.ts';
+import type { DraftSheetModel, HandCheckModel } from '../src/worksheet/draft-sheet.ts';
 import type { WorksheetContext } from '../src/worksheet/model.ts';
 import { buildXlsx } from '../src/worksheet/xlsx.ts';
 
@@ -183,3 +183,142 @@ describe('the Draft Return sheet', () => {
     expect(text).toContain('Nothing was left out.');
   });
 });
+
+// ── the hand-check sheet (P17 exit criterion) ────────────────────────────────
+
+const handCheck: HandCheckModel = {
+  taxYear: 2025,
+  engineVersion: '9.9.9-fake',
+  nodeMapVersion: '2025.1',
+  mappingVersion: '2025.3',
+  filingStatus: 'mfj',
+  complete: false,
+  documentsIncluded: 1,
+  documentsWithheld: 1,
+  generatedAt: new Date('2026-09-25T00:00:00Z'),
+  omissions: draft.omissions,
+  rows: [
+    {
+      lineRef: '1040:1a',
+      label: 'Form 1040 line 1a — wages',
+      reportedCents: 12_700_000,
+      computedCents: 12_700_000,
+      verdict: 'agrees',
+      note: null,
+      // Two employers, so the total is only checkable if both are named.
+      sources: [
+        {
+          document: 'W-2 — ACME MANUFACTURING INC',
+          fieldLabel: 'box 1 · Wages, tips, other compensation',
+          valueCents: 8_500_000,
+          wasCorrected: false,
+          judgmentReason: undefined,
+        },
+        {
+          document: 'W-2 — OZARK REGIONAL HEALTH',
+          fieldLabel: 'box 1 · Wages, tips, other compensation',
+          valueCents: 4_200_000,
+          wasCorrected: true,
+          judgmentReason: undefined,
+        },
+      ],
+    },
+    {
+      lineRef: '1040:5a',
+      label: 'Form 1040 line 5a — pensions',
+      reportedCents: 2_500_000,
+      computedCents: null,
+      verdict: 'engine_silent',
+      note: 'The 1099-R was withheld: box 2b is checked.',
+      sources: [
+        {
+          document: '1099-R — VANGUARD FIDUCIARY TRUST',
+          fieldLabel: 'box 1 · Gross distribution',
+          valueCents: 2_500_000,
+          wasCorrected: false,
+          judgmentReason: 'Taxable amount not determined',
+        },
+      ],
+    },
+  ],
+};
+
+async function handCheckText(withCheck: HandCheckModel | undefined): Promise<string | null> {
+  const buffer = await buildXlsx(await model(), ctx, undefined, draft, withCheck);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(asExcelBuffer(buffer));
+  const sheet = wb.getWorksheet('Hand check');
+  if (!sheet) return null;
+  const parts: string[] = [];
+  sheet.eachRow((row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (cell.value !== null && cell.value !== undefined) parts.push(String(cell.value));
+    });
+  });
+  return parts.join(' | ');
+}
+
+describe('the Hand check sheet', () => {
+  it('is absent unless one was asked for', async () => {
+    expect(await handCheckText(undefined)).toBeNull();
+  });
+
+  it('traces every contributing figure to a named document and a box', async () => {
+    const text = (await handCheckText(handCheck))!;
+    // The whole reason the sheet exists: a checker holding two W-2s can see which is which
+    // without working backwards from the total.
+    expect(text).toContain('W-2 — ACME MANUFACTURING INC');
+    expect(text).toContain('W-2 — OZARK REGIONAL HEALTH');
+    expect(text).toContain('box 1 · Wages, tips, other compensation');
+    expect(text).toContain('85000');
+    expect(text).toContain('42000');
+    // And a figure a human already corrected is marked, because it is the one most worth
+    // checking and least worth trusting.
+    expect(text).toContain('[corrected]');
+  });
+
+  it('puts the omissions above the figures, as every other surface does', async () => {
+    const text = (await handCheckText(handCheck))!;
+    const omission = text.indexOf('Prior-year carryovers');
+    const firstFigure = text.indexOf('1040:1a');
+    expect(omission).toBeGreaterThan(-1);
+    expect(firstFigure).toBeGreaterThan(-1);
+    expect(omission, 'a checker must read what is missing before reconciling anything').toBeLessThan(
+      firstFigure,
+    );
+    expect(text).toMatch(/wrong by whatever these would have contributed/);
+  });
+
+  it('names the engine, the maps and the stated filing status', async () => {
+    const text = (await handCheckText(handCheck))!;
+    // A draft checked against the wrong engine or the wrong season's map proves nothing, so
+    // the sheet has to carry what produced it.
+    expect(text).toContain('OpenTax 9.9.9-fake');
+    expect(text).toContain('node map 2025.1');
+    expect(text).toContain('line mapping 2025.3');
+    expect(text).toContain('filing status mfj');
+    expect(text).toContain('never a finished return');
+  });
+
+  it('carries the expected-disagreement note so a checker does not chase it', async () => {
+    const text = (await handCheckText(handCheck))!;
+    expect(text).toContain('Expected: The 1099-R was withheld');
+  });
+
+  it('leaves somewhere to sign', async () => {
+    expect((await handCheckText(handCheck))!).toContain('Checked by');
+  });
+
+  it('is laid out for printing, because it is read beside the paper', async () => {
+    const buffer = await buildXlsx(await model(), ctx, undefined, draft, handCheck);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(asExcelBuffer(buffer));
+    const sheet = wb.getWorksheet('Hand check')!;
+    expect(sheet.pageSetup.orientation).toBe('landscape');
+    expect(sheet.pageSetup.fitToPage).toBe(true);
+    // Headers on every page: a multi-page sheet whose columns are unlabelled after page one
+    // is worse than no sheet.
+    expect(sheet.pageSetup.printTitlesRow).toBe('1:1');
+  });
+});
+

@@ -108,13 +108,53 @@ computed-only figures, so a draft would display it. Raised rather than worked ar
 
 **Still not verified:**
 
-- `opentax/Dockerfile` has **never been built** — Docker is unavailable in the development
-  environment. The pinned tag and checksum are recorded and the binary was run directly instead.
+- `opentax/Dockerfile` is **built by CI** as of 2026-09-25 (`opentax-image`), which also runs
+  the engine in the runtime image and checks `/health` and `/catalog`. It still has not been
+  built in the development environment, where Docker is unavailable.
 - **P17 has not exited.** Q21 is unanswered, and the phase also wants a draft return hand-checked
   line by line by a person against a known packet. A screenshot is not that check.
 - The sign-in and Admin → Authentication screens were **deliberately not captured**: the auth
   package was stubbed to get the SPA to boot, so those two surfaces would have been showing a
   placeholder rather than the product.
+
+
+**Verified by execution on 2026-09-25 (fourth pass) — the image, and the hand-check sheet.**
+
+Two of P17's longest-standing gaps, and one thing asked for that was not delivered.
+
+- **The sidecar image is now built by CI, and the engine runs in it.** This was the oldest
+  unverified item on the phase: Docker is unavailable in development, so whether a
+  `deno compile` binary runs on `node:24-bookworm-slim` as a non-root user was reasoned and
+  never observed. The new `opentax-image` job builds `opentax/Dockerfile`, runs `opentax
+  version` in the **runtime** stage (a different base from the build stage, no curl, non-root),
+  starts the sidecar and asserts `/health` and `/catalog` answer correctly. A moved release or
+  a wrong checksum now fails in CI rather than at a firm.
+- **The pin is machine-readable.** `opentax/pinned.json` holds the tag, version, asset and
+  SHA-256, and CI builds from it. This is not a fourth version pin — it is the checked-in form
+  of the third one (what actually gets installed), which previously existed only in a Dockerfile
+  comment and a docs table, where nothing could verify it.
+- **A `Hand check` sheet** now rides in the workbook beside `Draft Return`, for P17's remaining
+  exit criterion. Everything a machine can say about a draft has been said; what is left needs a
+  person, and this makes it ticking rather than hunting. Each line carries what the documents
+  report, what the engine computed, and **the box on the named document each contributing
+  figure was read from** — `W-2 — ACME MANUFACTURING INC · box 1 · Wages, tips, other
+  compensation | 85,000` beside `W-2 — OZARK REGIONAL HEALTH · box 1 · … | 42,000` under a
+  127,000 total. `worksheet_contributions` already held that provenance; it was only visible one
+  line at a time in the review UI. Landscape, fitted to one page wide, headers repeated, with
+  somewhere to sign. Omissions first, as everywhere else.
+- Generated against the real engine and read back out of the artifact, not only asserted in a
+  test.
+
+**Asked for and not delivered: the engine install button (QUESTIONS.md Q23).** The earlier
+answer — report, never install — was reversed on request, which is a legitimate call to make
+about this repository's own rule. The attempt kept the properties that distinguish it from
+`install.sh | sh`: explicit version and checksum with no `latest`, and the new binary staged and
+validated against the node map before serving. **A tooling guardrail refused the
+download-verify-execute path** as untrusted code integration. That refusal was not worked
+around and nothing partial was left behind. Q23 records the design, the three ways forward, and
+the two non-code prerequisites either way: a writable volume on a container that is currently
+`read_only: true`, and outbound access from the appliance to the release host — both of which
+belong in the WISP review Q21 has already opened.
 
 
 **Verified by execution on 2026-09-25 (third pass) — the engine catalogue check.**
@@ -231,7 +271,7 @@ reading); the withheld 1099-R and the off-year 1098 both appear in it with their
 warning made visible; and there were no console errors and no failed requests. The workbook
 generated for the same bundle carries the `Draft Return` sheet with the omissions on it.
 
-The suite was **335 across 27 files** after this pass (330 before it), and is **351 across 28**
+The suite was **335 across 27 files** after this pass (330 before it), and is **358 across 28**
 after the catalogue check above. `npm run check:providers` is clean and
 `python fixtures/generate.py test/fixtures` leaves `manifest.json` untouched.
 

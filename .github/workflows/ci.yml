@@ -140,3 +140,77 @@ jobs:
         run: |
           python fixtures/generate.py test/fixtures
           git diff --exit-code --stat test/fixtures/manifest.json
+
+  # The one thing about P17 that had never been observed: whether the engine sidecar image
+  # actually builds and whether a `deno compile` binary runs on debian-slim as a non-root
+  # user. Both were reasoned, not run, because Docker was unavailable in development.
+  #
+  # The build itself is most of the proof — opentax/Dockerfile verifies the SHA-256 and runs
+  # `opentax version` in the build stage, so a moved release or a wrong checksum fails here
+  # rather than at a firm. The step after it proves the *runtime* stage too, which is the
+  # part the build stage cannot: a different base, a non-root user, and no build tooling.
+  opentax-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Read the pin from the repository rather than hardcoding it here, so this job verifies
+      # the release that actually ships and moving the pin is still a one-file change.
+      - name: Read the pinned engine release
+        id: pin
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          p = json.load(open('opentax/pinned.json'))
+          for key in ('tag', 'version', 'asset', 'sha256'):
+              print(f"{key}={p[key]}")
+          PY
+
+      - name: Build the sidecar image against the pinned release
+        run: |
+          docker build \
+            --build-arg OPENTAX_VERSION='${{ steps.pin.outputs.tag }}' \
+            --build-arg OPENTAX_SHA256='${{ steps.pin.outputs.sha256 }}' \
+            --build-arg OPENTAX_ASSET='${{ steps.pin.outputs.asset }}' \
+            -t vibe-1040-opentax:ci \
+            opentax/
+
+      # The runtime stage: debian-slim, non-root, no curl. If `deno compile` output needs
+      # anything this image does not have, it surfaces here.
+      - name: Run the engine in the runtime image
+        run: |
+          reported=$(docker run --rm --entrypoint opentax vibe-1040-opentax:ci version)
+          echo "engine reports: $reported"
+          echo "$reported" | grep -qF '${{ steps.pin.outputs.version }}' || {
+            echo "::error::the built image reports '$reported', not the pinned ${{ steps.pin.outputs.version }}"
+            exit 1
+          }
+
+      # And that it comes up as a service and answers, which is how the app reaches it.
+      - name: Start the sidecar and check /health and /catalog
+        run: |
+          docker run -d --name opentax -p 8230:8230 vibe-1040-opentax:ci
+          for i in $(seq 1 30); do
+            sleep 2
+            curl -fsS http://127.0.0.1:8230/health > /tmp/health.json && break
+          done
+          cat /tmp/health.json
+          python3 -c "
+          import json; d = json.load(open('/tmp/health.json'))
+          assert d['ok'] is True, d
+          assert d['version'] == '${{ steps.pin.outputs.version }}', d
+          print('health ok:', d)
+          "
+          # The catalogue endpoint spawns the engine per node type, so this also proves the
+          # binary is executable from inside the running container and not only at build time.
+          curl -fsS 'http://127.0.0.1:8230/catalog?nodes=w2,general' > /tmp/catalog.json
+          python3 -c "
+          import json; d = json.load(open('/tmp/catalog.json'))
+          assert d['nodes']['w2']['fields']['box1_wages']['required'] is True, d['nodes']['w2']
+          assert 'filing_status' in d['nodes']['general']['fields'], d['nodes']['general']
+          print('catalog ok:', len(d['nodes']), 'node types')
+          "
+
+      - name: Sidecar logs on failure
+        if: failure()
+        run: docker logs opentax || true

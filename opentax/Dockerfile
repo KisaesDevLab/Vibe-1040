@@ -15,9 +15,11 @@
 #     --build-arg OPENTAX_SHA256=7f0911050f7f34e10c149330e4bff9a1001a9eba5a70f50621e7c2c3aaaa02d4 \
 #     opentax/
 #
-# That pair is for v2.0.4's opentax-linux-x64, verified on 2026-09-25 by downloading the asset
-# and running it. Record every new pair in docs/opentax-draft-return.md so the next operator
-# does not have to trust a fresh download to tell them what a good download looks like.
+# That pair lives in `opentax/pinned.json`, which is where CI reads it from so the image it
+# builds is the release that actually ships — a checksum recorded only in a comment is one
+# nobody can check. Record every new pair there and in docs/opentax-draft-return.md §6, so the
+# next operator does not have to trust a fresh download to tell them what a good one looks
+# like. §7 of that document is the whole upgrade procedure.
 #
 # Note the two forms of the version: the build arg is the release TAG (`v2.0.4`) because that
 # is what the download URL wants, while `opentax version` prints `2.0.4` and that is what

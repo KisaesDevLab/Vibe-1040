@@ -184,8 +184,14 @@ export async function generateWorksheet(
   // workbook buildable on a deployment where the draft return is switched off.
   const { draftSheetForBundle } = await import('../draft/sheet.ts');
   const draft = await draftSheetForBundle(bundleId);
+  // And, when there is a draft, the hand-check sheet: the same lines with the box on the
+  // document each contributing figure was read from, laid out for printing. P17 cannot exit
+  // until a person has checked a draft line by line against a known packet, and this is what
+  // turns that into ticking rather than hunting.
+  const { handCheckForBundle } = await import('../draft/hand-check.ts');
+  const handCheck = draft ? await handCheckForBundle(bundleId) : null;
   const [xlsx, pdf] = await Promise.all([
-    buildXlsx(model, fullCtx, review, draft ?? undefined),
+    buildXlsx(model, fullCtx, review, draft ?? undefined, handCheck ?? undefined),
     buildPdf(model, fullCtx),
   ]);
   const xlsxKey = keys.worksheetXlsx(bundleId, worksheetId);

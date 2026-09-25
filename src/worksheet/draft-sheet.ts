@@ -40,3 +40,44 @@ export interface DraftSheetModel {
   omissions: DraftSheetOmission[];
   validations: DraftSheetValidation[];
 }
+
+// ── the hand-check sheet (P17 exit criterion) ────────────────────────────────
+
+/** One contributing figure, traced to the box on the document it was read from. */
+export interface HandCheckSource {
+  /** `W-2 — ACME MANUFACTURING INC`, as the worksheet labels it. */
+  document: string;
+  /** The box as a preparer would look for it — `box 1 · Wages, tips, other compensation`. */
+  fieldLabel: string;
+  valueCents: number | null;
+  wasCorrected: boolean;
+  /** Set when this figure is reported but deliberately not carried into a total (§9). */
+  judgmentReason: string | undefined;
+}
+
+export interface HandCheckRow {
+  lineRef: string;
+  label: string;
+  reportedCents: number | null;
+  computedCents: number | null;
+  verdict: string;
+  /** Why a disagreement on this line may be expected rather than a defect. */
+  note: string | null;
+  /** Blank source boxes are included: a null contributor is a fact about the packet (§5). */
+  sources: HandCheckSource[];
+}
+
+export interface HandCheckModel {
+  taxYear: number;
+  engineVersion: string;
+  nodeMapVersion: string;
+  mappingVersion: string;
+  filingStatus: string | null;
+  complete: boolean;
+  documentsIncluded: number;
+  documentsWithheld: number;
+  generatedAt: Date;
+  omissions: DraftSheetOmission[];
+  rows: HandCheckRow[];
+}
+
