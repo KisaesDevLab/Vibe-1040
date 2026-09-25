@@ -168,6 +168,71 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ── the OpenTax engine image (P17) ───────────────────────────────────────
+      #
+      # `docker-compose.yml` has pointed its `opentax` service at
+      # `ghcr.io/…/vibe-1040-opentax:${VIBE_1040_VERSION:-latest}` since P17, and nothing
+      # ever published that image — CI builds it as `vibe-1040-opentax:ci` to prove the
+      # engine runs in it and then throws it away. An operator pulling a release would have
+      # got `manifest unknown` for the one service the release is about, and fallen back to
+      # building it themselves with two build args they would have had to find.
+      #
+      # The pin comes from `opentax/pinned.json`, the same file CI builds against, so the
+      # published image and the tested image are the same engine by construction rather than
+      # by two checksums happening to agree.
+      - name: Read the pinned engine release
+        id: pin
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          p = json.load(open('opentax/pinned.json'))
+          for key in ('tag', 'version', 'asset', 'sha256'):
+              print(f"{key}={p[key]}")
+          PY
+
+      - name: Engine image metadata
+        id: meta-opentax
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-opentax
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.title=Vibe 1040 OpenTax engine
+            org.opencontainers.image.description=OpenTax ${{ steps.pin.outputs.version }} (AGPL-3.0-only) behind a dependency-free HTTP wrapper
+            org.opencontainers.image.vendor=Kisaes
+            org.opencontainers.image.licenses=AGPL-3.0-only
+
+      - name: Build and push the engine
+        uses: docker/build-push-action@v7
+        with:
+          context: ./opentax
+          push: true
+          build-args: |
+            OPENTAX_VERSION=${{ steps.pin.outputs.tag }}
+            OPENTAX_SHA256=${{ steps.pin.outputs.sha256 }}
+            OPENTAX_ASSET=${{ steps.pin.outputs.asset }}
+          tags: ${{ steps.meta-opentax.outputs.tags }}
+          labels: ${{ steps.meta-opentax.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The engine is AGPL v3 and this image conveys it, so the image reporting the version
+      # it was pinned to is a licence matter as well as a correctness one: whoever receives
+      # the image has to be able to tell which source it corresponds to.
+      - name: The published engine is the pinned engine
+        run: |
+          image=$(echo '${{ steps.meta-opentax.outputs.tags }}' | head -1)
+          reported=$(docker run --rm --entrypoint opentax "$image" version)
+          echo "engine reports: $reported"
+          echo "$reported" | grep -qF '${{ steps.pin.outputs.version }}' || {
+            echo "::error::the published engine image reports '$reported', not the pinned ${{ steps.pin.outputs.version }}"
+            exit 1
+          }
+
       # A pushed image that nobody can pull is not a release.
       #
       # The Vibe Appliance decides whether an app can be enabled by asking GHCR's
@@ -183,7 +248,7 @@ jobs:
         run: |
           fail=0
           owner="${{ github.repository_owner }}"
-          for repo in "$owner/vibe-1040" "$owner/vibe-1040-sidecar"; do
+          for repo in "$owner/vibe-1040" "$owner/vibe-1040-sidecar" "$owner/vibe-1040-opentax"; do
             lower=$(echo "$repo" | tr '[:upper:]' '[:lower:]')
             body=$(curl -sf "https://ghcr.io/token?scope=repository:${lower}:pull" || echo '{}')
             if echo "$body" | grep -q '"token"'; then
@@ -210,6 +275,7 @@ jobs:
               echo
               echo "- https://github.com/users/${{ github.repository_owner }}/packages/container/vibe-1040/settings"
               echo "- https://github.com/users/${{ github.repository_owner }}/packages/container/vibe-1040-sidecar/settings"
+              echo "- https://github.com/users/${{ github.repository_owner }}/packages/container/vibe-1040-opentax/settings"
               echo
               echo "Danger Zone → Change visibility → Public. Visibility is sticky, so every"
               echo "later release stays public and this step passes from then on."
@@ -227,5 +293,6 @@ jobs:
             echo '```'
             echo "${{ steps.meta-api.outputs.tags }}"
             echo "${{ steps.meta-sidecar.outputs.tags }}"
+            echo "${{ steps.meta-opentax.outputs.tags }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

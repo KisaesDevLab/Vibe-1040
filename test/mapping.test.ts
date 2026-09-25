@@ -265,3 +265,93 @@ describe('W-2 box 12 (reviewed 2026-08-26)', () => {
     expect(line(model, '1040:25c').totalCents).toBeNull();
   });
 });
+
+/**
+ * TY2026 (P10's "a season is a data change" criterion, exercised).
+ *
+ * `loadMapping` **throws** when a year's file is absent — unlike the form-schema registry,
+ * which substitutes the nearest season and annotates it. So until `2026.json` existed, a
+ * TY2026 bundle produced no worksheet at all: the first one uploaded in the January 2027
+ * season would have failed outright. That is the right failure (a worksheet built on a
+ * mapping nobody wrote would be worse) and it is still a failure with a date on it.
+ *
+ * These tests hold two things: that a TY2026 bundle now produces a worksheet, and that the
+ * worksheet says out loud that its mapping has not been checked against a printed form.
+ */
+describe('TY2026', () => {
+  const doc2026 = async (formType: string, fields: Record<string, FieldValue>): Promise<MappedDocument> => {
+    const forms = await registry();
+    const resolved = forms.resolve(formType, 2026)!;
+    return {
+      documentId: `doc-2026-${formType}`,
+      formType,
+      taxYear: 2026,
+      schema: resolved.schema,
+      fields: new Map(Object.entries(fields)),
+    };
+  };
+
+  it('produces a worksheet, where before it threw', async () => {
+    const model = await buildWorksheetModel(
+      2026,
+      [
+        await doc2026('W-2', {
+          box_1: field({ cents: 12_700_000 }),
+          box_2: field({ cents: 1_544_000 }),
+          box_17: field({ cents: 382_500 }),
+        }),
+      ],
+      join(DATA_ROOT, 'line-mappings'),
+    );
+
+    expect(line(model, '1040:1a').totalCents).toBe(12_700_000);
+    expect(line(model, '1040:1z').totalCents).toBe(12_700_000);
+    expect(line(model, '1040:25a').totalCents).toBe(1_544_000);
+    // State withholding is a Schedule A line, and is *also* listed on an INFO detail line so
+    // a preparer can see it per payer. It is not Judgment Required: a figure with a home is
+    // not a question for a preparer.
+    expect(line(model, 'SCHA:5a').totalCents).toBe(382_500);
+    expect(
+      line(model, 'INFO:state_withholding').contributions.map((c) => c.valueCents),
+    ).toEqual([382_500]);
+  });
+
+  it('carries a year that has no mapping on refusing, rather than guessing one', async () => {
+    // The contrast that makes the above worth having: the registry substitutes a schema and
+    // says so, and the mapping does not substitute at all.
+    await expect(
+      buildWorksheetModel(2027, [], join(DATA_ROOT, 'line-mappings')),
+    ).rejects.toThrow(/no line mapping for tax year 2027/);
+  });
+
+  it('says on every artifact that the mapping has not been checked against a printed form', async () => {
+    const model = await buildWorksheetModel(
+      2026,
+      [await doc2026('W-2', { box_1: field({ cents: 100 }) })],
+      join(DATA_ROOT, 'line-mappings'),
+    );
+    // `mappingVersion` is printed on the workbook cover, the PDF cover, the Hand check sheet
+    // caption and every stored draft return. The suffix is how a carried-forward mapping
+    // admits to being one, without a line of code knowing about it.
+    expect(model.mappingVersion).toBe('2026.0-unverified');
+  });
+
+  it('leaves 1099-DA unregistered, so it blocks rather than being read against a guess', async () => {
+    const forms = await registry();
+    // New for TY2026 and deliberately absent: an unregistered form type blocks the bundle
+    // until a human reads the page (§6), which is the right outcome for a layout nobody here
+    // has seen. QUESTIONS.md Q25.
+    expect(forms.resolve('1099-DA', 2026)).toBeUndefined();
+  });
+
+  it('is the 2025 mapping carried forward — same lines, same refs, same order', async () => {
+    const { loadMapping } = await import('../src/mapping/engine.ts');
+    const root = join(DATA_ROOT, 'line-mappings');
+    const [a, b] = await Promise.all([loadMapping(2025, root), loadMapping(2026, root)]);
+    // If a future season genuinely diverges this test should be changed, deliberately, by
+    // whoever diverges it. Until then it holds the claim the file's own notes make.
+    expect(b.lines).toEqual(a.lines);
+    expect(b.mappings).toEqual(a.mappings);
+    expect(b.taxYear).toBe(2026);
+  });
+});

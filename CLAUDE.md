@@ -426,6 +426,19 @@ TY2026 brings the 1099-NEC and 1099-MISC threshold rise to $2,000 and Form 1099-
 digital-asset broker proceeds. Expect a mapping table update every season and make that a
 data change, not a code change.
 
+**`loadMapping` throws when a year's file is missing**, unlike the form-schema registry, which
+substitutes the nearest season and annotates it. So a season with no mapping file produces no
+worksheet at all — the right failure, and one with a date on it. `data/line-mappings/2026.json`
+exists as of 2026-09-25, carried forward from 2025.3 unchanged and versioned
+**`2026.0-unverified`**: `mappingVersion` prints on the workbook cover, the PDF, the `Hand check`
+sheet and every stored draft return, so a worksheet built on an unchecked mapping says so on its
+own face. **Dropping the suffix is what a person does after reading the printed TY2026 forms**
+— QUESTIONS.md Q25 lists exactly which, and which lines on each.
+
+**1099-DA is deliberately not registered.** An unregistered form type blocks the bundle until a
+human reads the page (§6), which is the right outcome for a layout nobody here has seen. Do not
+register a form type from a guessed box map.
+
 Gross wages including tips and overtime still report on line 1z matching the W-2 — the
 new deductions are below-the-line on Schedule 1-A. The worksheet reports what the W-2
 says and does not attempt the deduction.
