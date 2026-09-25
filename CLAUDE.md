@@ -77,6 +77,9 @@ npm run accuracy -- <bundleId>       # score a processed bundle against fixture 
 npm run check:providers              # provider-leakage grep; must stay clean
 ```
 
+The UI is linted and tested too: `cd ui && npm run lint && npm test` — ESLint with the React
+hooks rules, and component tests under jsdom. Both run in CI's `ui` job.
+
 Installing takes two first-party packages that plain `npm install` cannot fetch.
 `@kisaes/vibe-ai-client` is on no registry: `scripts/install-deps.mjs` installs everything
 else and links the SDK from `vendor/sdk` or a sibling `../Vibe-AI-Router` checkout.

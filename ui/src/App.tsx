@@ -636,6 +636,10 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
     if (!running) return undefined;
     const t = setInterval(refreshBundle, 8000);
     return () => clearInterval(t);
+    // `bundle` rather than `bundle?.status` would restart the interval on every poll, since
+    // each refresh replaces the object — so the 8-second timer would never actually fire.
+    // The narrowing is the point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bundle?.status, refreshBundle]);
 
   const openDoc = (id: string) => {

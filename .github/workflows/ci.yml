@@ -118,6 +118,14 @@ jobs:
         working-directory: ui
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The UI was the one part of the build with neither lint nor tests. Both now run here.
+      # `exhaustive-deps` is the rule that matters: the panel shipped with a dead
+      # filing-status control for a week because an effect asked for a vocabulary with the
+      # wrong value and a bare `catch` swallowed the miss.
+      - run: npm run lint
+        working-directory: ui
+      - run: npm test
+        working-directory: ui
       - run: npm run build
         working-directory: ui
 
