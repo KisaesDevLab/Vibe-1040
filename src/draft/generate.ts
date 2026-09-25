@@ -26,6 +26,7 @@ import { loadMappedDocuments } from '../worksheet/generate.ts';
 import { computeReturn, DraftEngineError, engineHealth, type EngineResult } from './client.ts';
 import { compareDraft, type DraftComparison } from './compare.ts';
 import { engineCatalogCheck, formatFindings, type CatalogCheck } from './catalog.ts';
+import { draftInputsForBundle } from './inputs.ts';
 import { type FilingStatusOption, loadNodeMap, resolveNodeMap } from './nodes.ts';
 import { buildDraftInput, type DraftOmission, type DraftParams } from './translate.ts';
 
@@ -96,7 +97,27 @@ export async function generateDraftReturn(
   const catalogCheck = await engineCatalogCheck(file);
   if (!catalogCheck.ok) throw new DraftEngineMismatchError(catalogCheck);
 
-  const input = buildDraftInput(file, mapped, params);
+  /**
+   * What the preparer has stored, with anything passed on this call layered on top (P18).
+   *
+   * Stored is the source of truth — a preparer does not retype a Schedule C to recompute — but
+   * an explicit `params` still wins, so an existing caller that passes a filing status behaves
+   * exactly as it did before this feature existed.
+   */
+  const stored = await draftInputsForBundle(bundleId);
+  const effective: DraftParams = {
+    ...(stored.filingStatus !== null ? { filingStatus: stored.filingStatus } : {}),
+    ...(stored.taxpayerAge65OrOlder !== null ? { taxpayerAge65OrOlder: stored.taxpayerAge65OrOlder } : {}),
+    ...(stored.spouseAge65OrOlder !== null ? { spouseAge65OrOlder: stored.spouseAge65OrOlder } : {}),
+    ...(stored.taxpayerBlind !== null ? { taxpayerBlind: stored.taxpayerBlind } : {}),
+    ...(stored.spouseBlind !== null ? { spouseBlind: stored.spouseBlind } : {}),
+    ...(stored.dependents.length > 0 ? { dependents: stored.dependents } : {}),
+    ...(stored.scheduleA ? { scheduleA: stored.scheduleA } : {}),
+    ...(stored.activities.length > 0 ? { activities: stored.activities } : {}),
+    ...params,
+  };
+
+  const input = buildDraftInput(file, mapped, effective);
 
   // The worksheet's own totals, built from the same documents through the same loader, so a
   // disagreement can only be the mapping or the engine — never a different set of documents.
@@ -154,7 +175,10 @@ export async function generateDraftReturn(
       engineVersion: result.engineVersion,
       nodeMapVersion: file.version,
       mappingVersion: worksheet.mappingVersion,
-      filingStatus: params.filingStatus ?? null,
+      // The status the run actually used, which is the stored one unless this call overrode
+      // it. Recording the per-request value here would leave a draft built from stored inputs
+      // claiming no filing status at all.
+      filingStatus: effective.filingStatus ?? null,
       complete,
       documentsIncluded: input.documentsIncluded,
       documentsWithheld: input.documentsWithheld,

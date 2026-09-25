@@ -42,6 +42,22 @@ import {
   generateDraftReturn,
   latestDraftReturn,
 } from '../draft/generate.ts';
+import {
+  addActivity,
+  addDependent,
+  documentBackedScheduleALines,
+  draftInputsForBundle,
+  isKnownFilingStatus,
+  isKnownRelationship,
+  removeActivity,
+  removeDependent,
+  saveDraftInputRoot,
+  saveScheduleA,
+  supportedActivityKinds,
+  updateActivity,
+  updateDependent,
+} from '../draft/inputs.ts';
+import { loadNodeMap } from '../draft/nodes.ts';
 import type { DraftParams } from '../draft/translate.ts';
 import { correctField, resolveDocumentFields } from '../extract/resolve.ts';
 import { confirmIdentity } from '../identity/resolve.ts';
@@ -606,6 +622,280 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!user) return;
     const { taxYear } = z.object({ taxYear: z.coerce.number().int().optional() }).parse(req.query);
     return draftReturnStatus(taxYear);
+  });
+
+  // ── preparer-supplied draft inputs (P18, §14) ──────────────────────────────
+  //
+  // Everything a preparer states because no source document carries it: dependents, itemised
+  // deductions, and business/rental summaries. Audited, because each of these is a
+  // determination a person made and the record should say who made it.
+  //
+  // Money crosses this boundary as integer **cents**, like everywhere else in the app. Every
+  // money field is `.nullable()` and never defaulted: a line the preparer left blank must
+  // reach the engine as absent, not as zero (§5).
+
+  /** What has been stated so far, plus the vocabularies the UI needs to offer. */
+  app.get('/api/bundles/:id/draft-inputs', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    const stored = await draftInputsForBundle(id);
+    const file = bundle.taxYear === null ? null : await loadNodeMap(bundle.taxYear).catch(() => null);
+    return {
+      ...stored,
+      /** The engine's own vocabularies, served so the UI cannot hardcode codes it refuses. */
+      filingStatuses: file?.filingStatuses ?? [],
+      relationships: file?.preparerInputs?.dependents.relationships ?? [],
+      activityKinds: (file?.preparerInputs?.activities ?? []).map((a) => ({
+        kind: a.kind,
+        label: a.label,
+        accountingMethods: a.accountingMethods,
+        propertyTypes: a.propertyTypes,
+        requires: a.fields.filter((f) => f.engineRequired).map((f) => f.column),
+      })),
+      /**
+       * Activities this engine release cannot compute, with the reason. Offered so the UI can
+       * say why rather than present a control that produces a node the engine refuses — a farm
+       * on 2.0.4 is the live example.
+       */
+      unsupportedActivities: file?.preparerInputs?.unsupportedActivities ?? [],
+      /**
+       * Which itemised lines a document in this bundle already feeds, and with what. The engine
+       * silently prefers the document, so the app sends one side only — and a preparer typing
+       * into one of these is overriding a form rather than adding to it, which the UI must say.
+       */
+      documentBacked: await documentBackedScheduleALines(id, bundle.taxYear),
+    };
+  });
+
+  /** Filing status and the age/blindness flags. */
+  app.patch('/api/bundles/:id/draft-inputs', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = z
+      .object({
+        filingStatus: z.string().min(1).nullable().optional(),
+        taxpayerAge65OrOlder: z.boolean().nullable().optional(),
+        spouseAge65OrOlder: z.boolean().nullable().optional(),
+        taxpayerBlind: z.boolean().nullable().optional(),
+        spouseBlind: z.boolean().nullable().optional(),
+      })
+      .parse(req.body ?? {});
+
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    // Checked against the engine's own vocabulary here rather than at compute time: 2.0.4 wants
+    // `mfj`, not `married_filing_jointly`, and an unrecognised code is refused at the `general`
+    // node — losing the standard deduction and the entire tax computation with it.
+    if (body.filingStatus && bundle.taxYear !== null) {
+      if (!(await isKnownFilingStatus(bundle.taxYear, body.filingStatus))) {
+        return reply.code(400).send({ error: 'unknown_filing_status', message: `"${body.filingStatus}" is not a filing status this engine accepts.` });
+      }
+    }
+
+    await saveDraftInputRoot(id, user.id, body);
+    await auditAccess(req, 'draft.inputs_updated', { bundleId: id, detail: { ...body } });
+    return draftInputsForBundle(id);
+  });
+
+  const dependentBody = z.object({
+    firstName: z.string().min(1),
+    lastName: z.string().min(1),
+    middleInitial: z.string().max(1).nullable().optional(),
+    dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dob must be YYYY-MM-DD'),
+    relationship: z.string().min(1),
+    monthsInHome: z.number().int().min(0).max(12),
+    // Determinations. Nullable and never defaulted: "not stated" and "stated as no" are
+    // different answers about whether a child qualifies for a credit (§9).
+    qualifyingChildForCtc: z.boolean().nullable().optional(),
+    disabled: z.boolean().nullable().optional(),
+    fullTimeStudent: z.boolean().nullable().optional(),
+    taxpayerProvidedOverHalfSupport: z.boolean().nullable().optional(),
+    dependentOnAnotherReturn: z.boolean().nullable().optional(),
+    grossIncomeCents: z.number().int().nullable().optional(),
+  });
+
+  app.post('/api/bundles/:id/draft-inputs/dependents', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = dependentBody.parse(req.body ?? {});
+
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+    if (bundle.taxYear !== null && !(await isKnownRelationship(bundle.taxYear, body.relationship))) {
+      return reply.code(400).send({ error: 'unknown_relationship', message: `"${body.relationship}" is not a relationship this engine accepts.` });
+    }
+
+    const { id: dependentId } = await addDependent(id, body);
+    // A dependent's name is taxpayer data; the audit row carries the relationship and the
+    // determination, which is what a later reader needs, and not a date of birth.
+    await auditAccess(req, 'draft.dependent_added', {
+      bundleId: id,
+      entityType: 'draft_input_dependent',
+      entityId: dependentId,
+      detail: { relationship: body.relationship, qualifyingChildForCtc: body.qualifyingChildForCtc ?? null },
+    });
+    return { id: dependentId };
+  });
+
+  app.patch('/api/bundles/:id/draft-inputs/dependents/:dependentId', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id, dependentId } = z
+      .object({ id: z.string().uuid(), dependentId: z.string().uuid() })
+      .parse(req.params);
+    const body = dependentBody.partial().parse(req.body ?? {});
+
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+    if (body.relationship && bundle.taxYear !== null && !(await isKnownRelationship(bundle.taxYear, body.relationship))) {
+      return reply.code(400).send({ error: 'unknown_relationship', message: `"${body.relationship}" is not a relationship this engine accepts.` });
+    }
+
+    if (!(await updateDependent(id, dependentId, body))) return reply.code(404).send({ error: 'not found' });
+    await auditAccess(req, 'draft.dependent_updated', {
+      bundleId: id,
+      entityType: 'draft_input_dependent',
+      entityId: dependentId,
+      detail: { fields: Object.keys(body) },
+    });
+    return { ok: true };
+  });
+
+  app.delete('/api/bundles/:id/draft-inputs/dependents/:dependentId', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id, dependentId } = z
+      .object({ id: z.string().uuid(), dependentId: z.string().uuid() })
+      .parse(req.params);
+    if (!(await removeDependent(id, dependentId))) return reply.code(404).send({ error: 'not found' });
+    await auditAccess(req, 'draft.dependent_removed', {
+      bundleId: id,
+      entityType: 'draft_input_dependent',
+      entityId: dependentId,
+    });
+    return { ok: true };
+  });
+
+  /**
+   * Itemised deductions. Every figure nullable, and `null` means "cleared" rather than "zero" —
+   * a cleared line is absent from the engine payload, which is the distinction §5 exists for.
+   */
+  app.put('/api/bundles/:id/draft-inputs/schedule-a', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const cents = z.number().int().nullable().optional();
+    const body = z
+      .object({
+        medicalCents: cents, stateIncomeTaxCents: cents, salesTaxCents: cents,
+        realEstateTaxCents: cents, personalPropertyTaxCents: cents, otherTaxesCents: cents,
+        mortgageInterest1098Cents: cents, mortgageInterestNo1098Cents: cents, pointsNo1098Cents: cents,
+        investmentInterestCents: cents, cashContributionsCents: cents, noncashContributionsCents: cents,
+        contributionCarryoverCents: cents, casualtyTheftLossCents: cents, otherDeductionsCents: cents,
+        forceItemized: z.boolean().nullable().optional(),
+        forceStandard: z.boolean().nullable().optional(),
+      })
+      .parse(req.body ?? {});
+
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    await saveScheduleA(id, user.id, body as Record<string, number | boolean | null>);
+    // Which lines were stated, not the amounts: an audit row is not a place for taxpayer
+    // figures, and the figures live on the row itself anyway.
+    await auditAccess(req, 'draft.inputs_updated', {
+      bundleId: id,
+      detail: { scheduleA: Object.entries(body).filter(([, v]) => v !== null && v !== undefined).map(([k]) => k) },
+    });
+    return draftInputsForBundle(id);
+  });
+
+  const activityBody = z.object({
+    kind: z.string().min(1),
+    description: z.string().min(1),
+    activityCode: z.string().nullable().optional(),
+    accountingMethod: z.string().nullable().optional(),
+    materialParticipation: z.boolean().nullable().optional(),
+    propertyType: z.string().nullable().optional(),
+    fairRentalDays: z.number().int().min(0).max(365).nullable().optional(),
+    personalUseDays: z.number().int().min(0).max(365).nullable().optional(),
+    grossCents: z.number().int().nullable().optional(),
+    expensesCents: z.number().int().nullable().optional(),
+    expensesDescription: z.string().nullable().optional(),
+  });
+
+  app.post('/api/bundles/:id/draft-inputs/activities', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = activityBody.parse(req.body ?? {});
+
+    const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
+    if (!bundle) return reply.code(404).send({ error: 'not found' });
+
+    // Refused here rather than accepted and dropped at compute time. Engine 2.0.4 has no
+    // Schedule F for a 2025 return, so a farm entered now would vanish into an omission later;
+    // saying so at the point of entry is the difference between a limitation and a surprise.
+    if (bundle.taxYear !== null) {
+      const supported = await supportedActivityKinds(bundle.taxYear);
+      if (!supported.includes(body.kind)) {
+        const file = await loadNodeMap(bundle.taxYear).catch(() => null);
+        const unsupported = file?.preparerInputs?.unsupportedActivities.find((u) => u.kind === body.kind);
+        return reply.code(400).send({
+          error: 'unsupported_activity',
+          message: unsupported?.detail ?? `This engine release cannot compute a ${body.kind}.`,
+          supported,
+        });
+      }
+    }
+
+    const { id: activityId } = await addActivity(id, user.id, body);
+    await auditAccess(req, 'draft.activity_added', {
+      bundleId: id,
+      entityType: 'draft_input_activity',
+      entityId: activityId,
+      detail: { kind: body.kind, materialParticipation: body.materialParticipation ?? null },
+    });
+    return { id: activityId };
+  });
+
+  app.patch('/api/bundles/:id/draft-inputs/activities/:activityId', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id, activityId } = z
+      .object({ id: z.string().uuid(), activityId: z.string().uuid() })
+      .parse(req.params);
+    const body = activityBody.partial().parse(req.body ?? {});
+    if (!(await updateActivity(id, activityId, user.id, body))) return reply.code(404).send({ error: 'not found' });
+    await auditAccess(req, 'draft.activity_updated', {
+      bundleId: id,
+      entityType: 'draft_input_activity',
+      entityId: activityId,
+      detail: { fields: Object.keys(body) },
+    });
+    return { ok: true };
+  });
+
+  app.delete('/api/bundles/:id/draft-inputs/activities/:activityId', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { id, activityId } = z
+      .object({ id: z.string().uuid(), activityId: z.string().uuid() })
+      .parse(req.params);
+    if (!(await removeActivity(id, activityId))) return reply.code(404).send({ error: 'not found' });
+    await auditAccess(req, 'draft.activity_removed', {
+      bundleId: id,
+      entityType: 'draft_input_activity',
+      entityId: activityId,
+    });
+    return { ok: true };
   });
 
   /**
