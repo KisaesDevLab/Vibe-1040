@@ -86,6 +86,26 @@ deduction of 31,500, the engine reports `line12c_deduction_total = 12844` while
 the two. Worth reporting upstream; this app does not compare that line, and it is listed among the
 computed-only figures, so a draft would display it. Raised rather than worked around.
 
+**Governance written the same day, and neither question is answered:**
+
+- **Q21 carries a drafted proposal, not an answer.** `docs/wisp-amendment.md` has a new **§4.1**
+  setting out the §7216 position for the draft return in full, marked in its own first paragraph
+  as unapproved, and §1's data-capture sentence now points at it. The argument turns on the
+  disclosure analysis being unaffected — the engine is a binary on the appliance with no
+  credentials and no outbound connection, so the set of third parties receiving taxpayer
+  information is identical with the feature on and off. The distinction the firm must be willing
+  to defend (arithmetic from stated inputs is not a substantive determination) is stated plainly
+  rather than smoothed over. **`DRAFT_RETURN_ENABLED` stays off for live client data until Kurt
+  answers.**
+- **Q22 carries an inventory, not an answer.** Two files cannot be published as written:
+  `docs/wisp-amendment.md`, which names the firm's accepted exposures and the absence of a
+  US-region control, and `docs/sso.md`, which documents the break-glass account and its recovery.
+  The recommendation recorded there is to **split rather than sanitise**, keeping the
+  firm-specific half in a private sibling repository so it stays under version control. The
+  blocking half is not this repo's: AGPL §1 needs `@kisaes/vibe-ai-client` and
+  `@kisaesdevlab/vibe-auth` conveyable, which are decisions for those repositories. Nothing has
+  been published, moved or deleted.
+
 **Still not verified:**
 
 - `opentax/Dockerfile` has **never been built** — Docker is unavailable in the development

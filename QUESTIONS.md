@@ -78,7 +78,7 @@ described accurately, and confirm the DigitalOcean DPA covers it.
 ### Q21 — Does the §7216 position survive a locally computed draft return?
 **Gates:** P17 exit, and live client data through the draft return. **Raised:** 2026-09-25.
 
-`docs/wisp-amendment.md:98` states the firm's position in one sentence: "Because the system
+`docs/wisp-amendment.md` §4 states the firm's position in one sentence: "Because the system
 performs data capture and makes no substantive determinations, the processing is intended to
 fall within the auxiliary service provider treatment of Treas. Reg. §301.7216-2(d), which
 does not require separate written taxpayer consent." CLAUDE.md §11 says the same thing, and
@@ -116,6 +116,30 @@ Three things to settle:
 
 Until this is answered, `DRAFT_RETURN_ENABLED` stays off in any deployment holding live
 client data, and P17 has not exited.
+
+**Proposal drafted 2026-09-25, awaiting sign-off — not an answer.** `docs/wisp-amendment.md`
+now carries a new **§4.1** setting the position out in full, and §1's data-capture sentence is
+amended to point at it. The subsection is marked as unapproved proposed language in its own
+first paragraph, and the file's status line names this question. Three things in it are worth
+reading before answering:
+
+- **The disclosure analysis is unaffected, and that is the material point.** The engine is a
+  binary on the firm's own appliance with no credentials and no outbound connection. The set of
+  third parties receiving taxpayer information is identical with the feature on and off. §3's
+  list does not change, so §301.7216-2(d) applies exactly as it did.
+- **The three controls that keep the app on the data-capture side are in code, not guidance**:
+  a populated judgment box withholds its whole document (so an SSA-1099 never reaches the
+  engine at all), filing status is supplied by the preparer rather than inferred, and a value
+  nobody has accepted does not feed the computation.
+- **The distinction the firm has to be willing to defend is stated plainly rather than
+  smoothed over**: the app now performs arithmetic over amounts a preparer has accepted, from
+  inputs a preparer has stated, and the position is that arithmetic from stated inputs is not a
+  substantive determination. §4.1 says so in those words rather than asserting the conclusion.
+
+One editorial question is left open in §4.1 rather than decided: whether OpenTax belongs in
+§3's service-provider list at all, given that it receives nothing and is software on the
+appliance rather than a provider. Naming it anyway may still help a reader of the WISP know
+what is installed and computing there.
 
 **A:**
 
@@ -161,6 +185,65 @@ than a dependency of the app, and with `DRAFT_RETURN_ENABLED` unset the app cont
 no OpenTax code at all. Whether that severability is enough is a question for a lawyer, not
 for this file. Do not move the integration in-process, and do not vendor the engine's source
 into `src/`, without answering this first.
+
+---
+
+**Inventory taken 2026-09-25, on the working assumption "prepare to go public". Nothing has been
+published, moved or deleted.** What follows is what publication would cost, so the decision can be
+made against specifics rather than an impression.
+
+**Two files cannot be published as written, and for the same reason: they document what this firm
+has accepted and how it recovers, not how the software works.**
+
+`docs/wisp-amendment.md` is the harder one. It names the firm's service providers and the terms
+they were accepted on; it records, in §3.1 and §4, two exposures the firm has consciously taken —
+page images carrying SSNs egressing unscrubbed to a cloud provider, and staff credentials crossing
+the office network in cleartext in LAN mode — and it states that the firm has **no technical
+control** guaranteeing US-only processing. Published, that is a map of where this firm is weakest,
+attributable to it. The software can be described without any of it.
+
+`docs/sso.md` documents the break-glass account by name (`vibe-breakglass`), where its password is
+printed, how it is rotated, and the window in which it exists with a password and no second factor.
+None of that is secret in the cryptographic sense, and all of it is operationally useful to someone
+who has found the appliance.
+
+**Two options, and they are not equivalent.**
+
+*Sanitise in place.* Both files can be rewritten to describe the mechanism without the firm's
+posture. What has to leave is the firm's own risk acceptances, the provider terms it relied on and
+the date it verified them, and the specific account name and recovery procedure. The result is a
+useful public document and a **materially less useful internal one** — the WISP amendment exists
+precisely to be pasted into the firm's WISP, and a version with the accepted exposures removed
+cannot serve that purpose. So sanitising is not editing; it is splitting one document into two.
+
+*Move the firm-specific half out of this repository.* `wisp-amendment.md` and the operator half of
+`sso.md` become firm records kept wherever the WISP is kept, and this repo keeps mechanism-only
+documents pointing at them. The cost is that they leave version control, which is exactly what has
+kept them accurate through nine releases.
+
+**Recommendation, for the firm to accept or reject:** split rather than sanitise, and keep the
+firm-specific documents in a **private sibling repository** rather than out of version control
+altogether. That preserves the history and the review discipline while letting this repository be
+published. It does mean the split happens before publication, not after.
+
+**No third-party content is in the way.** The fixtures are synthetic by rule (STATE.md: "All
+fixtures must be synthetic or fully de-identified"), the IRS-layout fixtures are generated from
+public forms, and no client document has ever been committed. No third-party copyright issue has
+been found.
+
+**What is still blocking, and it is not this repository's to decide.** AGPL §1 requires
+Corresponding Source for the first-party packages this app is built to require:
+`@kisaes/vibe-ai-client`, on no registry and linked out of a sibling checkout by
+`scripts/install-deps.mjs`, and `@kisaesdevlab/vibe-auth`, restricted on GitHub Packages.
+Publishing without resolving those would convey an AGPL work whose Corresponding Source cannot be
+obtained. **Those are decisions for `../Vibe-AI-Router` and Vibe Auth and should be raised there as
+questions of their own, not assumed here.**
+
+**The §13 tension is unchanged either way.** Going public forecloses nothing by itself — Kisaes
+owns this repository's copyright and can dual-license its own code. But a proprietary licence for a
+work that *incorporates* AGPL OpenTax still needs Filed's commercial licence
+(`otta@filed.com`), public repository or not. If the licensed-Vibe-product route is still wanted,
+that conversation is independent of this question and worth starting separately.
 
 **A:**
 

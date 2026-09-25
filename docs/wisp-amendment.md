@@ -1,7 +1,8 @@
 # WISP amendment — Vibe 1040
 
 **Status: DRAFT. Requires review by whoever owns the firm's WISP before live client data.**
-Tracked as QUESTIONS.md Q12.
+Tracked as QUESTIONS.md **Q12** (unscrubbed page-image egress) and **Q21** (§4.1, the optional
+draft return). §4.1 in particular is proposed language that has not been reviewed.
 
 This document states what Vibe 1040 actually does with taxpayer data, so the firm's Written
 Information Security Program can describe it accurately. It is written to be pasted into
@@ -16,10 +17,15 @@ Vibe 1040 accepts a bundle of a client's tax source documents (W-2s, 1099s, 1098
 Form 1040 and schedule line numbers. Firm staff upload the documents; there is no
 client-facing interface and no client account.
 
-The system performs **data capture only**. It makes no substantive determination about
-filing status, income characterization, deductions, or credits. Items whose treatment
-requires professional judgment are listed, unresolved, in a "Judgment Required" section of
-the worksheet.
+The system performs **data capture**. It makes no substantive determination about filing
+status, income characterization, deductions, or credits. Items whose treatment requires
+professional judgment are listed, unresolved, in a "Judgment Required" section of the
+worksheet.
+
+**Since 2026-09-25 the system can also produce an optional draft Form 1040** by passing the
+amounts it read to a separate calculation engine that runs on the appliance. It is off by
+default, and §4.1 below describes it and the §7216 analysis it requires. Nothing about that
+feature causes taxpayer data to reach any party that did not already receive it.
 
 ## 2. Categories of information processed
 
@@ -112,6 +118,70 @@ refuses to start otherwise.
 > requests; the §7216 position rests on DigitalOcean's published terms (§3) and the executed
 > DPA. Revisit when Router R6 lands (QUESTIONS.md Q11) or if the firm moves to DigitalOcean
 > dedicated inference in a named US region.
+
+### 4.1 The optional draft return (added 2026-09-25 — DRAFT LANGUAGE, NOT YET APPROVED)
+
+> **This subsection is a proposal.** It was drafted by the engineer who built the feature and
+> **has not been reviewed or approved by the firm.** It is tracked as QUESTIONS.md **Q21**, which
+> is open. Until Q21 is answered, the feature is disabled (`DRAFT_RETURN_ENABLED=false`) in any
+> deployment holding live client data, and the paragraphs below must not be relied on.
+
+The system can pass the dollar amounts it has read to **OpenTax**, an open-source federal Form
+1040 calculation engine (AGPL v3), and display the lines that engine computes beside the
+system's own reported totals. A preparer uses it to check the two against each other.
+
+**No new disclosure occurs.** This is the material point for §7216. The engine is a single
+binary running on the firm's own appliance, alongside the application and inside the same
+network boundary. It holds no credentials, opens no outbound connection, and transmits nothing.
+The set of third parties that receive taxpayer information is therefore **exactly the same with
+the feature on as with it off** — the service providers listed in §3, and no others. The
+§301.7216-2(d) analysis in §3 and above is unaffected.
+
+**The system still makes no substantive determination.** Three controls enforce this, and all
+three are in code rather than in guidance:
+
+1. **Anything requiring professional judgment is withheld from the engine entirely**, by
+   document and not by field. If any box on a document is one the system marks as needing a
+   preparer's judgment and that box is filled in, the **whole document** is withheld. In
+   practice this means an SSA-1099 or RRB-1099 never reaches the engine at all, because the
+   gross-benefit box is always printed and the taxable portion of Social Security is precisely
+   the determination the system does not make. The same applies to every Schedule K-1, to
+   SSA-1042S, to a 1099-R marked "taxable amount not determined", and to a 1099-G reporting a
+   state or local tax refund.
+2. **Filing status is supplied by the preparer**, not inferred. No source document states it,
+   and the system will not guess: it asks, and computes nothing until a person answers.
+   Age-65, blindness and dependent information come from the preparer on the same basis.
+3. **A value no person has accepted does not feed the computation.** A figure flagged for
+   review, or one the system cannot tie back to a specific location on the page, withholds its
+   document.
+
+**Every figure is presented as advisory and incomplete.** A draft produced from source
+documents alone cannot be a return: no bundle carries itemised deductions, estimated tax
+payments, cost basis, prior-year carryovers or dependents. The system therefore lists
+everything it left out, beside the figures rather than in a footnote, and states on each
+surface that the totals are wrong by whatever was withheld. The engine and its version are
+named on the artifact.
+
+**No return is transmitted or filed.** The engine is capable of producing an e-file (MeF) XML
+document; the system does not use that capability, does not transmit anything to the IRS or to
+any transmitter, and has no electronic filing identification number or related surface.
+
+**The position, stated plainly and for the firm to accept or reject.** What changed on
+2026-09-25 is that the system now performs *arithmetic* over amounts a preparer has accepted,
+from inputs a preparer has stated, on the firm's own hardware. It did not previously do so. The
+firm's position is that computing arithmetic from stated inputs is not a substantive
+determination about filing status, income characterization, deductions or credits — the
+determinations are made by the preparer, before the arithmetic runs, and every question the
+system cannot answer without making one is withheld and reported instead. **Whoever owns this
+WISP should satisfy themselves that this distinction is one the firm is prepared to defend**,
+because it is the distinction the §301.7216-2(d) treatment now rests on.
+
+**One question deliberately left open.** §3 lists the parties that receive taxpayer
+information. OpenTax receives none — it is software installed on the appliance, not a service
+provider, and on that reading it does not belong in §3 at all. It may nonetheless be worth
+naming there for completeness, so that a reader of the WISP knows what is installed and
+computing on the appliance. That is an editorial choice for the WISP's owner.
+
 
 ## 5. Safeguards Rule controls implemented in this system
 
