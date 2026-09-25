@@ -971,6 +971,43 @@ requires an explicit decision entry below, not a silent implementation choice.
 Append here when a locked decision changes or a significant implementation choice is made
 that future phases depend on. Date, decision, reason, phases affected.
 
+**2026-09-25 — Five environment keys become audited settings; five stay in the environment.**
+(§11, §14, QUESTIONS.md Q26. Kurt's call, asked in his own words: "Please turn on by default or
+allow a toggle in UI", then "you know what may all these accessible via UI!")
+
+**Reverses the locked "it changes what the app computes about a taxpayer, which is not a
+click".** The reversal is not a loosening, and this entry exists so nobody re-derives the old
+rule from the old sentence. What that rule wanted was a *record* of who changed something
+consequential. An environment key produces the opposite: an operator editing a file over SSH,
+with nothing saying who or when. A setting with a typed acknowledgement, an audit row recording
+that the admin was told and proceeded, and the provenance rendered beside the switch is
+**strictly better evidence** than the rule it replaces.
+
+Moved: `DRAFT_RETURN_ENABLED`, `OPENTAX_VERSION`, `ROUTER_EXPECTED_SENSITIVITY`,
+`EXTRACT_ATTACH_PAGE_IMAGE`, `OCR_FALLBACK_ENABLED` — each seeded from the environment, so no
+existing deployment changes behaviour. Only the permissive direction asks for an
+acknowledgement; switching a guard back off asks nothing, because friction on the safe direction
+is how a dangerous state gets left in place.
+
+Not moved, and the two reasons are different in kind: `ROUTER_REQUIRE_US_REGION` is §11's one
+control, asserted at startup and failing closed, so a running process cannot honestly offer to
+relax it. `VIBE_AI_ROUTER_URL`, `STORAGE_DRIVER`, `TIN_HASH_SALT` and `STORAGE_ENCRYPTION_KEY`
+would destroy or leak the firm's own data — and the blob key **cannot** be a setting at all,
+because `firm_settings` secrets are encrypted with it, which is a cycle rather than a policy
+view. The page now says which reason applies to which key and invites the argument.
+
+**Q21 is unchanged and was shipped ahead of, deliberately.** The draft return still must not run
+against live client data until the WISP's §7216 wording is ruled on. What changed is that the
+switch exists; the acknowledgement names the open question, so nobody turns it on uninformed.
+
+**Two findings the request did not anticipate.** `EXTRACT_ATTACH_PAGE_IMAGE` and
+`OCR_FALLBACK_ENABLED` decide which task classes get *registered* at startup, so a live read
+would have the app calling a class this process never declared — `capability_missing`, which §3
+says is an app bug that must log loudly. They are captured in a boot snapshot
+(`src/settings/runtime.ts`) that throws rather than falling back to the environment, and the UI
+badges them pending until a restart. And `DECLARATIONS` had to become `declarations()`: as a
+module-level constant it was evaluated before boot had read anything, which threw on startup.
+
 **2026-09-25 — A malformed request is a 400 across the whole API, not a 500.** (build)
 
 Found by the first test that posted a bad body over HTTP rather than calling a service directly.

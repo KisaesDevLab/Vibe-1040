@@ -10,7 +10,8 @@
  * audited firm-admin action that this app cannot perform for itself.
  */
 import type { TaskClassDeclaration } from '@kisaes/vibe-ai-client';
-import { env } from '../config/env.ts';
+
+import { startupSettings } from '../settings/runtime.ts';
 
 export const APP_NAME = 'vibe-1040';
 
@@ -55,7 +56,17 @@ export const SENSITIVITY_CHECKED: readonly string[] = [
   TASK_CLASS.FIELD_EXTRACT,
 ];
 
-export const DECLARATIONS: TaskClassDeclaration[] = [
+/**
+ * The classes this app registers, as a **function** rather than a constant.
+ *
+ * It has to be called rather than read because `v1040_field_extract`'s shape depends on
+ * `extraction.attach_page_image`, which is now a setting: with the page image attached the class
+ * requires `vision`, so policy refuses a text-only binding instead of a model silently ignoring
+ * the image. A module-level constant would have been evaluated at import time — before boot read
+ * the setting at all — so this was a `throw` on startup until it became a function.
+ */
+export function declarations(): TaskClassDeclaration[] {
+  return [
   {
     key: TASK_CLASS.PAGE_CLASSIFY,
     description: 'Classify a rasterized page as a 1040 source form type',
@@ -74,20 +85,21 @@ export const DECLARATIONS: TaskClassDeclaration[] = [
   },
   {
     key: TASK_CLASS.FIELD_EXTRACT,
-    description: env.EXTRACT_ATTACH_PAGE_IMAGE
+    description: startupSettings().attachPageImage
       ? 'Bind tax-form schema fields to layout span ids, reading the page image alongside'
       : 'Bind tax-form schema fields to positioned layout spans',
     // With the page image attached the binder needs a vision model; the requirement is
     // declared so policy refuses a text-only binding instead of the model silently ignoring
     // the image. Registration re-reads this on every start.
-    requires: env.EXTRACT_ATTACH_PAGE_IMAGE ? { vision: true, json_schema: true } : { json_schema: true },
+    requires: startupSettings().attachPageImage ? { vision: true, json_schema: true } : { json_schema: true },
     // 4096 truncated ten binding responses in the first week (router ledger, 2026-09-17): a
     // consolidated package's field list plus a verbose model overran it.
     defaultMaxTokens: 8192,
   },
-];
+  ];
+}
 
-/** Appended to `DECLARATIONS` only when the OCR fallback is enabled. */
+/** Appended to `declarations()` only when the OCR fallback is enabled. */
 export const OPTIONAL_DECLARATIONS: TaskClassDeclaration[] = [
   {
     key: TASK_CLASS.OCR_TRANSCRIBE,

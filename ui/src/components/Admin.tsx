@@ -6,6 +6,7 @@ import type {
   DraftEngineReadiness,
   EnvSetting,
   SettingRow,
+  EngineReleaseCheck,
   StagedEngineReport,
   UserRow,
 } from '../types';
@@ -28,6 +29,7 @@ const GROUP_LABELS: Record<string, string> = {
   sms: 'SMS delivery',
   authentication: 'Authentication',
   licensing: 'Licensing',
+  engine: 'Engine and pipeline',
 };
 
 export function Admin({ role, onError }: { role: string; onError: (m: string) => void }) {
@@ -146,9 +148,10 @@ function DraftEngineTab({ onError }: { onError: (m: string) => void }) {
       <div className="card">
         <h3>Draft return engine</h3>
         <p className="muted">
-          The draft return is off for this deployment. It is an environment key,{' '}
-          <code>DRAFT_RETURN_ENABLED</code>, not a setting on this page, because it changes what
-          the app computes about a taxpayer — which is not a click.
+          The draft return is switched off for this firm, so there is no engine to report on.
+          Turn it on under <strong>Settings → Engine and pipeline</strong>. It takes effect
+          immediately and the change is recorded against your account, because it changes what
+          the app computes about a taxpayer.
         </p>
       </div>
     );
@@ -193,6 +196,8 @@ function DraftEngineTab({ onError }: { onError: (m: string) => void }) {
           </tr>
         </tbody>
       </table>
+
+      <LatestRelease />
 
       {state.engine.ok && !state.versionsAgree && (
         <p className="engine-bad">
@@ -416,6 +421,102 @@ function StagedEngine({ onError, onActivated }: { onError: (m: string) => void; 
   );
 }
 
+/**
+ * "Is there a newer OpenTax?" — and deliberately nothing more (Q23's middle option).
+ *
+ * The temptation with a panel like this is an Upgrade button. There isn't one, and the copy says
+ * why rather than leaving it looking unfinished: on this engine a release that renames an
+ * *optional* field has its amounts accepted and ignored, so the line reads as absent rather than
+ * wrong — which is the one failure this whole app exists to prevent. Being told a release exists
+ * removes the argument for floating; installing it unattended would reintroduce the risk the pin
+ * was protecting against.
+ */
+function LatestRelease() {
+  const [check, setCheck] = useState<EngineReleaseCheck | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback((refresh?: boolean) => {
+    setBusy(true);
+    api
+      .latestEngine(refresh)
+      .then(setCheck)
+      .catch(() => setCheck(null))
+      .finally(() => setBusy(false));
+  }, []);
+
+  useEffect(() => load(), [load]);
+
+  // Off is the default and is not a fault: say where to turn it on and what it costs.
+  if (check && !check.enabled) {
+    return (
+      <p className="muted engine-latest">
+        Release checking is off. Turn it on in <strong>Settings → Engine and pipeline</strong> —
+        it opens an outbound connection from the appliance to the release host, which is a
+        network-policy decision rather than a default.
+      </p>
+    );
+  }
+
+  if (!check) return <p className="muted engine-latest">{busy ? 'Checking for a newer engine…' : null}</p>;
+
+  return (
+    <div className="engine-latest">
+      {check.unavailable ? (
+        <p className="muted">
+          Could not reach the release feed: {check.unavailable}. Nothing is wrong with the running
+          engine — this check is a convenience and its absence is not an error.
+        </p>
+      ) : check.newerAvailable && check.latest ? (
+        <>
+          <p className="engine-newer">
+            <strong>{check.latest.tag}</strong> is available
+            {check.latest.publishedAt && <> (published {new Date(check.latest.publishedAt).toLocaleDateString()})</>}
+            . This deployment expects <strong>{check.expected}</strong>.
+          </p>
+          {check.latest.sha256 && (
+            <p className="setting-help">
+              Published digest for <code>{check.latest.assetName}</code>:{' '}
+              <code className="engine-digest">{check.latest.sha256}</code>
+              <br />
+              {/*
+                Said plainly, because a checksum next to a download link reads as proof and this
+                one is not: it comes from the same place as the binary. It saves retyping, and the
+                checks that actually protect you run later and are unchanged.
+              */}
+              This digest comes from the same source as the binary, so it is not independent
+              verification — it is here to save retyping into the staging form. What protects you
+              is that a staged candidate&rsquo;s digest is checked before it is ever run, its own
+              field catalogue is checked against the node map, and{' '}
+              <code>npm run draft -- --truth</code> measures behaviour rather than names.
+            </p>
+          )}
+          <p className="setting-help">
+            <strong>Nothing here installs it.</strong> Upgrading stays the procedure in{' '}
+            <code>docs/opentax-draft-return.md</code> §7 — and remember the version has two homes:
+            staging moves the running binary, while <code>opentax/pinned.json</code> and the image
+            build decide what a redeploy brings back.
+          </p>
+        </>
+      ) : (
+        <p className="engine-good">
+          {check.latest
+            ? `Up to date — ${check.latest.tag} is the newest release and this deployment expects ${check.expected}.`
+            : `No newer release reported. This deployment expects ${check.expected}.`}
+        </p>
+      )}
+      {/*
+        Not "Check again": the catalogue check directly below this had that label already, and
+        rendering the two together put two identically-named buttons one above the other doing
+        entirely different things — one asks a third party what exists, the other runs the local
+        binary. Found by looking at it.
+      */}
+      <button type="button" disabled={busy} onClick={() => load(true)}>
+        {busy ? 'Checking…' : 'Check for releases'}
+      </button>
+    </div>
+  );
+}
+
 // ── settings ─────────────────────────────────────────────────────────────────
 
 function SettingsTab({ onError }: { onError: (m: string) => void }) {
@@ -424,6 +525,14 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  /**
+   * Which pending acknowledgements the admin has ticked.
+   *
+   * Inline rather than a `window.confirm`: the text says which question is still open and what
+   * gets recorded, and a native dialog renders it as an unstyled wall that people click through
+   * without reading. Cleared on every load so it can never carry over to a later change.
+   */
+  const [acked, setAcked] = useState<Record<string, boolean>>({});
 
   const load = useCallback(() => {
     api
@@ -432,6 +541,7 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
         setRows(d.settings);
         setEnv(d.environment);
         setDraft(Object.fromEntries(d.settings.map((s) => [s.key, s.value])));
+        setAcked({});
       })
       .catch((e: Error) => onError(e.message));
   }, [onError]);
@@ -440,14 +550,36 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
 
   const dirty = rows.filter((r) => JSON.stringify(draft[r.key]) !== JSON.stringify(r.value));
 
+  /**
+   * Which dirty rows need the admin to confirm what they change, before anything is sent.
+   *
+   * Asked here rather than trusted here — the server refuses an unacknowledged change with a
+   * 409 either way (`AcknowledgementRequiredError`), so this dialog is the courtesy and the
+   * server check is the control. Only the permissive direction asks: switching a guard back
+   * off is the safe direction and must never be made tedious.
+   */
+  const needsAck = dirty.filter(
+    (r) => r.acknowledge !== null && draft[r.key] !== r.value && draft[r.key] !== false,
+  );
+  /** Every pending acknowledgement ticked? The save button waits on this rather than a dialog. */
+  const ackSatisfied = needsAck.every((r) => acked[r.key] === true);
+
   const save = () => {
+    if (!ackSatisfied) return;
     setBusy(true);
     setSaved(false);
     api
-      .updateSettings(dirty.map((r) => ({ key: r.key, value: draft[r.key] })))
+      .updateSettings(
+        dirty.map((r) => ({
+          key: r.key,
+          value: draft[r.key],
+          ...(needsAck.some((n) => n.key === r.key) ? { acknowledged: true } : {}),
+        })),
+      )
       .then((d) => {
         setRows(d.settings);
         setDraft(Object.fromEntries(d.settings.map((s) => [s.key, s.value])));
+        setAcked({});
         setSaved(true);
       })
       .catch((e: Error) => onError(e.message))
@@ -477,6 +609,8 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
                   {r.secret && (
                     <span className={r.isSet ? 'pill ok' : 'pill warn'}>{r.isSet ? 'set' : 'not set'}</span>
                   )}
+                  {r.restartRequired && <span className="pill">needs a restart</span>}
+                  {r.acknowledge !== null && <span className="pill warn">audited</span>}
                 </div>
                 <SettingInput
                   row={r}
@@ -484,6 +618,47 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
                   onChange={(v) => setDraft((d) => ({ ...d, [r.key]: v }))}
                 />
                 <span className="setting-help">{r.help}</span>
+                {r.note && <span className="setting-help">{r.note}</span>}
+                {/*
+                  Said at the moment it is true, not in a paragraph at the top of the page: this
+                  value is read once at boot, so a saved change is pending until someone restarts
+                  the API and the worker. A switch that moves and silently changes nothing is the
+                  same defect as the filing-status control that rendered dead for a week.
+                */}
+                {r.restartRequired && JSON.stringify(draft[r.key]) !== JSON.stringify(r.value) && (
+                  <span className="warn-note">
+                    Saving this stores it, but it does not take effect until the API and the
+                    worker restart — the task classes it decides are registered at startup.
+                  </span>
+                )}
+
+                {/*
+                  The acknowledgement, shown where the change is. The server refuses an
+                  unacknowledged change with a 409 regardless, so this is not the control — but it
+                  is where the admin finds out what they are agreeing to, so it says the specific
+                  thing (which question is open, what gets recorded) rather than "are you sure".
+                */}
+                {needsAck.some((n) => n.key === r.key) && (
+                  <div className="setting-ack">
+                    <p className="warn-note">{r.acknowledge}</p>
+                    <label className="ack-check">
+                      <input
+                        type="checkbox"
+                        checked={acked[r.key] === true}
+                        onChange={(e) => setAcked((a) => ({ ...a, [r.key]: e.target.checked }))}
+                      />
+                      <span>I understand, and this is recorded against my account.</span>
+                    </label>
+                  </div>
+                )}
+
+                {/* Provenance where the switch is, not only in the audit tab. */}
+                {r.updatedAt && (
+                  <span className="setting-provenance">
+                    Changed by {r.updatedBy ?? 'an admin'} on{' '}
+                    {new Date(r.updatedAt).toLocaleString()}
+                  </span>
+                )}
               </label>
             ))}
 
@@ -495,10 +670,15 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
       <section className="card">
         <h2>Environment (read-only)</h2>
         <p className="muted">
-          Set at provisioning and changed only in <code>.env</code> with a restart. These are
-          deliberately not editable here: the region assertion is the control keeping taxpayer
-          page images inside US inference, and the keys below would be handed to anyone who
-          compromised an admin account.
+          Set at provisioning and changed only in <code>.env</code>. Most of what used to be
+          here is now editable above, under <strong>Engine and pipeline</strong>. These five are
+          not, and for two different reasons &mdash; each row says which:{' '}
+          <strong>changing it would destroy or leak this firm&rsquo;s own data</strong> (rotating
+          the TIN salt orphans every taxpayer record; the blob key cannot be a setting at all,
+          because the secrets in this table are encrypted with it), or{' '}
+          <strong>it is the one control §11 names</strong>, asserted at startup and failing
+          closed. If one of these should move too, it needs a migration path rather than a
+          switch &mdash; say so and it gets one.
         </p>
         {env.map((e) => (
           <div key={e.key} className="env-row">
@@ -511,7 +691,17 @@ function SettingsTab({ onError }: { onError: (m: string) => void }) {
 
       <div className="save-bar">
         <span>{dirty.length > 0 ? `${dirty.length} unsaved change(s)` : saved ? 'Saved.' : 'No changes.'}</span>
-        <button disabled={busy || dirty.length === 0} onClick={save}>
+        {/*
+          Say what is holding the save, rather than presenting a disabled button with no reason —
+          the acknowledgement may be scrolled well off screen in a page this long.
+        */}
+        {dirty.length > 0 && !ackSatisfied && (
+          <span className="warn-note">
+            {needsAck.filter((r) => acked[r.key] !== true).map((r) => r.label).join(', ')} needs
+            acknowledging above before this can save.
+          </span>
+        )}
+        <button disabled={busy || dirty.length === 0 || !ackSatisfied} onClick={save}>
           Save changes
         </button>
       </div>

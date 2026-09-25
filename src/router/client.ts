@@ -10,9 +10,11 @@
 import { VibeAiClient, VibeAiError } from '@kisaes/vibe-ai-client';
 import type { ChatMessage, RequestOptions } from '@kisaes/vibe-ai-client';
 import { env } from '../config/env.ts';
+import { setting } from '../settings/store.ts';
+import { startupSettings } from '../settings/runtime.ts';
 import {
   APP_NAME,
-  DECLARATIONS,
+  declarations,
   OPTIONAL_DECLARATIONS,
   SENSITIVITY_CHECKED,
   TASK_CLASS,
@@ -239,9 +241,12 @@ export function retryRegistrationInBackground(intervalMs = 60_000): void {
  *  - the router cannot be reached at all → nothing can proceed.
  */
 export async function registerAndVerify(): Promise<StartupReport> {
-  const classes = env.OCR_FALLBACK_ENABLED
-    ? [...DECLARATIONS, ...OPTIONAL_DECLARATIONS]
-    : DECLARATIONS;
+  // The boot snapshot, not a live read: registration happens once per process, so a class
+  // switched on after startup would be called and never have been declared (§3's
+  // `capability_missing`, which is an app bug that must log loudly — and it would be right).
+  const classes = startupSettings().ocrFallbackEnabled
+    ? [...declarations(), ...OPTIONAL_DECLARATIONS]
+    : declarations();
 
   const { registered } = await ai.registerTaskClasses({
     app: APP_NAME,
@@ -250,7 +255,8 @@ export async function registerAndVerify(): Promise<StartupReport> {
   });
 
   const warnings: string[] = [];
-  const expected = env.ROUTER_EXPECTED_SENSITIVITY;
+  // Live: this only decides what startup *compares against*, so it can change without a restart.
+  const expected = await setting<string>('router.expected_sensitivity');
 
   for (const key of classes.map((c) => c.key)) {
     const row = registered.find((r) => r.key === key);

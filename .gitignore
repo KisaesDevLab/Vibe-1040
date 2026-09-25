@@ -17,3 +17,8 @@ ui/tsconfig.tsbuildinfo
 *.tsbuildinfo
 vendor/
 .router/
+
+# Redis's snapshot, written into whatever directory redis-server was started from — which is
+# the repo root when someone brings the stack up by hand to look at the UI. Runtime state, and
+# on a real box it would hold queued job payloads.
+dump.rdb

@@ -15,6 +15,7 @@ import { changeOwnPassword, completeReset, passwordProblem, requestReset } from 
 import { satisfyMfa } from '../auth/session.ts';
 import { db } from '../db/client.ts';
 import { engineReadiness } from '../draft/generate.ts';
+import { checkForNewerEngine } from '../draft/releases.ts';
 import {
   activateStagedEngine,
   discardStagedEngine,
@@ -27,7 +28,12 @@ import { breakglassStatus, isBreakglassEmail } from '../lib/vibeAuthUsers.ts';
 import { normalizePhone, verifyEmail } from '../notify/channels.ts';
 import { retentionForecast, runRetention } from '../retention/purge.ts';
 import { readOnlyEnvironment } from '../settings/registry.ts';
-import { setting, settingsForAdmin, updateSettings } from '../settings/store.ts';
+import {
+  AcknowledgementRequiredError,
+  setting,
+  settingsForAdmin,
+  updateSettings,
+} from '../settings/store.ts';
 import { auditAccess, requireRole, requireUser } from './middleware.ts';
 
 export function registerAdminRoutes(app: FastifyInstance): void {
@@ -42,13 +48,33 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     const user = await requireRole(req, reply, ['admin']);
     if (!user) return;
     const body = z
-      .object({ updates: z.array(z.object({ key: z.string(), value: z.unknown() }).transform((u) => ({ key: u.key, value: u.value }))) })
+      .object({
+        updates: z.array(
+          z
+            .object({ key: z.string(), value: z.unknown(), acknowledged: z.boolean().optional() })
+            .transform((u) => ({
+              key: u.key,
+              value: u.value,
+              ...(u.acknowledged === undefined ? {} : { acknowledged: u.acknowledged }),
+            })),
+        ),
+      })
       .parse(req.body);
 
     try {
       await updateSettings(body.updates, { id: user.id, ip: req.ip });
       return { ok: true, settings: await settingsForAdmin() };
     } catch (err) {
+      // A missing acknowledgement is its own answer, not a validation error: the UI has to be
+      // able to show the text and ask, and a 409 with the text in it is what lets it.
+      if (err instanceof AcknowledgementRequiredError) {
+        return reply.code(409).send({
+          error: 'acknowledgement_required',
+          key: err.key,
+          acknowledge: err.acknowledge,
+          message: err.message,
+        });
+      }
       return reply.code(400).send({ error: 'invalid_settings', message: (err as Error).message });
     }
   });
@@ -335,6 +361,26 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     const { taxYear } = z.object({ taxYear: z.coerce.number().int().optional() }).parse(req.query);
     await auditAccess(req, 'admin.draft_engine_checked', { detail: { taxYear: taxYear ?? null } });
     return engineReadiness(taxYear);
+  });
+
+  /**
+   * Whether a newer engine release exists (Q23's middle option, built 2026-09-25).
+   *
+   * **Reads and reports. There is no code path from here to a running binary** — that is the
+   * answer to "always use the latest": being told costs nothing, while upgrading automatically
+   * would make a renamed optional field arrive unannounced, and a renamed optional field is
+   * accepted by the engine, ignored, and leaves the line reading as absent.
+   *
+   * Unaudited: it reports deployment posture and touches no taxpayer data. Off unless the firm
+   * switched it on, because it is an outbound connection the appliance otherwise never makes.
+   */
+  app.get('/api/admin/draft-engine/latest', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin']);
+    if (!user) return;
+    const { refresh } = z
+      .object({ refresh: z.enum(['true', '1']).optional() })
+      .parse(req.query);
+    return checkForNewerEngine(refresh ? { force: true } : {});
   });
 
   /**

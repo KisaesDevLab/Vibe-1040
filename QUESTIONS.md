@@ -11,6 +11,63 @@ to the Resolved section.
 
 ## Blocking
 
+### Q26 — Which controls may be a click, and which may not?
+**Gates:** nothing — **answered on the day it was raised.** **Raised and answered:** 2026-09-25.
+
+Raised by Kurt looking at two pages that told him no:
+
+> "The draft return is off for this deployment. It is an environment key, `DRAFT_RETURN_ENABLED`,
+> not a setting on this page, because it changes what the app computes about a taxpayer — which
+> is not a click."
+
+> "Environment (read-only). Set at provisioning and changed only in `.env` with a restart. These
+> are deliberately not editable here: the region assertion is the control keeping taxpayer page
+> images inside US inference, and the keys below would be handed to anyone who compromised an
+> admin account."
+
+**A: 2026-09-25 — most of them may. Five may not, for two different reasons.** The answer is
+that "not a click" was the wrong conclusion from a right concern. What the concern wanted was a
+**record** of who changed a thing that matters — and an environment key produces the opposite of
+a record: an operator editing a file over SSH, with nothing anywhere saying who or when. An
+audited setting is strictly better evidence than the rule it replaces.
+
+So `DRAFT_RETURN_ENABLED`, `OPENTAX_VERSION`, `ROUTER_EXPECTED_SENSITIVITY`,
+`EXTRACT_ATTACH_PAGE_IMAGE` and `OCR_FALLBACK_ENABLED` are settings, seeded from the environment
+so no existing deployment changes behaviour. Turning one of the consequential ones on takes a
+typed acknowledgement naming what changes, the audit row records that the admin was told and
+proceeded, and the provenance renders beside the switch. Turning one **off** asks nothing:
+friction on the safe direction is how a dangerous state gets left in place.
+
+**The five that did not move, and why they are not one category:**
+
+| key | why |
+|---|---|
+| `ROUTER_REQUIRE_US_REGION` | The one control §11 names. Asserted at startup and fails closed, so a running process cannot honestly offer to relax it — the offer could not take effect until a restart anyway |
+| `VIBE_AI_ROUTER_URL` | A one-field exfiltration channel: an admin session could point every page image at a host they control, unscrubbed, with nothing in the app looking wrong |
+| `STORAGE_DRIVER` | Switching it does not migrate anything — it points the app at an empty store while every document still reads as present |
+| `TIN_HASH_SALT` | Rotating it does not re-key: every taxpayer record keeps its old hash, so the firm silently acquires a second copy of every client (§7) |
+| `STORAGE_ENCRYPTION_KEY` | **Cannot be a setting at all** — `firm_settings` secrets are encrypted with it, so storing it there would encrypt it with itself. And it makes every existing blob undecryptable |
+
+That last row is the one worth remembering: it is not a policy view that can be overruled, it is
+a cycle. The other four are judgements, and the page now says which is which and invites the
+argument rather than closing it.
+
+**Two things this exposed that were not obvious from the request.** `EXTRACT_ATTACH_PAGE_IMAGE`
+and `OCR_FALLBACK_ENABLED` decide which **task classes are registered with the router at
+startup**, so reading them live would have the app calling a class this process never declared —
+`capability_missing`, which §3 says is an app bug that must log loudly, and it would be right.
+They are captured in a boot snapshot (`src/settings/runtime.ts`) and the UI badges them as
+pending until a restart, because a switch that moves and silently changes nothing is the same
+defect as the filing-status control that rendered dead for a week. And `DECLARATIONS` had to stop
+being a module-level constant, because it was being evaluated before boot had read anything.
+
+**What this does not change:** Q21. The draft return still must not run against live client data
+until the WISP's §7216 wording is ruled on — Kurt's decision was to ship the *switch* ahead of
+that answer, deliberately, and the acknowledgement text names the open question so nobody turns
+it on without being told.
+
+---
+
 ### Q25 — Which TY2026 forms does somebody need to read before the season?
 **Gates:** the TY2026 season — not development, which is done. **Raised:** 2026-09-25.
 
@@ -463,6 +520,15 @@ What was **not** built is a button that downloads and swaps the engine, and this
 check the engine's releases feed and say "2.1.0 is available, here is its checksum", still
 installing nothing. That needs an outbound call to GitHub from the appliance, which is a WISP
 and network-policy question rather than a code one — hence a question rather than a choice.
+
+**Built 2026-09-25**, after Kurt asked how to always run the latest. The middle option is the
+answer to that: being *told* a release exists costs nothing and removes the reason to float,
+while upgrading unattended would make a renamed optional field arrive with nobody watching. It
+is off by default and is an audited opt-in, because the egress is the part somebody has to agree
+to; the digest it shows is explicitly labelled as not independent verification, since it comes
+from the same source as the binary; a pre-release is never reported as the latest; and a test
+reads the module's own source to assert it contains no download, write or execute path, so a
+later change that adds one has to fail and be argued for.
 
 **Asked for, 2026-09-25, and not delivered — `add the install`.** The answer to the above was
 to build the installing half after all. That is a legitimate reversal to ask for; §14 is this

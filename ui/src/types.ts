@@ -158,6 +158,14 @@ export interface SettingRow {
   value: unknown;
   secret: boolean;
   isSet: boolean;
+  note?: string;
+  /** Only takes effect when the API and worker restart; the UI badges it rather than implying it is live. */
+  restartRequired: boolean;
+  /** Non-null when switching this on needs a typed confirmation, and this is what it says. */
+  acknowledge: string | null;
+  /** Who last changed it and when; null while it is still the environment's seeded default. */
+  updatedBy: string | null;
+  updatedAt: string | null;
 }
 
 export interface EnvSetting {
@@ -446,4 +454,21 @@ export interface StagedEngineReport {
   check: CatalogCheck | null;
   findings: string[];
   nodeMap: { taxYear: number; version: string } | null;
+}
+
+/** Admin → Draft engine's "is there a newer one" report. Reports only; installs nothing. */
+export interface EngineReleaseCheck {
+  enabled: boolean;
+  expected: string;
+  latest: {
+    tag: string;
+    version: string;
+    publishedAt: string | null;
+    url: string | null;
+    assetName: string | null;
+    sha256: string | null;
+  } | null;
+  newerAvailable: boolean;
+  unavailable: string | null;
+  checkedAt: string;
 }

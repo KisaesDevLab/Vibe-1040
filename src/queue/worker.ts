@@ -9,6 +9,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { env } from '../config/env.ts';
 import { db, pool } from '../db/client.ts';
 import { setting } from '../settings/store.ts';
+import { loadStartupSettings, startupSettings } from '../settings/runtime.ts';
 import { sourceFiles, users } from '../db/schema.ts';
 import {
   advanceAfterExtraction,
@@ -53,6 +54,18 @@ async function systemUserId(): Promise<string> {
   if (!row) throw new Error('no users exist; run db:seed');
   return row.id;
 }
+
+/**
+ * Read the boot-snapshot settings before the worker takes a single job.
+ *
+ * Top-level await, deliberately placed above the `new Worker(...)` that follows: BullMQ starts
+ * consuming the moment it is constructed, so loading this afterwards would leave a race where
+ * the first job of a restart reads settings that are not there yet and throws. The worker is the
+ * process that actually runs extraction, so it — not just the API — is what has to agree with
+ * what the task classes were registered as.
+ */
+await loadStartupSettings();
+log('worker.startup_settings', { ...startupSettings() });
 
 const worker = new Worker<PipelineJob>(
   QUEUE_NAMES.PIPELINE,
