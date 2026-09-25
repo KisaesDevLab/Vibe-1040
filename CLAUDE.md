@@ -118,12 +118,16 @@ and raise a QUESTIONS.md entry before adding anything in these directions.
   itself: there is no taxable-Social-Security worksheet, no §121 exclusion, no QBI
   calculation anywhere in `src/`. It reports what the documents say and, where a box does not
   map cleanly to a line, it says so and stops.
-  **Amended 2026-09-25 (§14, P17, STATE.md decision log).** It may hand the amounts it read
-  to a separate, deterministic, locally-run engine and show that engine's computed lines
+  **Amended 2026-09-25 (§14, P17 and P18, STATE.md decision log).** It may hand the amounts it
+  read to a separate, deterministic, locally-run engine and show that engine's computed lines
   beside its own reported totals, as a checking aid. That is a narrowing, not a repeal: every
   §9 judgment call is still withheld rather than answered, the engine is a severable optional
-  process and not a library, and no characterization logic is written here. Read §14 before
-  touching any of it.
+  process and not a library, and no characterization logic is written here. It may also
+  **record determinations a preparer has already made** — filing status, dependents, itemised
+  deduction totals, business and rental summaries — so the engine can compute over them. It
+  makes none of them: nothing on those surfaces is computed, suggested, defaulted or carried
+  over, and an unanswered question is stored as "not stated" rather than as "no". Read §14
+  before touching any of it.
 - **Not multi-tenant.** Single firm per deployment.
 - **Not a model host.** All inference goes through Vibe AI Router. This app holds no
   provider credentials of any kind.
@@ -510,7 +514,7 @@ one stays private while `docs/wisp-amendment.md` lives in it.
 
 Do not build multi-tenancy now.
 
-## 14. Draft return (P17)
+## 14. Draft return (P17) and preparer-supplied inputs (P18)
 
 **Decided 2026-09-25.** The app can hand the amounts it read to
 [OpenTax](https://opentax.filed.com/) — a deterministic, open-source federal 1040 engine that
@@ -578,6 +582,56 @@ So the omissions are rendered above the figures in the UI, on the same sheet in 
 and stored beside the lines in the database — and each surface says in words that the figures
 are wrong by whatever was left out. Do not move them to a second screen, a second sheet, or a
 footnote.
+
+### What the preparer supplies (P18)
+
+**Decided 2026-09-25.** A 1040 needs facts no source document carries, and §14 rule 5 already
+routed two of them — filing status and the age/blindness flags — through the reviewer, "which is
+the preparer making the determination, which is the right place for it". P18 extends the same
+arrangement to **dependents**, **itemised deductions** and **summaries of business and rental
+activity**, stored per bundle in `draft_inputs` and its three child tables and read by
+`src/draft/inputs.ts`.
+
+This is data entry, not a feature. Everything typed here is a determination the preparer already
+made; the app records the answer and supplies none:
+
+- **Nothing defaults.** Every determination is three-valued and starts at *not stated*, because
+  a checkbox cannot tell "decided no" from "has not looked" — and which of those it is decides
+  whether a credit is computed. A dependent whose qualifying-child question is unanswered earns
+  no credit and the total simply does not move, so the entry surface names them.
+- **Blank is not zero (§5)** all the way down. An untouched Schedule A line is absent from the
+  payload, never `0`. An absent key in a patch leaves the stored figure alone; an explicit `null`
+  clears it; the two are not interchangeable.
+- **No TIN for a dependent either (§7).** The engine marks a dependent's SSN, ITIN and ATIN
+  optional, so none is asked for and `draft_input_dependents` has no column that could hold one.
+- **The vocabularies and the fields come from the node map**, never from the component. A code
+  the engine does not know is refused at the point it is typed — 2.0.4 wants `mfj`, and refuses
+  the whole `general` node otherwise — and an activity this release cannot compute (a farm, on
+  2.0.4) is named with its measured reason rather than offered and dropped later.
+- **The worksheet is untouched.** Nothing here writes a worksheet line or a contribution. The
+  two derivations being compared stay independent, which is the only thing that makes it a check.
+
+**The override, and why it is safe (QUESTIONS.md Q24).** Some engine fields can be fed from two
+directions — a 1098's box 1 is also Schedule A line 8a; a W-2's box 17 is also line 5a. Measured
+against 2.0.4, sending both makes the engine **use the document's figure and discard the
+preparer's silently**. So the app sends one side: where the preparer supplied a figure, the
+document's is withheld and a `superseded_by_preparer` omission is recorded. Where the engine
+*requires* the field on that node, withholding it alone would refuse the whole node, so the whole
+document is withheld instead and the omission says so.
+
+It is the one thing in P18 a reviewer could use to make the draft disagree with the documents on
+purpose, which is exactly why it goes through the omissions contract rather than around it: it is
+enumerated on every surface the omissions already reach, audited with who changed what, announced
+at the point of entry before the typing with the form and the amount it will displace, and it
+never touches the worksheet. `scripts/probe-conflicts.mjs` (`npm run draft:conflicts`) re-measures
+the behaviour on every engine upgrade, because a release that started *adding* the two would
+change what the app should send. Do not add a conflict pair to the node map without probing it.
+
+**Engine lines are accounted for like engine fields.** Every line the engine returns must be in
+`lines.comparable`, `lines.computedOnly` or `lines.ignoredLines` with a reason. This cannot be a
+load-time check — enumerating a release's output lines means computing a return — so it runs on
+every draft and warns. It exists because the child tax credit P18 made enterable was computed,
+netted into total tax, and shown nowhere.
 
 ### The node map is data
 

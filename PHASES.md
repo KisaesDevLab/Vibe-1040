@@ -428,6 +428,61 @@ until it is, the WISP says something about this app that is no longer true.
 
 ---
 
+## P18 — Preparer-supplied inputs (dependents, Schedule A, business and rental summaries)
+
+**Depends on:** P17 (the translator, the node map, the engine and the comparison it feeds).
+**Severable** on the same flag: with `DRAFT_RETURN_ENABLED` unset, nothing in this phase runs and
+the entry surface is not reachable. **Implemented 2026-09-25** (migration 0013); the phase has
+not exited — see the exit criteria below. **No Router work required.**
+
+A draft return is structurally incomplete by construction, and P17's `translate.ts` already
+enumerates why: a source-document bundle carries no filing status, no dependents, no itemised
+deductions, no estimated payments, no basis and no carryovers. §14 rule 5 routed the first of
+those through the reviewer, because that is the preparer making the determination and the right
+place for it. This phase extends the same arrangement to the three biggest remaining holes, so
+the draft is worth more than a wages-and-withholding check.
+
+**It is data entry, not a feature.** Everything typed here is a determination the preparer has
+already made in the course of preparing the return. The app records the answer and supplies none:
+no control defaults, every determination is three-valued and starts at "not stated", an
+unanswered question is never read as "no", and a blank money box is absent from the engine
+payload rather than sent as zero. **CLAUDE.md §14's "What the preparer supplies" is the
+contract**; read it before touching any of this.
+
+**The stored record.** Migration 0013 adds `draft_inputs` and three child tables — dependents,
+one Schedule A row, and one row per business or property. Filing status **moves here** off the
+per-draft request, so a draft cannot be computed under a status the record disagrees with. No
+dependent TIN column exists: the engine marks a dependent's SSN, ITIN and ATIN optional and
+computes the child tax credit without one, so §7 survives intact. The inputs are typed by a
+person rather than derived from a page, so they purge on the **document** schedule, in both
+`runRetention` and `deleteBundle`, each of which enumerates its tables by hand.
+
+**The override.** Some engine fields can be fed from a document or from the preparer, and engine
+2.0.4 uses the document's figure and discards the typed one in silence. The app therefore sends
+one side and records the other as a `superseded_by_preparer` omission, which reuses the omissions
+contract rather than inventing a parallel mechanism — so it appears wherever the omissions
+already appear. The conflict map is data (`supersedes` in the node map), measured by
+`npm run draft:conflicts` rather than reasoned about. QUESTIONS.md **Q24** records why it is safe
+as built and what would make it unsafe.
+
+**The worksheet is untouched.** Nothing in this phase writes a worksheet line or a
+`worksheet_contribution`. The two derivations the preparer is comparing stay independent, which
+is the only thing that makes the comparison a check.
+
+**Exit:** a draft return computed from preparer inputs is checked line by line **by a person**
+against a known packet, including at least one dependent, one itemised deduction that overrides a
+document, and one business or rental summary. The blank-is-not-zero guard is switched off on the
+new inputs and a test fails. The override step is removed and a test fails. `npm run
+draft:conflicts` passes against the pinned engine. Migration 0013 runs forward, back and forward
+again, and a purged bundle leaves no input rows and writes a `purge_log` row from both
+`deleteBundle` and `runRetention`. No TIN appears in any engine payload, including in the
+dependents array. Every engine line the map declares nowhere is reported, and the shipped map
+reports none. **And QUESTIONS.md Q21 is answered for this scope**, not only for P17's —
+`docs/wisp-amendment.md` §4.1 was revised on 2026-09-25 to describe preparer-entered inputs and
+is still unapproved.
+
+---
+
 ## Sequencing notes
 
 P0–P13 are Router-independent — the multimodal capability P7 needs already shipped. The one
@@ -450,3 +505,8 @@ P17 is severable and additive in the same way: with `DRAFT_RETURN_ENABLED` unset
 is present and no code path in the phase executes. It has no Router gate at all — the engine is
 deterministic and local — but it does have a compliance gate, Q21, and that one blocks live
 client data rather than development.
+
+P18 is severable on P17's flag and adds no gate of its own, but it **widens Q21 rather than
+sitting behind it**: the app now records preparer-made determinations about deductions and
+business income, which is the sentence §11 rests on carrying more weight. The WISP language was
+revised in the same change set for exactly that reason.

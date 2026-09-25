@@ -76,7 +76,19 @@ described accurately, and confirm the DigitalOcean DPA covers it.
 ---
 
 ### Q21 — Does the §7216 position survive a locally computed draft return?
-**Gates:** P17 exit, and live client data through the draft return. **Raised:** 2026-09-25.
+**Gates:** P17 exit, **P18 exit**, and live client data through the draft return.
+**Raised:** 2026-09-25. **Scope widened the same day, before any answer was given.**
+
+> **Read this before answering.** The question below was written for P17, where the app computed
+> over amounts it had read off documents. P18 added the inputs a preparer types in — dependents,
+> itemised deduction totals, and business and rental summaries — so the app now **records
+> preparer-made determinations about deductions and business income**, and a preparer can
+> deliberately displace a document's figure with their own (Q24). `docs/wisp-amendment.md` §4.1
+> was revised on 2026-09-25 to describe all of that, so that this question is answered once
+> against what the app actually does rather than twice against two halves of it. The revision is
+> unapproved. **Answering Q21 means ruling on the revised §4.1, including its "the part of that
+> which is easiest to misread" paragraph**, which puts the appearance of an itemised-deduction
+> entry screen in front of the WISP's owner alongside its mechanism.
 
 `docs/wisp-amendment.md` §4 states the firm's position in one sentence: "Because the system
 performs data capture and makes no substantive determinations, the processing is intended to
@@ -250,6 +262,53 @@ that conversation is independent of this question and worth starting separately.
 ---
 
 ## Non-blocking, working assumption recorded
+
+### Q24 — A preparer's figure displacing a document's: is the override safe as built?
+**Raised:** 2026-09-25 (P18). **Working assumption:** yes, because it is enumerated, audited,
+announced before the typing, and never touches the worksheet. Recorded so nobody has to
+re-derive that later.
+
+**The mechanism, and why there is one.** Some engine fields can be fed from two directions: a
+1098's box 1 is also Schedule A line 8a, and a W-2's box 17 is also line 5a. Measured against
+engine 2.0.4 — not assumed — supplying both makes the engine **use the document's figure and
+discard the preparer's, silently**: 1098 at 40,000 plus a typed 55,000 computes on 40,000, with
+no rejection and no diagnostic anywhere. So the app sends one side. Where the preparer has typed
+a figure, the document's is withheld and a `superseded_by_preparer` omission is recorded; where
+the engine requires that field on the node, withholding it alone refuses the whole node, so the
+whole document is withheld and the omission says which other boxes went with it.
+
+**Why this is the one thing in P18 worth writing down.** Everything else here records a
+determination the preparer already made. This is the single path by which a person can make the
+draft disagree with the documents on purpose — and a draft that quietly disagrees with the
+documents is worse than no draft, because the whole point is that two independent derivations
+are being compared. Four things keep it honest, and all four are in code:
+
+1. **It goes through the omissions contract rather than around it.** No parallel mechanism: it is
+   a `DraftOmissionReason` like any other, so it appears on every surface the omissions already
+   reach — the panel above the figures, the workbook, the hand-check sheet, and the stored
+   `draft_return_omissions` rows — naming the document, the box, the figure withheld and the
+   figure used instead.
+2. **It is announced before the typing, not after.** `documentBackedScheduleALines` reports which
+   lines a document in this bundle actually feeds, derived from a real translation rather than
+   from "is there a 1098 in this bundle" — so a prior-year 1098, or one withheld for review, is
+   not claimed as something the preparer is overriding. The entry surface shows the form, the box
+   and the amount beside the box.
+3. **It is audited.** Every change to a stored input writes an access-log row naming the staff
+   member and what changed. The amounts are not written to the log; they live on the record.
+4. **The worksheet is untouched.** The document's figure is still reported there, unchanged. Only
+   the engine's side of the comparison moves, which is what keeps the two sides independent.
+
+**What would make this unsafe, and what re-checks it.** A future engine release that started
+*adding* the two figures, or letting the preparer's win, would make the withholding wrong — the
+draft would then be short by the document's amount, and the omission would describe something
+that is no longer true. `scripts/probe-conflicts.mjs` (`npm run draft:conflicts`) re-measures
+every declared pair against a running engine and exits non-zero if the behaviour has changed. It
+is step 8's companion in `docs/opentax-draft-return.md` §7 and must be run on every upgrade. Do
+not add a `supersedes` entry to a node map without probing it first.
+
+**Open for the firm, not for the engineer:** whether a preparer overriding a source document in
+the draft is something the firm wants available at all, or whether the override should require a
+typed reason recorded with it. The mechanics are settled; the policy is not.
 
 ### Q23 — Should upgrading the OpenTax engine ever be a button?
 **Raised:** 2026-09-25. **Working assumption:** no. Admin → Draft engine reports and never
