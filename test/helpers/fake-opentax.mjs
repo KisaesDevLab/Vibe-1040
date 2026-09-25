@@ -34,6 +34,61 @@ if (group === 'version') {
   process.exit(0);
 }
 
+/**
+ * `node inspect --node_type X --json`, for the catalogue check (`src/draft/catalog.ts`).
+ *
+ * These slices are **copied verbatim** out of engine 2.0.4, formatting quirks and all, because
+ * the quirks are the whole difficulty and a tidied-up version would test a parser against a
+ * fiction. Note in particular:
+ *
+ *  - `w2s  array (min 1)` has one space inside the type, `dependents  array  (optional)` has
+ *    two. Reading the type as the whole whitespace-delimited token makes every array header
+ *    parse as an ordinary field — which is exactly what happened first time.
+ *  - `(optional)` can follow the *description*, not the type, so requiredness has to be read
+ *    off the end of the line before anything is stripped.
+ *  - `general` is a flat node that nonetheless contains an `items:` block, because it embeds
+ *    `dependents`. Deciding array-vs-flat on "is there an items: anywhere" picks a dependent's
+ *    `first_name` over the taxpayer's `filing_status`.
+ *
+ * Re-derive these from the binary whenever the pinned version moves.
+ */
+/**
+ * Every node type the shipped map targets, **copied verbatim** out of engine 2.0.4 by
+ * `node inspect --node_type X --json`. Kept beside this file rather than inline because it is
+ * derived data, not hand-written: regenerate it against the new binary whenever the pinned
+ * version moves — step 4 of docs/opentax-draft-return.md's upgrade procedure.
+ *
+ * It has to cover *every* node type the map declares, not a representative few: the catalogue
+ * check reports a node type the engine does not have as a blocking mismatch, so a stand-in
+ * that knows less than the engine makes every draft-return test refuse.
+ *
+ * The formatting quirks are load-bearing and must not be tidied:
+ *
+ *  - `w2s  array (min 1)` has one space inside the type, `dependents  array  (optional)` has
+ *    two. Reading the type as the whole whitespace-delimited token makes every array header
+ *    parse as an ordinary field — which is what happened first time.
+ *  - `(optional)` can follow the *description* rather than the type, so requiredness has to be
+ *    read off the end of the line before anything is stripped.
+ *  - `general` is a flat node that nonetheless contains an `items:` block, because it embeds
+ *    `dependents`. Deciding array-vs-flat on "is there an items: anywhere" picks a dependent's
+ *    `first_name` over the taxpayer's `filing_status`.
+ */
+const SCHEMAS = JSON.parse(
+  readFileSync(new URL('./fake-opentax-catalog.json', import.meta.url), 'utf8'),
+);
+if (group === 'node' && sub === 'inspect') {
+  const nodeType = flag('node_type');
+  const schema = SCHEMAS[nodeType];
+  if (!schema) {
+    // What 2.0.4 does for a node it does not have: prose, not JSON. The wrapper must decide on
+    // the absence of a parseable schema, so this path is what proves it does.
+    process.stdout.write(`Error: Unknown node type: ${nodeType}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(`${JSON.stringify({ nodeType, implemented: true, schema, outputNodes: [] })}\n`);
+  process.exit(0);
+}
+
 if (group === 'return' && sub === 'create') {
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(statePath, '');

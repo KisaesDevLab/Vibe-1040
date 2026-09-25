@@ -52,6 +52,8 @@ export type AuditAction =
   | 'admin.test_sms'
   | 'admin.audit_view'
   | 'admin.retention_run'
+  /** Who looked at the draft-return engine's version pins and node-map agreement. */
+  | 'admin.draft_engine_checked'
   | 'auth.phone_verified'
   | 'auth.password_reset_requested'
   | 'auth.password_reset_failed'

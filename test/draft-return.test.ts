@@ -272,6 +272,50 @@ describe.skipIf(!dbAvailable)('draft return, end to end', () => {
     }
   });
 
+  it('refuses when the node map names a field the running engine does not have', async () => {
+    const { DraftEngineMismatchError } = await import('../src/draft/generate.ts');
+    const { __clearCatalogCheckCache } = await import('../src/draft/catalog.ts');
+    const { __setNodeMap, __clearNodeMapCache, loadNodeMap } = await import('../src/draft/nodes.ts');
+
+    const real = await loadNodeMap(2025);
+    // What an engine release renaming an *optional* field looks like from this side. The
+    // engine would accept the payload and ignore the unknown key, so the amount would vanish
+    // and the line would read as absent — no rejection, no diagnostic, nothing in the
+    // omissions. Refusing the whole draft is the only way that failure becomes visible.
+    const broken = structuredClone(real) as typeof real;
+    for (const form of broken.forms) {
+      for (const field of form.fields) {
+        if (form.formType === 'W-2' && field.nodeField === 'box1_wages') {
+          field.nodeField = 'box1_gross_wages';
+        }
+      }
+    }
+
+    __clearCatalogCheckCache();
+    __setNodeMap(broken);
+    try {
+      await expect(
+        generateDraftReturn(bundleId, userId, { filingStatus: 'single' }),
+      ).rejects.toThrow(DraftEngineMismatchError);
+
+      // And it says which field, so the fix is obvious rather than a hunt.
+      await generateDraftReturn(bundleId, userId, { filingStatus: 'single' }).catch((err: unknown) => {
+        const check = (err as InstanceType<typeof DraftEngineMismatchError>).check;
+        expect(check.blocking.map((f) => f.engineField)).toContain('box1_gross_wages');
+        expect(check.blocking[0]!.formType).toBe('W-2');
+      });
+    } finally {
+      __clearNodeMapCache();
+      __clearCatalogCheckCache();
+    }
+
+    // Restored: the real map computes again, so the refusal is about the mismatch and not a
+    // door that stays shut once opened.
+    await expect(
+      generateDraftReturn(bundleId, userId, { filingStatus: 'single' }),
+    ).resolves.toBeDefined();
+  });
+
   it('purges with the bundle, and leaves the same evidence a policy purge does (§11)', async () => {
     const result = await generateDraftReturn(bundleId, userId, { filingStatus: 'single' });
     const { deleteBundle } = await import('../src/retention/delete-bundle.ts');

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AuthSettingsPage } from '@kisaesdevlab/vibe-auth/react';
 import { api } from '../api';
-import type { AuditRow, EnvSetting, SettingRow, UserRow } from '../types';
+import type { AuditRow, DraftEngineReadiness, EnvSetting, SettingRow, UserRow } from '../types';
 
 /**
  * Admin section — Settings, Users, Audit, Retention.
@@ -10,7 +10,7 @@ import type { AuditRow, EnvSetting, SettingRow, UserRow } from '../types';
  * read-only, because a web form is the wrong place for a decryption key and the
  * compliance guardrails should not be a switch.
  */
-type Tab = 'settings' | 'users' | 'audit' | 'retention' | 'authentication';
+type Tab = 'settings' | 'users' | 'audit' | 'retention' | 'authentication' | 'engine';
 
 const GROUP_LABELS: Record<string, string> = {
   reconciliation: 'Reconciliation',
@@ -26,13 +26,19 @@ const GROUP_LABELS: Record<string, string> = {
 export function Admin({ role, onError }: { role: string; onError: (m: string) => void }) {
   const [tab, setTab] = useState<Tab>('settings');
   // Single sign-on is admin-only, server-side too; a partner sees the audit trail, not this.
-  const tabs: Tab[] = ['settings', 'users', 'audit', 'retention', ...(role === 'admin' ? (['authentication'] as Tab[]) : [])];
+  const tabs: Tab[] = [
+    'settings',
+    'users',
+    'audit',
+    'retention',
+    ...(role === 'admin' ? (['authentication', 'engine'] as Tab[]) : []),
+  ];
   return (
     <div className="admin">
       <nav className="admin-tabs">
         {tabs.map((t) => (
           <button key={t} className={t === tab ? 'tab active' : 'tab'} onClick={() => setTab(t)}>
-            {t[0]!.toUpperCase() + t.slice(1)}
+            {t === 'engine' ? 'Draft engine' : t[0]!.toUpperCase() + t.slice(1)}
           </button>
         ))}
       </nav>
@@ -41,6 +47,7 @@ export function Admin({ role, onError }: { role: string; onError: (m: string) =>
       {tab === 'audit' && <AuditTab onError={onError} />}
       {tab === 'retention' && <RetentionTab onError={onError} />}
       {tab === 'authentication' && <AuthenticationTab />}
+      {tab === 'engine' && <DraftEngineTab onError={onError} />}
     </div>
   );
 }
@@ -80,6 +87,147 @@ function AuthenticationTab() {
         . This discards anything typed below that has not been saved.
       </p>
       <AuthSettingsPage key={reload} basePath="" productName="Vibe 1040" />
+    </div>
+  );
+}
+
+// ── draft engine (P17) ───────────────────────────────────────────────────────
+
+/**
+ * The draft-return engine's upgrade picture, and a button to re-read it.
+ *
+ * **It reports; it never upgrades.** There is no install button here on purpose. The engine's
+ * version is pinned and its download verified by SHA-256 when the sidecar image is built,
+ * precisely so that nothing can swap the binary afterwards — a button that replaced it would
+ * be `install.sh | sh` with better manners, which is what CLAUDE.md §14 forbids. An upgrade is
+ * a deliberate act by an operator, recorded in the image build; the procedure is in
+ * docs/opentax-draft-return.md. What this page can do is tell you, without a shell, whether
+ * you need to perform it and what is broken if you already have.
+ *
+ * The check it shows exists for one failure in particular. An engine field renamed between
+ * releases is refused loudly when it is *required* — but when it is *optional* the engine
+ * accepts the payload and ignores it, so the amount never arrives and the line reads as
+ * absent. Absent is exactly what "the documents reported nothing here" looks like, so nobody
+ * goes looking. Comparing the names before sending is what turns that into an upgrade-time
+ * error.
+ */
+function DraftEngineTab({ onError }: { onError: (m: string) => void }) {
+  const [state, setState] = useState<DraftEngineReadiness | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    setBusy(true);
+    api
+      .draftEngine()
+      .then(setState)
+      .catch((e: Error) => onError(e.message))
+      .finally(() => setBusy(false));
+  }, [onError]);
+
+  useEffect(load, [load]);
+
+  if (!state) {
+    return (
+      <div className="card">
+        <p className="muted">{busy ? 'Reading the engine…' : 'No answer yet.'}</p>
+      </div>
+    );
+  }
+
+  if (!state.enabled) {
+    return (
+      <div className="card">
+        <h3>Draft return engine</h3>
+        <p className="muted">
+          The draft return is off for this deployment. It is an environment key,{' '}
+          <code>DRAFT_RETURN_ENABLED</code>, not a setting on this page, because it changes what
+          the app computes about a taxpayer — which is not a click.
+        </p>
+      </div>
+    );
+  }
+
+  const check = state.check;
+  const blocking = check?.blocking.length ?? 0;
+  const advisory = (check?.findings.length ?? 0) - blocking;
+
+  return (
+    <div className="card">
+      <h3>Draft return engine</h3>
+      <p className="muted">
+        OpenTax runs on this appliance as a separate process and computes the draft return. This
+        page reports what is running and whether this app&rsquo;s node map still matches it.{' '}
+        <strong>It cannot install or change the engine</strong> — the version is pinned and
+        checksum-verified when the image is built, and an upgrade is a deliberate step an
+        operator takes. See <code>docs/opentax-draft-return.md</code>.
+      </p>
+
+      <table className="engine-pins">
+        <tbody>
+          <tr>
+            <th>Running</th>
+            <td>
+              {state.engine.ok ? (
+                <strong>{state.engine.version}</strong>
+              ) : (
+                <span className="pill warn">unreachable — {state.engine.reason ?? 'no reason given'}</span>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <th>
+              <code>OPENTAX_VERSION</code>
+            </th>
+            <td>{state.pins.environment}</td>
+          </tr>
+          <tr>
+            <th>Node map {state.pins.nodeMapVersion ?? '—'}</th>
+            <td>written against {state.pins.nodeMap ?? '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {state.engine.ok && !state.versionsAgree && (
+        <p className="engine-bad">
+          The running engine does not match both pins. A node map written against one release
+          and run against another can move an amount onto the wrong line, so treat every figure
+          as suspect until this agrees.
+        </p>
+      )}
+
+      {state.error && <p className="engine-bad">Could not read the engine&rsquo;s catalogue: {state.error}</p>}
+
+      {check && (
+        <>
+          <p className={blocking > 0 ? 'engine-bad' : 'engine-good'}>
+            {blocking === 0 && advisory === 0
+              ? `Every field name the node map sends exists on engine ${check.engineVersion}, across all ${check.nodeTypes.length} node types.`
+              : `${blocking} blocking and ${advisory} advisory mismatch(es) against engine ${check.engineVersion}.`}
+            {blocking > 0 && ' Draft returns are withheld until this is resolved. The worksheet is unaffected.'}
+          </p>
+
+          {check.findings.map((f, i) => (
+            <div key={`${f.nodeType}-${f.engineField ?? i}`} className={`engine-finding engine-${f.severity}`}>
+              <div className="engine-finding-head">
+                <span>
+                  {f.formType} → <code>{f.nodeType}{f.engineField ? `.${f.engineField}` : ''}</code>
+                </span>
+                <span className="draft-reason">{f.severity} · {f.kind.replace(/_/g, ' ')}</span>
+              </div>
+              <div className="draft-omission-why">{f.detail}</div>
+            </div>
+          ))}
+        </>
+      )}
+
+      <button type="button" className="engine-recheck" onClick={load} disabled={busy}>
+        {busy ? 'Checking…' : 'Check again'}
+      </button>
+      <p className="draft-hint">
+        A name check, not a behaviour check. It cannot see a field that kept its name and
+        changed its meaning, or arithmetic that moved. Run <code>npm run draft -- --truth</code>{' '}
+        for that; an upgrade needs both.
+      </p>
     </div>
   );
 }

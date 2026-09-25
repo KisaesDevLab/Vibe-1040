@@ -258,7 +258,82 @@ table breaking every 1040 line label one word per line and clipping the agreemen
 right edge, which is why the comparison is stacked blocks rather than a table. It compiled and
 type-checked in that state for a week.
 
-## 7. Licence posture
+## 7. Upgrading the engine
+
+A **new engine release** is a different job from §5's new tax *year*, and it is the more
+dangerous of the two, because most of what can go wrong is silent.
+
+### What is pinned, and what each pin means
+
+| Pin | Where | Answers |
+|---|---|---|
+| `OPENTAX_VERSION` | environment | what this deployment *intends* to run |
+| `engine.pinnedVersion` | `data/opentax-nodes/<year>.json` | what the node map was *written against* |
+| `OPENTAX_VERSION` + `OPENTAX_SHA256` | `opentax/Dockerfile` build args | what is actually installed, verified by checksum |
+
+`src/draft/generate.ts` compares the binary's own reported version against the first two on
+every draft and warns, naming which pin disagrees. It is deliberately not fatal: a version
+string is weaker evidence than the harness.
+
+### The failure this procedure exists to prevent
+
+**A renamed field is not symmetrical.** Verified against 2.0.4 by probe, not reasoned about:
+
+- A **required** field renamed → `form add` refuses the node, the wrapper reports it in
+  `rejected`, and it lands in the omissions. Loud, and already handled.
+- An **optional** field renamed → the engine accepts the payload and **ignores the unknown
+  key**. The amount never reaches the return. The line comes back **absent**, and absent is
+  precisely what "the documents reported nothing on this line" looks like (§3).
+
+A 1099-INT box 1 of 12,345 sent as `box1_interest` instead of `box1` leaves
+`line2b_taxable_interest` missing, every total confidently wrong, and nothing — not `rejected`,
+not the diagnostics, not the omissions list — saying so. The omissions contract does not cover
+it, because from the translator's side the field was sent successfully.
+
+So `src/draft/catalog.ts` compares the names the map intends to send against the names the
+engine reports through `node inspect --node_type X --json`. A rename becomes an error at
+upgrade time instead of a number that quietly disappears. Blocking findings **withhold draft
+returns** until resolved; the worksheet is never affected.
+
+### The procedure
+
+1. **Read the engine's release notes** for renamed or removed input fields and node types.
+2. **Get the new asset's SHA-256** and record the pair in §6's table. Never `install.sh | sh`.
+3. **Rebuild the sidecar image** with the new `OPENTAX_VERSION` and `OPENTAX_SHA256` build
+   args, and bring it up.
+4. **Re-derive `test/helpers/fake-opentax.mjs` against the new binary.** This is the step that
+   is easiest to skip and most important. That file encodes the engine's wire shapes — the flat
+   `lines` map, array-valued lines, absent source lines, the `node inspect` listing's
+   formatting. It once encoded a shape the engine does not use and **all 328 tests agreed with
+   the mistake**. A stand-in that shares your misunderstanding tests nothing.
+5. **Run the catalogue check.** Admin → Draft engine, or:
+   ```bash
+   curl -s "$OPENTAX_URL/catalog?nodes=w2,f1099int,f1099r,general" | jq
+   ```
+   Fix every blocking finding in `data/opentax-nodes/<year>.json`, then bump its
+   `engine.pinnedVersion` and `OPENTAX_VERSION`. Advisory findings are not blockers but are
+   worth clearing: a stale `engineRequired` either refuses documents the engine would have
+   taken, or sends ones it will refuse whole.
+6. **Run the harness**, which is the only thing here that measures *behaviour*:
+   ```bash
+   npm run draft -- --truth
+   ```
+   The catalogue check is a **name** check. It cannot see a field that kept its name and
+   changed its meaning, or arithmetic that moved. An upgrade needs both.
+7. **Run the suite** (`npx vitest run`) and re-read `lines.comparable` and `lines.computedOnly`
+   in the node map: an engine that surfaces new 1040 lines may make a `notCompared` line
+   comparable, and one that stops surfacing a line will make a comparison go quietly silent.
+
+### What Admin → Draft engine does and does not do
+
+It reports: which binary is running, what both pins say, and every catalogue finding with its
+remedy. **It does not upgrade anything, and there is no button that would.** The version is
+pinned and checksum-verified at image build precisely so nothing can replace the binary at
+runtime; a click that downloaded and swapped an engine would be `install.sh | sh` with better
+manners, and §14's pin-and-verify rule exists to forbid exactly that. The page is the part of
+this procedure a person can see without a shell — see QUESTIONS.md Q23.
+
+## 8. Licence posture
 
 This app was relicensed **AGPL-3.0-only** on 2026-09-25, from a BUSL-1.1 declaration that never
 had licence text committed. OpenTax is verbatim AGPL v3 with no linking exception, and the

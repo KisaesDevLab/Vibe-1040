@@ -36,6 +36,7 @@ import {
 import { buildDraftInputForBundle } from '../draft/build.ts';
 import { DraftEngineError } from '../draft/client.ts';
 import {
+  DraftEngineMismatchError,
   DraftReturnDisabledError,
   draftReturnStatus,
   generateDraftReturn,
@@ -647,6 +648,17 @@ export function registerRoutes(app: FastifyInstance): void {
     } catch (err) {
       if (err instanceof DraftReturnDisabledError) {
         return reply.code(409).send({ error: 'draft_return_disabled', message: err.message });
+      }
+      if (err instanceof DraftEngineMismatchError) {
+        // 409, not 502: the engine answered and is healthy. What is wrong is this app's node
+        // map against the engine it is pointed at, and the remedy is an upgrade step nobody
+        // has taken — so the findings go back rather than a bare failure.
+        return reply.code(409).send({
+          error: 'engine_node_map_mismatch',
+          message: err.message,
+          engineVersion: err.check.engineVersion,
+          findings: err.check.findings,
+        });
       }
       if (err instanceof DraftEngineError) {
         // An optional checking aid being unreachable is a degraded state, not a bundle

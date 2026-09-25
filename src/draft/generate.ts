@@ -25,6 +25,7 @@ import { setting } from '../settings/store.ts';
 import { loadMappedDocuments } from '../worksheet/generate.ts';
 import { computeReturn, DraftEngineError, engineHealth, type EngineResult } from './client.ts';
 import { compareDraft, type DraftComparison } from './compare.ts';
+import { engineCatalogCheck, formatFindings, type CatalogCheck } from './catalog.ts';
 import { type FilingStatusOption, loadNodeMap, resolveNodeMap } from './nodes.ts';
 import { buildDraftInput, type DraftOmission, type DraftParams } from './translate.ts';
 
@@ -37,6 +38,29 @@ export class DraftReturnDisabledError extends Error {
         'it must stay off wherever there is live client data until QUESTIONS.md Q21 is answered.',
     );
     this.name = 'DraftReturnDisabledError';
+  }
+}
+
+/**
+ * Raised when the node map names fields the running engine does not have.
+ *
+ * Refusing is proportionate rather than cautious. The failure it prevents is a draft whose
+ * numbers are confidently wrong with nothing anywhere saying so — an unknown *optional* field
+ * is accepted and ignored by the engine, so the amount vanishes and the line reads as absent
+ * (see `src/draft/catalog.ts`). A wrong draft is worse than no draft, and nothing else is
+ * withheld: the worksheet, which is the product, does not go through here at all.
+ */
+export class DraftEngineMismatchError extends Error {
+  readonly check: CatalogCheck;
+
+  constructor(check: CatalogCheck) {
+    super(
+      `the OpenTax node map does not match engine ${check.engineVersion}: ` +
+        `${check.blocking.length} blocking mismatch(es). ` +
+        formatFindings(check).join(' | '),
+    );
+    this.name = 'DraftEngineMismatchError';
+    this.check = check;
   }
 }
 
@@ -66,6 +90,12 @@ export async function generateDraftReturn(
 
   const { taxYear, mapped } = await loadMappedDocuments(bundleId);
   const file = await loadNodeMap(taxYear);
+
+  // Before anything is sent: do the names in this map exist on the engine that will receive
+  // them? Memoized per engine version and map version, so this is one round trip per process.
+  const catalogCheck = await engineCatalogCheck(file);
+  if (!catalogCheck.ok) throw new DraftEngineMismatchError(catalogCheck);
+
   const input = buildDraftInput(file, mapped, params);
 
   // The worksheet's own totals, built from the same documents through the same loader, so a
@@ -289,6 +319,73 @@ export async function draftReturnStatus(taxYear?: number): Promise<{
     filingStatuses,
     filingStatusYear,
   };
+}
+
+export interface EngineReadiness {
+  enabled: boolean;
+  engine: Awaited<ReturnType<typeof engineHealth>>;
+  /** What `OPENTAX_VERSION` pins, and what the node map was written against. */
+  pins: { environment: string; nodeMap: string | null; nodeMapVersion: string | null };
+  /** True when the running binary agrees with both pins. */
+  versionsAgree: boolean;
+  check: CatalogCheck | null;
+  /** Populated when the catalogue could not be read at all. */
+  error: string | null;
+}
+
+/**
+ * The full upgrade-time picture: which engine is running, what the two pins say, and whether
+ * the node map's field names still exist on it.
+ *
+ * Deliberately **not** folded into `draftReturnStatus`, which `/health` and every bundle view
+ * call. This reads the engine's catalogue — fifteen child processes on a cold cache — and that
+ * does not belong on a liveness path.
+ *
+ * It reports and changes nothing. Replacing the binary is not something this app does: the
+ * version is pinned and checksum-verified at image build precisely so that nothing can swap it
+ * at runtime (CLAUDE.md §14), and a click is not an upgrade.
+ */
+export async function engineReadiness(taxYear?: number): Promise<EngineReadiness> {
+  const resolved = await resolveNodeMap(taxYear ?? Number.NaN);
+  const pins = {
+    environment: env.OPENTAX_VERSION,
+    nodeMap: resolved?.file.engine.pinnedVersion ?? null,
+    nodeMapVersion: resolved?.file.version ?? null,
+  };
+
+  if (!env.DRAFT_RETURN_ENABLED) {
+    return {
+      enabled: false,
+      engine: { ok: false, version: null, reason: 'draft return is not enabled' },
+      pins,
+      versionsAgree: false,
+      check: null,
+      error: null,
+    };
+  }
+
+  const engine = await engineHealth();
+  const bare = (v: string | null): string | null => (v === null ? null : v.replace(/^v/, ''));
+  const running = bare(engine.version);
+  const versionsAgree =
+    running !== null && running === bare(pins.environment) && running === bare(pins.nodeMap);
+
+  if (!engine.ok || !resolved) {
+    return { enabled: true, engine, pins, versionsAgree, check: null, error: null };
+  }
+
+  try {
+    return { enabled: true, engine, pins, versionsAgree, check: await engineCatalogCheck(resolved.file), error: null };
+  } catch (err) {
+    return {
+      enabled: true,
+      engine,
+      pins,
+      versionsAgree,
+      check: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 export { DraftEngineError };

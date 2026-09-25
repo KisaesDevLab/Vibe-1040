@@ -294,3 +294,42 @@ export interface StoredDraftReturn {
   omissions: { formType: string | null; fieldKey: string | null; reason: string; detail: string }[];
   validations: { severity: string; code: string; message: string }[];
 }
+
+// ── draft-return engine readiness (P17, Admin -> Draft engine) ───────────────
+
+export type CatalogFindingKind =
+  | 'node_type_absent'
+  | 'field_unknown'
+  | 'required_field_unmapped'
+  | 'required_flag_stale';
+
+export interface CatalogFinding {
+  severity: 'blocking' | 'advisory';
+  kind: CatalogFindingKind;
+  formType: string;
+  nodeType: string;
+  engineField?: string;
+  detail: string;
+}
+
+export interface CatalogCheck {
+  engineVersion: string;
+  nodeTypes: string[];
+  findings: CatalogFinding[];
+  blocking: CatalogFinding[];
+  ok: boolean;
+}
+
+/**
+ * What `GET /api/admin/draft-engine` reports. Read-only by design: the version is pinned and
+ * checksum-verified when the sidecar image is built, so nothing here can replace the binary.
+ */
+export interface DraftEngineReadiness {
+  enabled: boolean;
+  engine: { ok: boolean; version: string | null; reason?: string };
+  pins: { environment: string; nodeMap: string | null; nodeMapVersion: string | null };
+  versionsAgree: boolean;
+  check: CatalogCheck | null;
+  error: string | null;
+}
+

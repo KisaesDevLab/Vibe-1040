@@ -175,3 +175,67 @@ describe('no taxpayer amounts survive the response (§11)', () => {
     expect([a, b].sort((x, y) => x - y)).toEqual([10_000, 20_000]);
   });
 });
+
+/**
+ * The catalogue endpoint (`src/draft/catalog.ts` explains why it exists).
+ *
+ * The schema slices in the stand-in are copied verbatim out of engine 2.0.4, so these tests
+ * are about the real formatting rather than a tidied-up version of it.
+ */
+describe('GET /catalog', () => {
+  const catalog = async (nodes: string): Promise<any> => {
+    const res = await fetch(`${base}/catalog?nodes=${nodes}`);
+    expect(res.status).toBe(200);
+    return res.json();
+  };
+
+  it('reports an array node\'s item fields, which is what a payload carries', async () => {
+    const body = await catalog('w2');
+    expect(body.engineVersion).toBe('9.9.9-fake');
+    expect(body.nodes.w2.implemented).toBe(true);
+    expect(body.nodes.w2.collection).toBe('w2s');
+    expect(Object.keys(body.nodes.w2.fields)).toContain('box1_wages');
+    // Requiredness survives a description sitting between the type and `(optional)`.
+    expect(body.nodes.w2.fields.box1_wages.required).toBe(true);
+    expect(body.nodes.w2.fields.employer_ein.required).toBe(false);
+    expect(body.nodes.w2.fields.box3_ss_wages.required).toBe(false);
+    // The collection header is not itself a field.
+    expect(body.nodes.w2.fields.w2s).toBeUndefined();
+  });
+
+  it('keeps a top-level field that follows an array block out of the payload fields', async () => {
+    const body = await catalog('f1099int');
+    expect(body.nodes.f1099int.collection).toBe('f1099ints');
+    // The item fields, which is what a payload carries.
+    expect(Object.keys(body.nodes.f1099int.fields)).toEqual(
+      expect.arrayContaining(['box1', 'payer_name', 'payer_tin']),
+    );
+    expect(body.nodes.f1099int.fields.payer_name.required).toBe(true);
+    expect(body.nodes.f1099int.fields.box1.required).toBe(false);
+    // `filing_status` sits at the top level, after the array block — known to exist on the
+    // node, so a rename check still sees it, but not an item field.
+    expect(body.nodes.f1099int.otherFields).toContain('filing_status');
+    expect(Object.keys(body.nodes.f1099int.fields)).not.toContain('filing_status');
+  });
+
+  it('reads a flat node as flat even though it contains an array of its own', async () => {
+    const body = await catalog('general');
+    // The bug this pins: `general` embeds `dependents`, and treating that as the payload shape
+    // picks a dependent's `first_name` over the taxpayer's `filing_status`.
+    expect(body.nodes.general.collection).toBeNull();
+    expect(body.nodes.general.fields.filing_status).toEqual({ type: 'enum', required: true });
+    expect(body.nodes.general.fields.first_name).toBeUndefined();
+    expect(body.nodes.general.otherFields).toContain('dependents');
+  });
+
+  it('reports a node type the engine does not have, rather than inventing an empty one', async () => {
+    const body = await catalog('not_a_node');
+    expect(body.nodes.not_a_node.implemented).toBe(false);
+    expect(body.nodes.not_a_node.fields).toBeUndefined();
+  });
+
+  it('refuses a request that names no node types', async () => {
+    expect((await fetch(`${base}/catalog`)).status).toBe(400);
+    expect((await fetch(`${base}/catalog?nodes=`)).status).toBe(400);
+  });
+});

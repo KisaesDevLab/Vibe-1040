@@ -96,6 +96,148 @@ async function engineVersion() {
 }
 
 /**
+ * Parse one field line of `node inspect`'s schema listing.
+ *
+ * The lines look like these, and all four shapes occur in 2.0.4:
+ *
+ *     box1_wages  number  ≥0  — Wages, tips, other compensation
+ *     payer_tin  string  (optional)
+ *     employer_ein  string  — Employer identification number  (optional)
+ *     filing_status  enum  single | mfs | mfj | hoh | qss
+ *
+ * So `(optional)` can follow the description rather than the type, which is why requiredness
+ * is read off the end of the whole line before anything is stripped.
+ */
+function parseFieldLine(line) {
+  const indent = line.length - line.trimStart().length;
+  const required = !/\(optional\)\s*$/.test(line);
+  let rest = line.trim().replace(/\(optional\)\s*$/, '');
+  // Drop the description, which is free text and may itself contain two spaces.
+  const dash = rest.indexOf('—');
+  if (dash >= 0) rest = rest.slice(0, dash);
+  const parts = rest.trim().split(/\s{2,}/);
+  const name = parts[0] ?? '';
+  if (!name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return null;
+  // The type token carries its constraints, and inconsistently: `array (min 1)` on one node,
+  // `array  (min 1)` on another, `enum  a | b | c` elsewhere. Only the bare type is wanted,
+  // and reading it as the whole token made every array header parse as a plain field.
+  const type = (parts[1] ?? 'unknown').trim().split(/\s+/)[0];
+  return { indent, name, type, required };
+}
+
+/**
+ * Turn `node inspect --node_type X --json`'s `schema` lines into field descriptors.
+ *
+ * `fields` is what a `form add` payload for this node may carry, and which lines those are
+ * depends on the node's shape:
+ *
+ *  - **Array-shaped** (`w2`, `f1099int`, most of them). The first line is the collection
+ *    header — `w2s  array (min 1)` — followed by `items:` and the per-form fields. A payload
+ *    is one *item*, so the item fields are the payload's fields.
+ *  - **Flat** (`general`). The first line is an ordinary field and the payload is the
+ *    top-level object itself.
+ *
+ * The distinction has to be drawn on the *first* line rather than on "does an `items:` block
+ * exist anywhere", because a flat node can contain an array of its own: `general` embeds
+ * `dependents`, and treating that as the payload shape picks a dependent's `first_name` over
+ * the taxpayer's `filing_status` — the opposite of the truth.
+ *
+ * Anything not in `fields` — a flat node's nested collections, or the top-level fields some
+ * array nodes carry after the array — goes in `otherFields` by name only. A rename check needs
+ * to know the name exists somewhere on the node; their requiredness means something different
+ * and is deliberately not reported.
+ */
+function parseSchema(lines) {
+  const fields = {};
+  const otherFields = new Set();
+  const first = parseFieldLine(lines[0] ?? '');
+  const isArrayNode = first !== null && first.indent === 0 && first.type === 'array';
+
+  if (!isArrayNode) {
+    for (const line of lines) {
+      const f = parseFieldLine(line);
+      if (!f) continue;
+      if (f.indent === 0 && f.type !== 'array') fields[f.name] = { type: f.type, required: f.required };
+      else if (f.name) otherFields.add(f.name);
+    }
+    for (const name of Object.keys(fields)) otherFields.delete(name);
+    return { collection: null, fields, otherFields: [...otherFields] };
+  }
+
+  const collection = first.name;
+  // Direct children of the node's own `items:`, which is the one on the second line.
+  const itemsAt = lines.findIndex((l) => l.trim() === 'items:');
+  const itemIndent = itemsAt < 0 ? -1 : lines[itemsAt].length - lines[itemsAt].trimStart().length;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (i === itemsAt) continue;
+    const f = parseFieldLine(lines[i]);
+    if (!f) continue;
+    if (itemsAt >= 0 && i > itemsAt && f.indent === itemIndent + 2) {
+      fields[f.name] = { type: f.type, required: f.required };
+    } else if (f.name !== collection) {
+      otherFields.add(f.name);
+    }
+  }
+  for (const name of Object.keys(fields)) otherFields.delete(name);
+  return { collection, fields, otherFields: [...otherFields] };
+}
+
+/**
+ * The engine's own input-node catalogue, for the node types the app maps.
+ *
+ * This exists because of a silent failure mode the app cannot otherwise see. An engine field
+ * renamed between releases is fatal only when the field is *required* — then `form add` refuses
+ * the node and the app reports it. A renamed **optional** field is accepted and ignored: the
+ * amount never reaches the return, the line comes back absent, and absent is exactly what "the
+ * documents reported nothing here" looks like. Verified against 2.0.4 — a 1099-INT box 1 sent
+ * as `box1_interest` rather than `box1` leaves `line2b_taxable_interest` simply missing, with
+ * no diagnostic anywhere.
+ *
+ * So the app checks the names it intends to send against the names the engine actually has,
+ * and a rename becomes an error at upgrade time instead of a number that quietly disappears.
+ */
+/**
+ * How many `node inspect` children run at once.
+ *
+ * Sequentially this takes about nine seconds for the fifteen node types the app maps, which is
+ * too long to sit in front of a first draft. Unbounded is worse: the engine is a 134 MB
+ * `deno compile` binary and fifteen at once is a memory spike an appliance should not take for
+ * a diagnostic. Four keeps it near two seconds at a bounded cost.
+ */
+const CATALOG_CONCURRENCY = Number(process.env.OPENTAX_CATALOG_CONCURRENCY ?? 4);
+
+async function inspectNode(nodeType) {
+  if (!/^[a-z0-9_]+$/i.test(nodeType)) {
+    return { implemented: false, reason: 'not a valid node type name' };
+  }
+  const { stdout, code } = await run(['node', 'inspect', '--node_type', nodeType, '--json'], tmpdir());
+  // An unknown node type prints `Error: Unknown node type: x` rather than JSON, so the absence
+  // of a parseable schema is what decides, not the exit code alone.
+  const parsed = parseJson(stdout);
+  if (code !== 0 || parsed === null || !Array.isArray(parsed.schema)) {
+    return {
+      implemented: false,
+      reason: (stdout || '').trim().slice(0, 200) || `node inspect exited ${code}`,
+    };
+  }
+  return { implemented: parsed.implemented !== false, ...parseSchema(parsed.schema) };
+}
+
+async function catalog(nodeTypes) {
+  const nodes = {};
+  const queue = [...nodeTypes];
+  const worker = async () => {
+    for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+      nodes[next] = await inspectNode(next);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(CATALOG_CONCURRENCY, queue.length) }, () => worker()),
+  );
+  return { engineVersion: await engineVersion(), nodes };
+}
+
+/**
  * Split the engine's diagnostics into blocking and advisory.
  *
  * Its own report separates hard failures from softer warnings; the shapes it uses have moved
@@ -217,14 +359,36 @@ const server = createServer((req, res) => {
     res.end(text);
   };
 
-  if (req.method === 'GET' && req.url === '/health') {
+  // Compared on the normalised path, so a query string does not defeat the match.
+  const path = new URL(req.url ?? '/', 'http://local').pathname;
+
+  if (req.method === 'GET' && path === '/health') {
     engineVersion()
       .then((version) => send(200, { ok: true, version }))
       .catch((err) => send(503, { ok: false, version: null, reason: String(err?.message ?? err) }));
     return;
   }
 
-  if (req.method !== 'POST' || req.url !== '/draft') {
+  if (req.method === 'GET' && path === '/catalog') {
+    const raw = new URL(req.url ?? '/', 'http://local').searchParams.get('nodes') ?? '';
+    const nodeTypes = [...new Set(raw.split(',').map((n) => n.trim()).filter(Boolean))];
+    if (nodeTypes.length === 0) {
+      send(400, { error: 'nodes is required: a comma-separated list of node types' });
+      return;
+    }
+    // One child process per node type. Bounded because the app asks only for the node types
+    // its map declares — about fifteen, not the engine's 187.
+    if (nodeTypes.length > 60) {
+      send(400, { error: 'too many node types in one request' });
+      return;
+    }
+    catalog(nodeTypes)
+      .then((body) => send(200, body))
+      .catch((err) => send(500, { error: 'catalog failed', detail: String(err?.message ?? err) }));
+    return;
+  }
+
+  if (req.method !== 'POST' || path !== '/draft') {
     send(404, { error: 'not found' });
     return;
   }

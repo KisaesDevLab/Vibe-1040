@@ -20,6 +20,8 @@ import { registerRoutes } from './api/routes.ts';
 import { attachUser } from './api/middleware.ts';
 import { env } from './config/env.ts';
 import { pool } from './db/client.ts';
+import { formatFindings } from './draft/catalog.ts';
+import { engineReadiness } from './draft/generate.ts';
 import { registerVibeAuth, vibeAuth } from './lib/vibeAuth.ts';
 import { closeQueues } from './queue/queues.ts';
 import {
@@ -164,6 +166,64 @@ async function main(): Promise<void> {
   const app = await buildServer();
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
   console.log(`[startup] listening on ${env.PORT}`);
+
+  /**
+   * Does the node map still match the engine it is pointed at? (P17, §14.)
+   *
+   * **After listening, and never fatal.** It spawns a child process per node type, so it must
+   * not sit in front of the port; and an optional checking aid may not take the appliance down
+   * with it — the precedent is router-down parking (§3). A mismatch withholds draft returns,
+   * which `generateDraftReturn` enforces on its own; the worksheet is untouched either way.
+   *
+   * It is said out loud at boot because the failure it catches is otherwise invisible: an
+   * engine field renamed between releases is accepted and ignored when it is optional, so the
+   * amount vanishes and the line reads as absent. Nobody goes looking for a number that is not
+   * there.
+   */
+  if (env.DRAFT_RETURN_ENABLED) {
+    void (async () => {
+      try {
+        const readiness = await engineReadiness();
+        if (!readiness.engine.ok) {
+          console.warn(
+            `[startup] draft return: engine unreachable at ${env.OPENTAX_URL} ` +
+              `(${readiness.engine.reason ?? 'no reason given'}). Draft returns park; nothing else is affected.`,
+          );
+          return;
+        }
+        if (!readiness.versionsAgree) {
+          console.warn(
+            `[startup] WARNING draft return: engine reports ${readiness.engine.version}, ` +
+              `OPENTAX_VERSION pins ${readiness.pins.environment}, node map ` +
+              `${readiness.pins.nodeMapVersion} was written against ${readiness.pins.nodeMap}. ` +
+              'See docs/opentax-draft-return.md, "Upgrading the engine".',
+          );
+        }
+        const check = readiness.check;
+        if (!check) return;
+        if (check.ok && check.findings.length === 0) {
+          console.log(
+            `[startup] draft return: engine ${check.engineVersion}, node map agrees on all ` +
+              `${check.nodeTypes.length} node types`,
+          );
+          return;
+        }
+        console.warn(
+          `[startup] WARNING draft return: the node map does not match engine ` +
+            `${check.engineVersion} — ${check.blocking.length} blocking, ` +
+            `${check.findings.length - check.blocking.length} advisory. ` +
+            (check.ok
+              ? 'Draft returns still compute.'
+              : 'DRAFT RETURNS ARE WITHHELD until this is resolved; the worksheet is unaffected.'),
+        );
+        for (const line of formatFindings(check)) console.warn(`          ${line}`);
+      } catch (err) {
+        console.warn(
+          `[startup] draft return: could not read the engine's node catalogue: ${(err as Error).message}`,
+        );
+      }
+    })();
+  }
 
   const shutdown = async (): Promise<void> => {
     vibeAuth.stop();

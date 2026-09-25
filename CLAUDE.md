@@ -602,7 +602,16 @@ failure this whole app is built to prevent:
   reading of its AGPL licence and it keeps the integration severable (§13, QUESTIONS.md Q22).
   Do not move it in-process. Do not vendor its source into `src/`.
 - **Pin the version and verify the binary by checksum.** It is a young, largely
-  AI-maintained engine; `install.sh | sh` into a floating latest is not acceptable here.
+  AI-maintained engine; `install.sh | sh` into a floating latest is not acceptable here. That
+  rule is why there is no upgrade button: the pin lives in the image build so nothing at
+  runtime can move it (QUESTIONS.md Q23). Admin → Draft engine reports and never installs.
+- **Check the node map against the engine's own catalogue before sending** (`src/draft/
+  catalog.ts`). A renamed *required* field is refused loudly; a renamed **optional** field is
+  accepted and ignored, so the amount vanishes and the line reads as absent — the silent
+  omission this app exists to prevent, through the one door the omissions contract does not
+  cover. A blocking mismatch withholds draft returns; the worksheet is unaffected. It is a
+  name check: `npm run draft -- --truth` measures behaviour, and an upgrade needs both.
+  `docs/opentax-draft-return.md` §7 has the procedure.
 - **No MeF XML and no filing.** The engine can emit MeF XML and a filled PDF; this app uses
   neither. No transmission, no acknowledgements, no EFIN or ERO surface.
 - **Every computed figure is labelled advisory**, with the engine and its version named, and a

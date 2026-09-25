@@ -14,6 +14,7 @@ import { factorDestination, issueCode, verifyCode } from '../auth/otp.ts';
 import { changeOwnPassword, completeReset, passwordProblem, requestReset } from '../auth/password-reset.ts';
 import { satisfyMfa } from '../auth/session.ts';
 import { db } from '../db/client.ts';
+import { engineReadiness } from '../draft/generate.ts';
 import { auditLog, notificationLog, users } from '../db/schema.ts';
 import { breakglassStatus, isBreakglassEmail } from '../lib/vibeAuthUsers.ts';
 import { normalizePhone, verifyEmail } from '../notify/channels.ts';
@@ -305,6 +306,28 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     const user = await requireRole(req, reply, ['admin']);
     if (!user) return;
     return breakglassStatus();
+  });
+
+  /**
+   * The draft-return engine's upgrade picture: which binary is running, what the two version
+   * pins say, and whether the node map's field names still exist on it (P17, §14).
+   *
+   * **Read-only, and that is the design.** It cannot download, install or switch an engine.
+   * The version is pinned and checksum-verified when the sidecar image is built, so that
+   * nothing can replace the binary at runtime — `install.sh | sh` into a floating latest is
+   * exactly what CLAUDE.md §14 forbids, and putting a button on it would not make it safer.
+   * An upgrade is a deliberate, recorded act by an operator: docs/opentax-draft-return.md has
+   * the procedure, and this endpoint is the part of it a person can see without a shell.
+   *
+   * Slow on a cold cache — it spawns a child process per node type — so it is its own
+   * endpoint rather than part of `/api/admin/settings`, and it is never on a liveness path.
+   */
+  app.get('/api/admin/draft-engine', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin']);
+    if (!user) return;
+    const { taxYear } = z.object({ taxYear: z.coerce.number().int().optional() }).parse(req.query);
+    await auditAccess(req, 'admin.draft_engine_checked', { detail: { taxYear: taxYear ?? null } });
+    return engineReadiness(taxYear);
   });
 
   // ── audit ──────────────────────────────────────────────────────────────────

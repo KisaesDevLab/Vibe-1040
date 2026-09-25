@@ -86,17 +86,12 @@ export interface EngineRequestNode {
   payload: Record<string, unknown>;
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function request<T>(path: string, init: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), env.OPENTAX_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(`${env.OPENTAX_URL}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    res = await fetch(`${env.OPENTAX_URL}${path}`, { ...init, signal: controller.signal });
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new DraftEngineError(
@@ -127,6 +122,15 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   }
 }
 
+const post = <T>(path: string, body: unknown): Promise<T> =>
+  request<T>(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+const get = <T>(path: string): Promise<T> => request<T>(path, { method: 'GET' });
+
 /**
  * Ask the sidecar whether it is there and which engine it holds.
  *
@@ -151,6 +155,43 @@ export async function engineHealth(): Promise<EngineHealth> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** One input node's field catalogue, as the engine itself reports it. */
+export interface EngineNodeCatalog {
+  implemented: boolean;
+  /** The array a payload becomes an item of — `w2s` for `w2`. Null for a flat node. */
+  collection?: string | null;
+  /** The fields a `form add` payload may carry, and whether the engine requires each. */
+  fields?: Record<string, { type: string; required: boolean }>;
+  /** Names the node carries elsewhere — a flat node's nested collections, say. */
+  otherFields?: string[];
+  /** Populated when `implemented` is false. */
+  reason?: string;
+}
+
+export interface EngineCatalog {
+  engineVersion: string;
+  nodes: Record<string, EngineNodeCatalog>;
+}
+
+/**
+ * Ask the engine what fields it actually has, for the node types named.
+ *
+ * Used to catch a field renamed between engine releases. See `src/draft/catalog.ts` for why
+ * that is worth a round trip: a renamed *optional* field is accepted and ignored, so the
+ * amount disappears with no error anywhere.
+ */
+export async function fetchCatalog(nodeTypes: readonly string[]): Promise<EngineCatalog> {
+  const query = encodeURIComponent([...new Set(nodeTypes)].join(','));
+  const body = await get<Partial<EngineCatalog>>(`/catalog?nodes=${query}`);
+  if (typeof body.nodes !== 'object' || body.nodes === null) {
+    throw new DraftEngineError('invalid_response', 'the OpenTax sidecar returned a catalog with no nodes');
+  }
+  return {
+    engineVersion: typeof body.engineVersion === 'string' ? body.engineVersion : 'unknown',
+    nodes: body.nodes,
+  };
 }
 
 /** Compute a return from the nodes the translator produced. */

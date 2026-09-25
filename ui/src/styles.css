@@ -280,3 +280,19 @@ a.button.sso-button[aria-disabled='true'] { opacity: 0.6; }
 .draft-diag { font-size: 11px; padding: 3px 0; border-bottom: 1px solid #f0f2f5; }
 .draft-diag code { font-size: 10px; color: var(--muted); margin-right: 6px; }
 .draft-again { margin-top: 10px; }
+
+/* ── Admin → Draft engine (P17) ──────────────────────────────────────────────
+   A report, never a control: there is deliberately no install button here, so the only
+   affordance styled is "check again". */
+.engine-pins { border-collapse: collapse; font-size: 12px; margin: 10px 0; }
+.engine-pins th { text-align: left; font-weight: 600; padding: 4px 14px 4px 0; white-space: nowrap; color: var(--muted); }
+.engine-pins td { padding: 4px 0; font-variant-numeric: tabular-nums; }
+.engine-good { font-size: 12px; color: #067647; margin: 10px 0; }
+.engine-bad { font-size: 12px; color: #b42318; font-weight: 600; margin: 10px 0; line-height: 1.45; }
+.engine-finding { border-left: 3px solid #e6e9ef; padding: 6px 0 6px 10px; margin-bottom: 8px; }
+.engine-finding.engine-blocking { border-left-color: #b42318; background: #fef3f2; }
+.engine-finding.engine-advisory { border-left-color: #b45309; background: #fff8ef; }
+.engine-finding-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 600; align-items: baseline; }
+.engine-finding-head code { font-weight: 400; }
+/* `.card` is a flex column, so a button stretches to full width unless told otherwise. */
+.engine-recheck { align-self: flex-start; }

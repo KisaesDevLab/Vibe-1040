@@ -2,6 +2,7 @@ import type {
   AuditRow,
   Bundle,
   CheckRow,
+  DraftEngineReadiness,
   DraftReturn,
   StoredDraftReturn,
   DocumentRow,
@@ -124,6 +125,13 @@ export const api = {
   auditActions: () => request<string[]>('/api/admin/audit/actions'),
 
   retentionForecast: () => request<{ rastersDue: number; sourcesDue: number }>('/api/admin/retention'),
+
+  /**
+   * The draft-return engine's upgrade picture. Read-only: it reports which binary is running
+   * and whether the node map still matches it, and cannot install or switch anything.
+   */
+  draftEngine: (taxYear?: number | null) =>
+    request<DraftEngineReadiness>(`/api/admin/draft-engine${taxYear ? `?taxYear=${taxYear}` : ''}`),
 
   runRetention: () =>
     request<Record<string, unknown>>('/api/admin/retention/run', { method: 'POST' }),

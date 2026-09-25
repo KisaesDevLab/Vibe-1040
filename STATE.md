@@ -117,6 +117,63 @@ computed-only figures, so a draft would display it. Raised rather than worked ar
   placeholder rather than the product.
 
 
+**Verified by execution on 2026-09-25 (third pass) — the engine catalogue check.**
+
+A question about how an engine upgrade would be handled turned up a real hole, found by probing
+the running 2.0.4 binary rather than by reading its source. A field renamed between engine
+releases fails in two very different ways:
+
+- **Required field renamed** → `form add` refuses the node, the wrapper reports it in
+  `rejected`, the app carries it into the omissions. Loud, and already handled.
+- **Optional field renamed** → the engine **accepts the payload and ignores the unknown key**.
+  Demonstrated: a 1099-INT box 1 of 12,345 sent as `box1_interest` rather than `box1` returns
+  `rejected: 0` and leaves `line2b_taxable_interest` **absent**. Absent is exactly what "the
+  documents reported nothing on this line" looks like. Nothing is rejected, nothing is logged,
+  and the omissions list does not mention it either — from the translator's side the field was
+  sent successfully. That is the silent omission this whole app exists to prevent, arriving
+  through the one door the omissions contract does not cover.
+
+Closed by comparing names before sending. `opentax/server.mjs` gained `GET /catalog`, which
+reads the engine's own `node inspect --node_type X --json`; `src/draft/catalog.ts` compares it
+against the node map. Blocking findings withhold draft returns — a wrong draft is worse than no
+draft, and the worksheet does not go through that path at all. Never fatal at boot (§3).
+
+- **All five finding kinds were mutation-checked against the real binary**, and the shipped map
+  is clean against 2.0.4: 0 findings across 14 node types. Break it and each fires — a renamed
+  field (blocking), a renamed node type (blocking), an `engineRequired` flag stale in either
+  direction (advisory), a required field the map sends nothing for (advisory).
+- **The refusal was proven end to end** (`test/draft-return.test.ts`, real database, real
+  wrapper): with `box1_wages` renamed in the map, generation throws `DraftEngineMismatchError`
+  naming the field, and computes again once restored. Mutation-checked: remove the guard and
+  that test alone fails.
+- **The route answers 409, not 502**, because the engine is healthy — what is wrong is this
+  app's map against the engine it is pointed at, and the findings go back with the refusal.
+- **Admin → Draft engine** renders it: both version pins, the running binary, and every finding
+  with its remedy. Captured in a browser in both states, healthy and mismatched.
+- **Parallelised in the wrapper**, bounded at four children: 9.4s → 2.9s for 14 node types.
+  Sequential was too slow to sit in front of a first draft; unbounded is a memory spike an
+  appliance should not take for a diagnostic.
+- **The stand-in binary now carries the full catalogue**, derived from the real one into
+  `test/helpers/fake-opentax-catalog.json`. It first carried three representative node types
+  and every draft-return test refused — the check correctly reporting the other eleven as
+  absent. The same lesson as the flat-`lines` mistake, from the other direction: a stand-in
+  that knows *less* than the engine is as misleading as one that knows it wrongly.
+
+**What this is not:** a name check, not a behaviour check. It cannot see a field that kept its
+name and changed its meaning, or arithmetic that moved. `npm run draft -- --truth` is what
+measures behaviour; an upgrade needs both, and `docs/opentax-draft-return.md` §7 now says so as
+a procedure.
+
+**Not built, deliberately — QUESTIONS.md Q23.** The ask was for the upgrade procedure "as a
+simple button". The reporting half is built; a button that downloads and swaps the engine is
+not, and should not be. §14 pins the version and verifies the binary by checksum at image build
+precisely so nothing at runtime can move it, and a click that installed a release would be
+`install.sh | sh` with better manners. The app could not do it anyway — the engine is a separate
+compose service, which is what keeps the AGPL integration severable. Q23 records the reasoning
+and the one middle option not taken (checking the releases feed and reporting a new version
+without installing it), which is a network-policy and WISP question rather than a code one.
+
+
 **Verified by rendering, on 2026-09-25** (P17, the UI panel — the thing that had never been
 looked at):
 
@@ -165,9 +222,8 @@ reading); the withheld 1099-R and the off-year 1098 both appear in it with their
 warning made visible; and there were no console errors and no failed requests. The workbook
 generated for the same bundle carries the `Draft Return` sheet with the omissions on it.
 
-The suite is now **335 across 27 files, none skipped**, up from 330 at the real-engine pass:
-five new tests, one pinning the punctuation and four pinning the node-map year resolution that
-the dead filing-status control came from. `npm run check:providers` is clean and
+The suite was **335 across 27 files** after this pass (330 before it), and is **349 across 28**
+after the catalogue check above. `npm run check:providers` is clean and
 `python fixtures/generate.py test/fixtures` leaves `manifest.json` untouched.
 
 **Not verified by this:** the three draft-return routes were exercised by the browser and by
@@ -1293,7 +1349,8 @@ and remains deferred.
 | **The engine is young and largely AI-maintained, and its arithmetic is only partly measured** | P17 | Pinned at v2.0.4 and checksummed. `npm run draft -- --truth` now scores 13/13 against it, which covers wages, withholding, interest and dividends — not tax, credits or phase-outs. One suspected engine defect now observed twice on different bundles (line 12c reports the itemised total while taxable income uses the larger standard deduction). It is surfaced as a node-map `note` beside the figure in the panel, the stored line and the workbook, never corrected. P17 still cannot exit until a person has checked a draft line by line |
 | A draft return is built on extraction accuracy that has never been measured | P7, P8, P17 | Accepted 2026-09-25 and inverted deliberately: the draft return is the accuracy instrument (P17 stage 3). Values flagged for review or citing no span never reach the engine, so an unchecked number cannot silently feed a computed line. `--truth` mode now isolates the two: the node map and engine are measured at 13/13, so a future disagreement on a real bundle is extraction |
 | Relicensing to AGPL forecloses a proprietary licence for the combined work | P17, §13 | Q22. The engine is a separate process and a severable optional service; with the flag unset no OpenTax code is present at all. Do not move it in-process or vendor its source |
-| **A stand-in binary that shares a wrong assumption tests nothing** | P17 | Learned the hard way: the stub encoded a nested `lines` shape the engine does not use, so all 328 tests agreed with the mistake. `test/helpers/fake-opentax.mjs` now mirrors the engine's real shapes — flat keys, array-valued lines, absent source lines, present zero totals — and its comments say where each came from. Re-derive it against the binary whenever the pin moves |
+| **An engine field renamed between releases disappears silently** | P17 | Verified on 2.0.4 by probe: a renamed *required* field is refused loudly, but a renamed **optional** one is accepted and ignored, so the amount never arrives and the line reads as absent — with nothing in `rejected`, the diagnostics or the omissions saying so. `src/draft/catalog.ts` compares the map's field names against the engine's own catalogue before sending, and a blocking mismatch withholds draft returns (the worksheet is unaffected). A **name** check only: `npm run draft -- --truth` measures behaviour, and `docs/opentax-draft-return.md` §7 requires both on every upgrade |
+| **A stand-in binary that shares a wrong assumption tests nothing** | P17 | Learned the hard way: the stub encoded a nested `lines` shape the engine does not use, so all 328 tests agreed with the mistake. `test/helpers/fake-opentax.mjs` now mirrors the engine's real shapes — flat keys, array-valued lines, absent source lines, present zero totals — and its comments say where each came from. Re-derive it against the binary whenever the pin moves | It must also know about **every** node type the map declares, not a representative few: carrying three made the catalogue check report the other eleven as absent and refuse every draft. `test/helpers/fake-opentax-catalog.json` is derived from the real binary for that reason |
 | Powered-off GPU droplets still bill if the Router ever provisions one | Router-side | Not this repo's concern, but flag to Router work |
 
 ---

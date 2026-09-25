@@ -251,6 +251,44 @@ that conversation is independent of this question and worth starting separately.
 
 ## Non-blocking, working assumption recorded
 
+### Q23 — Should upgrading the OpenTax engine ever be a button?
+**Raised:** 2026-09-25. **Working assumption:** no. Admin → Draft engine reports and never
+installs; the upgrade stays a deliberate, recorded act on the image.
+
+The ask was for "the upgrade procedure as a simple button on the UI". What was built is the
+half that is safe: a read-only page showing which binary is running, what both version pins
+say, and every mismatch between the node map's field names and the engine's own catalogue, each
+with its remedy. It turns "read a doc and run CLI commands" into "look at a page", which is
+most of the value.
+
+What was **not** built is a button that downloads and swaps the engine, and this is why:
+
+1. **§14 forbids the shape of it.** "Pin the version and verify the binary by checksum. It is a
+   young, largely AI-maintained engine; `install.sh | sh` into a floating latest is not
+   acceptable here." A click that fetched and installed a release is that, with better manners.
+   The pin lives in the image build so that *nothing at runtime can move it*, which is the
+   property an upgrade button would remove.
+2. **The app cannot do it anyway.** The engine is a separate compose service on a glibc base,
+   deliberately (§13, Q22 — the process boundary is what keeps the AGPL integration severable).
+   The API container cannot rebuild an image or replace another container's binary, and giving
+   it the ability to would be a much larger change to the appliance's security posture than the
+   feature is worth.
+3. **It is the same category as `DRAFT_RETURN_ENABLED`**, which is an environment key rather
+   than a `firm_settings` row and renders read-only in Admin → Settings with its reason,
+   because "it changes what the app computes about a taxpayer, which is not a click". Which
+   engine computes it is, if anything, the stronger case.
+4. **A name check is not the whole procedure.** Even a perfect installer would leave steps a
+   button cannot do: re-deriving `test/helpers/fake-opentax.mjs` against the new binary, and
+   running `npm run draft -- --truth` to measure behaviour rather than names. An upgrade that
+   *looked* complete because a button went green would be worse than one that obviously needs a
+   person.
+
+**Say if this should go further.** A middle option exists and was not taken: the page could
+check the engine's releases feed and say "2.1.0 is available, here is its checksum", still
+installing nothing. That needs an outbound call to GitHub from the appliance, which is a WISP
+and network-policy question rather than a code one — hence a question rather than a choice.
+
+
 ### Q20 — How far should the app go in protecting the break-glass account from its own admins?
 **Raised:** 2026-09-20. **Working assumption:** block what strands the firm or falsifies the
 stored credential; report, rather than block, what an admin may legitimately need to do.
