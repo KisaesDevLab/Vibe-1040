@@ -17,7 +17,11 @@ to main 2026-09-25 (PR #2, merge `67283c1`). **v0.11.0 images are published** as
 (release run 28, on merge `6c86717`) — the appliance, the sidecar and, for the first time, the
 OpenTax engine image, each at `0.11.0` and `latest`, all six manifests verified anonymously
 pullable. **The git tag `v0.11.0` is not pushed**: the push returns 403 from an agent session, so
-the release was dispatched by hand and carries no floating `0.11` tag. See *The v0.11.0 release,
+the release was dispatched by hand and carries no floating `0.11` tag. **v0.12.0 follows on 2026-09-25** (PR #6, merge `faa4c99`): the engine and pipeline controls
+become audited settings rather than environment keys (Q26), and Admin → Draft engine reports
+whether a newer OpenTax release exists without being able to install one (Q23's middle option).
+Neither changes what the app computes; both change who can change it and what the record says.
+See *The v0.11.0 release,
 and the P0 defect it exposed* below — it took two attempts, and the first one's failure was the
 most serious finding of the pass.
 **Status:** P0–P16 code complete and **integration-unverified**; P17 code complete and
@@ -116,6 +120,35 @@ had been broken or missing since P0 were closed, and each found a real defect on
 skips locally — the auth package is stubbed here, so CI is the only place its 28 run) and 16 in
 the UI, against a real Postgres at 0013. `npm run lint` clean in both packages.
 `npm run draft -- --truth` still 13 agreed, 0 disagreed.
+
+### v0.12.0 — what a firm admin can change, and what they still cannot
+
+Released 2026-09-25 from merge `faa4c99`. Two changes, both answering a page that told Kurt no,
+and neither of them touching what the app computes about a taxpayer.
+
+**Q26 — five environment keys become audited settings.** `DRAFT_RETURN_ENABLED`,
+`OPENTAX_VERSION`, `ROUTER_EXPECTED_SENSITIVITY`, `EXTRACT_ATTACH_PAGE_IMAGE` and
+`OCR_FALLBACK_ENABLED` are `firm_settings` rows seeded from their environment variables, so an
+existing deployment behaves exactly as it did until somebody clicks. The reversal is recorded in
+the decision log rather than implied: "not a click" wanted a *record*, and an environment key
+produces the opposite of one. Five keys stay in the environment, for two reasons that are not
+the same — one is §11's fail-closed control, four would destroy or leak the firm's own data, and
+`STORAGE_ENCRYPTION_KEY` cannot be a setting at all because this table's secrets are encrypted
+with it.
+
+**Q23's middle option — a release check that installs nothing.** Admin → Draft engine reports
+whether a newer OpenTax exists, with its published digest, and has no code path to a running
+binary; a test reads the module's own source and fails if one is ever added. Off by default,
+because it opens an outbound connection the appliance otherwise never makes.
+
+**Two defects this pass created and caught.** A live read of the two task-class settings would
+have had the app calling a class the process never registered, so they are on a boot snapshot
+that throws rather than falling back to the environment; and `DECLARATIONS` had to become a
+function, because as a constant it evaluated before boot had read anything.
+
+**Nothing here moves P17 or P18 toward exit.** Q21 is still unanswered, and the switch existing
+was shipped ahead of that answer deliberately — the acknowledgement text names the open question
+so nobody turns it on uninformed.
 
 ### The v0.11.0 release, and the P0 defect it exposed
 
