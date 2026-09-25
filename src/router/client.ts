@@ -19,7 +19,15 @@ import {
   type TaskClassKey,
 } from './task-classes.ts';
 
-export const APP_VERSION = '0.10.0';
+/**
+ * Version-stamped onto every task-class registration and every review export.
+ *
+ * Deliberately a literal rather than an import of `package.json`: `rootDir` is `src`, so
+ * reaching outside it would put the manifest in `dist/`. The cost of the duplication is that
+ * it can drift — and it did, shipping `0.10.0` on a 0.11.0 build until a review caught it — so
+ * `test/router.test.ts` asserts the two agree, which is the cheap half of the bargain.
+ */
+export const APP_VERSION = '0.11.0';
 
 export const ai = new VibeAiClient({
   baseUrl: env.VIBE_AI_ROUTER_URL,

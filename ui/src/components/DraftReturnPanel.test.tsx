@@ -35,6 +35,7 @@ const STATUS_UP = {
     { code: 'mfj', label: 'Married filing jointly' },
   ],
   filingStatusYear: 2025,
+  filingStatusSubstituted: false,
 };
 
 function inputs(over: Partial<DraftInputs> = {}): DraftInputs {
@@ -47,8 +48,8 @@ function inputs(over: Partial<DraftInputs> = {}): DraftInputs {
   };
 }
 
-const mount = () =>
-  render(<DraftReturnPanel bundleId="b-1" taxYear={2025} onError={vi.fn()} />);
+const mount = (taxYear: number | null = 2025) =>
+  render(<DraftReturnPanel bundleId="b-1" taxYear={taxYear} onError={vi.fn()} />);
 
 /**
  * Wait until both loads have resolved and React has flushed them.
@@ -98,6 +99,33 @@ describe('a control the panel cannot honour is never offered', () => {
     expect(await screen.findByText(/No OpenTax node map is installed/)).toBeInTheDocument();
     // And no control that cannot work.
     expect(screen.queryByRole('button', { name: /Compute draft return/ })).toBeNull();
+  });
+
+  /**
+   * The harder version of the same defect, and the one that shipped.
+   *
+   * A non-empty vocabulary is not evidence that *this* season can be computed: the filing-status
+   * codes belong to the engine release, so the server substitutes another year's deliberately,
+   * while the node map proper is refused for a season it has no file for. A TY2026 bundle
+   * therefore rendered a live Compute button whose only possible outcome was a refusal.
+   */
+  it('names the season that has no node map when the vocabulary was borrowed from another', async () => {
+    vi.mocked(api.draftReturnStatus).mockResolvedValue({
+      ...STATUS_UP,
+      filingStatusYear: 2025,
+      filingStatusSubstituted: true,
+    });
+    mount(2026);
+
+    expect(await screen.findByText(/No OpenTax node map for tax year 2026/)).toBeInTheDocument();
+    // Which season it does have, so the message names its own fix.
+    expect(screen.getByText(/newest installed is 2025/)).toBeInTheDocument();
+    // The worksheet is a different product and is unaffected; say so rather than imply otherwise.
+    expect(screen.getByText(/worksheet is unaffected/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Compute draft return/ })).toBeNull();
+    // And no way into the entry surface either: preparer inputs for a season that cannot compute
+    // would be typed against another year's vocabulary.
+    expect(screen.queryByRole('button', { name: /Preparer inputs/ })).toBeNull();
   });
 });
 

@@ -45,3 +45,29 @@ describe('classifyFailure on the documented taxonomy', () => {
     expect(classifyFailure(new Error('socket hang up'))).toMatchObject({ kind: 'park', code: 'unknown' });
   });
 });
+
+/**
+ * The version this app stamps on its Router registrations and its review exports.
+ *
+ * `APP_VERSION` is a literal in `src/router/client.ts` because `rootDir` is `src` and importing
+ * `package.json` would drag the manifest into `dist/`. The price of that duplication is drift,
+ * and it was paid: v0.11.0 was built and released stamping `0.10.0`, through a green CI, a
+ * green release gate and a merge — because nothing compared them. This is that comparison.
+ */
+describe('APP_VERSION', () => {
+  it('matches the version in package.json', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { APP_VERSION } = await import('../src/router/client.ts');
+
+    const manifest = JSON.parse(
+      await readFile(join(process.cwd(), 'package.json'), 'utf8'),
+    ) as { version: string };
+
+    expect(
+      APP_VERSION,
+      'bump APP_VERSION in src/router/client.ts whenever package.json moves — a release that ' +
+        'stamps the wrong version on a task-class registration is a release nobody can trace',
+    ).toBe(manifest.version);
+  });
+});

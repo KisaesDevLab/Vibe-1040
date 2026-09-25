@@ -407,6 +407,75 @@ describe.skipIf(!dbAvailable)('the draft routes, over HTTP', () => {
       expect(override!.detail).toMatch(/12844\.00/);
     });
 
+    /**
+     * A season the engine cannot compute yet, which is every season's opening state.
+     *
+     * TY2026 line mappings landed before OpenTax shipped a TY2026 release, so a 2026 bundle
+     * produces a worksheet and the draft control became reachable. Two things had to be true and
+     * neither was: the refusal is a 409 rather than a 500 (`loadNodeMap` threw a bare `Error`
+     * past the route's catch chain), and the panel must not offer a control that can only be
+     * refused — the *vocabulary* substitutes a season, deliberately, so `filingStatuses` alone
+     * cannot tell a client whether this year can be computed.
+     */
+    it('refuses a season with no node map with a 409, and says which years there are', async () => {
+      const [future] = await db
+        .insert(schema.bundles)
+        .values({
+          label: 'next season',
+          status: 'in_review',
+          uploadedBy: userId,
+          contentHash: `routes-2026-${Date.now()}`,
+          taxYear: 2026,
+          identityConfirmedAt: new Date(),
+        })
+        .returning({ id: schema.bundles.id });
+      const [doc] = await db
+        .insert(schema.documents)
+        .values({
+          bundleId: future!.id,
+          formType: '1098',
+          taxYear: 2026,
+          payerName: 'HERITAGE MORTGAGE CO',
+          extractionOutcome: 'extracted',
+          extractionCompletedAt: new Date(),
+        })
+        .returning({ id: schema.documents.id });
+      await db.insert(schema.extractedFields).values({
+        documentId: doc!.id,
+        fieldKey: 'box_1',
+        valueCents: 900_000,
+        spanIds: [SPAN],
+      });
+
+      try {
+        const res = await send('POST', `/api/bundles/${future!.id}/draft-return`, {});
+        expect(res.statusCode, 'a season with no node map is a refusal, not a server failure').toBe(409);
+        const body = res.json<{ error: string; taxYear: number; availableTaxYears: number[] }>();
+        expect(body.error).toBe('no_node_map');
+        expect(body.taxYear).toBe(2026);
+        // Named, so the message tells a preparer what the appliance actually has.
+        expect(body.availableTaxYears).toContain(2025);
+
+        // And the status route says the vocabulary was borrowed, which is what suppresses the
+        // control. `filingStatuses` is non-empty here, so nothing else could have said so.
+        const status = (await get('/api/draft-return/status?taxYear=2026')).json<{
+          filingStatuses: { code: string }[];
+          filingStatusYear: number | null;
+          filingStatusSubstituted: boolean;
+        }>();
+        expect(status.filingStatuses.length).toBeGreaterThan(0);
+        expect(status.filingStatusYear).toBe(2025);
+        expect(status.filingStatusSubstituted).toBe(true);
+
+        // The season that *does* have a map is not reported as substituted, or the panel would
+        // suppress the control for every bundle.
+        const current = (await get('/api/draft-return/status?taxYear=2025')).json<{ filingStatusSubstituted: boolean }>();
+        expect(current.filingStatusSubstituted).toBe(false);
+      } finally {
+        await db.delete(schema.bundles).where(eq(schema.bundles.id, future!.id));
+      }
+    });
+
     it('404s a draft for a bundle that has none', async () => {
       const [empty] = await db
         .insert(schema.bundles)

@@ -337,6 +337,16 @@ export async function draftReturnStatus(taxYear?: number): Promise<{
    * offering a dead control — and the cause is a missing data file, which names its own fix.
    */
   filingStatusYear: number | null;
+  /**
+   * True when the vocabulary above came from a *different* season than the one asked about.
+   *
+   * The vocabulary substitutes deliberately — filing-status codes belong to the engine release,
+   * not the tax year — but nothing else does: `loadNodeMap` refuses a season it has no map for,
+   * so a substituted vocabulary means a draft return **cannot** be computed for that year. Served
+   * because the caller cannot tell from `filingStatuses` alone, and the UI that could not tell
+   * rendered a live Compute button on a TY2026 bundle.
+   */
+  filingStatusSubstituted: boolean;
 }> {
   // The vocabulary is a property of the engine release, not of the tax year, so the newest map
   // on disk is a correct source for it — which is what `resolveNodeMap` falls back to when the
@@ -346,8 +356,18 @@ export async function draftReturnStatus(taxYear?: number): Promise<{
   const resolved = await resolveNodeMap(taxYear ?? Number.NaN);
   const filingStatuses = resolved?.file.filingStatuses ?? [];
   const filingStatusYear = resolved?.year ?? null;
+  // `resolveNodeMap` is asked for NaN when no year was named, and reports that as substituted.
+  // With no year named there is nothing to have substituted *for*, so report false.
+  const filingStatusSubstituted = taxYear !== undefined && (resolved?.substituted ?? false);
   if (!env.DRAFT_RETURN_ENABLED) {
-    return { enabled: false, engine: null, expectedVersion: env.OPENTAX_VERSION, filingStatuses, filingStatusYear };
+    return {
+      enabled: false,
+      engine: null,
+      expectedVersion: env.OPENTAX_VERSION,
+      filingStatuses,
+      filingStatusYear,
+      filingStatusSubstituted,
+    };
   }
   return {
     enabled: true,
@@ -355,6 +375,7 @@ export async function draftReturnStatus(taxYear?: number): Promise<{
     expectedVersion: env.OPENTAX_VERSION,
     filingStatuses,
     filingStatusYear,
+    filingStatusSubstituted,
   };
 }
 

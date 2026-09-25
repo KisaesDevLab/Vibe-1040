@@ -339,6 +339,32 @@ export type SupersededField = z.infer<typeof supersedes>;
 export type LabelledCode = z.infer<typeof labelledCode>;
 export type UnmappableReason = z.infer<typeof unmappableReason>;
 
+/**
+ * Raised when the season asked for has no node map on disk.
+ *
+ * Typed rather than a bare `Error`, because it is an ordinary state and not a bug: a tax year
+ * arrives before the engine supports it every single season, and a bundle for that year is a
+ * perfectly good bundle that simply cannot have a draft computed. Reaching the API as an
+ * unhandled throw made it a 500 — the review that caught it found a TY2026 bundle offering a
+ * live Compute button, because the *vocabulary* substitutes a season (`resolveNodeMap`) while
+ * the loader, correctly, does not.
+ */
+export class NodeMapMissingError extends Error {
+  readonly taxYear: number;
+  readonly available: number[];
+
+  constructor(taxYear: number, available: number[]) {
+    super(
+      `no OpenTax node map for tax year ${taxYear}. Add data/opentax-nodes/${taxYear}.json — ` +
+        'adding a tax year is a data change, not a code change (PHASES.md P17).' +
+        (available.length ? ` Installed: ${available.join(', ')}.` : ''),
+    );
+    this.name = 'NodeMapMissingError';
+    this.taxYear = taxYear;
+    this.available = available;
+  }
+}
+
 const cache = new Map<number, NodeMapFile>();
 
 export async function loadNodeMap(taxYear: number, root?: string): Promise<NodeMapFile> {
@@ -350,10 +376,7 @@ export async function loadNodeMap(taxYear: number, root?: string): Promise<NodeM
   try {
     raw = await readFile(join(dir, `${taxYear}.json`), 'utf8');
   } catch {
-    throw new Error(
-      `no OpenTax node map for tax year ${taxYear}. Add data/opentax-nodes/${taxYear}.json — ` +
-        'adding a tax year is a data change, not a code change (PHASES.md P17).',
-    );
+    throw new NodeMapMissingError(taxYear, await nodeMapYears(root));
   }
 
   const parsed = nodeMapFile.parse(JSON.parse(raw));

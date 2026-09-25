@@ -312,6 +312,8 @@ Proceed and discard them?`)) return { ok: false };
       expectedVersion: string;
       filingStatuses: { code: string; label: string }[];
       filingStatusYear: number | null;
+      /** The vocabulary came from another season, so this one has no node map to compute with. */
+      filingStatusSubstituted: boolean;
     }>(`/api/draft-return/status${taxYear ? `?taxYear=${taxYear}` : ''}`),
 
   /**
