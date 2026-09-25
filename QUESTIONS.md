@@ -264,9 +264,22 @@ that conversation is independent of this question and worth starting separately.
 ## Non-blocking, working assumption recorded
 
 ### Q24 — A preparer's figure displacing a document's: is the override safe as built?
-**Raised:** 2026-09-25 (P18). **Working assumption:** yes, because it is enumerated, audited,
-announced before the typing, and never touches the worksheet. Recorded so nobody has to
-re-derive that later.
+**Raised:** 2026-09-25 (P18). **Answered:** 2026-09-25.
+
+**A:** Yes — leave it as it is. No typed reason is required. (Kurt, 2026-09-25.) The override is
+already enumerated on every surface, audited with who changed what and when, and announced at
+the point of entry with the form and the amount it will displace; a mandatory free-text box
+would mostly collect "per client" and would add friction to a legitimate act. The override also
+stays available: not offering the field where a document feeds it was considered and rejected,
+twice.
+
+What stays true regardless, and is the part to re-check rather than re-argue: the design rests on
+measured engine behaviour, so `npm run draft:conflicts` must pass on every engine upgrade. A
+release that started *adding* the two figures, or letting the preparer's win, would make the
+withholding wrong and the omission text untrue.
+
+**Original working assumption, for the record:** yes, because it is enumerated, audited,
+announced before the typing, and never touches the worksheet.
 
 **The mechanism, and why there is one.** Some engine fields can be fed from two directions: a
 1098's box 1 is also Schedule A line 8a, and a W-2's box 17 is also line 5a. Measured against
@@ -311,8 +324,26 @@ the draft is something the firm wants available at all, or whether the override 
 typed reason recorded with it. The mechanics are settled; the policy is not.
 
 ### Q23 — Should upgrading the OpenTax engine ever be a button?
-**Raised:** 2026-09-25. **Working assumption:** no. Admin → Draft engine reports and never
-installs; the upgrade stays a deliberate, recorded act on the image.
+**Raised:** 2026-09-25. **Answered:** 2026-09-25.
+
+**A:** Build it, as a staged install a human approves. (Kurt, 2026-09-25 — the second time this
+was asked and the second time the answer was yes.) Admin stages the pinned release into a
+separate volume, verifies its SHA-256, runs it once to read its version, checks the node map
+against its catalogue, and shows the result. **Nothing is served by the new binary until a person
+activates it**, and a staged binary that fails any step is deleted rather than kept.
+
+Two things this needs that are not code, and both belong in the Q21 WISP review rather than being
+decided here: **a writable volume** on a container that is currently `read_only: true`, and
+**outbound network access from the appliance to the release host**. Until those exist the feature
+is inert — which is the right default, and why the staging target is configuration with no value
+shipped.
+
+§14's rule is unchanged and is what makes this safe: the pin lives in the image build, so a
+staged install is an operator replacing a pinned artefact with another pinned artefact under
+their own hand, never a runtime that can move itself. There is still no "latest", and no
+`install.sh | sh`.
+
+**Original working assumption, for the record:** no — report, never install.
 
 The ask was for "the upgrade procedure as a simple button on the UI". What was built is the
 half that is safe: a read-only page showing which binary is running, what both version pins
