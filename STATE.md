@@ -29,6 +29,54 @@ at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
 
+**Verified by execution on 2026-09-25 (fifth pass) — P18, and two things the build never had.**
+
+P18 (preparer-supplied inputs) is implemented and driven end to end; separately, two items that
+had been broken or missing since P0 were closed, and each found a real defect on its first run.
+
+- **`npm run lint` works, and runs in CI.** It has been in `package.json` since P0 with eslint
+  and typescript-eslint both installed, and no `eslint.config.*` was ever committed — so the
+  command failed outright for the whole build and CI omitted the step. The config is narrow on
+  purpose (a strict `tsc` does the heavy lifting) and its centre is the pair of syntaxes
+  `--experimental-strip-types` rejects: a parameter property or an enum compiles in the built
+  image and fails in `npm run dev`, the worker and the migration scripts. That CLAUDE.md rule
+  was enforced until now by reviewers remembering it; both guards are proven to fire.
+  **51 errors on the first run.** Five dead imports, three redundant regex escapes (both
+  rewritten classes proved equivalent against the strings they exist to match), 26 unnecessary
+  assertions, one test helper typing `sectionCode: null` outright so the 1099-B section-ordering
+  assertions were checking a field the type said could never be set, and `Record<string, any>`
+  in the wrapper test — which gave up the very thing that test exists to hold, since a renamed
+  key on the wire contract would have gone on compiling.
+- **The draft routes are tested over HTTP**, twelve tests against the real server via `inject`,
+  the real database and the wrapper the global setup starts, with a real session row rather than
+  a mocked `requireUser`. **It found that every malformed request on this API returned a 500.**
+  All 51 `.parse(req.*)` call sites throw, `buildServer` set no error handler, and so a reviewer
+  mistyping a date got the same status as the database falling over — and every validation
+  failure raised a 5xx alarm. `ZodError` now maps to 400 with the issue paths and messages, and
+  without the values, because `received` on some zod issue kinds would carry a taxpayer figure
+  into a response body and a log line (§11).
+- **P18 itself**: migration 0013 forward/back/forward with no residue, every route exercised
+  against the running dev API and the real engine at 2.0.4, the entry sheet driven in Chromium,
+  and a draft computed from stored inputs alone carrying both the `superseded_by_preparer`
+  omission and 4,400.00 of child tax credit. Four mutations checked, including the one that
+  matters most here: remove the field-omission step and the override silently reverts to the
+  document's figure.
+- **Two silent losses P18 created and closed**, both found by measuring rather than reasoning:
+  the child tax credit was computed by the engine and declared nowhere in the node map, so it
+  was netted into total tax and shown on no surface; and a money box read `15000` directly above
+  a warning reading `12,844.00`. Every draft now reports engine lines the map accounts for in no
+  way, which cannot be a load-time check because enumerating a release's output lines means
+  computing a return.
+
+**Totals after this pass:** 399 tests across 30 files, none skipped, against a real Postgres at
+0013. `npm run lint` clean. `npm run draft -- --truth` still 13 agreed, 0 disagreed.
+`npm run check:providers` clean. No fixture-manifest drift.
+
+**Still not verified, and none of it is small.** The extraction accuracy run still needs the
+Router, a vision model and an app token (see *Blocked on* below). `test/sso.test.ts` still cannot
+run in development. **No person has hand-checked a draft line by line**, and P18 widens what that
+check must cover. Q21 is unanswered and now covers both phases.
+
 **Verified by execution on 2026-09-25 (second pass) — the real engine, at last.**
 
 `opentax-linux-x64` from release **v2.0.4** (SHA-256 `7f0911050f7f34e1…aaaa02d4`) was downloaded,
@@ -356,9 +404,11 @@ edited, because what a pass did not verify at the time is the whole point of rec
   works; it says nothing yet about the engine's arithmetic.
 - **`opentax/Dockerfile` has never been built.** It needs a published release and its SHA-256,
   and neither exists here. Whether `deno compile` output runs on `node:24-bookworm-slim` is
-  reasoned, not observed.
+  reasoned, not observed. *(Superseded 2026-09-25, fourth pass: CI builds the image and runs the
+  engine in the runtime stage. It does.)*
 - The `draft-input`, `draft-return` and `draft-return/status` routes have not been exercised
-  over HTTP. They type-check and their gate wiring is covered at the service layer, not the
+  over HTTP. *(Superseded 2026-09-25, fifth pass: `test/draft-routes.test.ts` drives them
+  through the real server, and found that every malformed request returned a 500.)* They type-check and their gate wiring is covered at the service layer, not the
   route layer. Two small route-level defects were found by reading rather than running, and
   fixed: `?download=false` parsed as true (`z.coerce.boolean()` reads the *string* `'false'`
   as true), and the node map's `engine.pinnedVersion` was declared and then read by nothing,
@@ -833,6 +883,29 @@ requires an explicit decision entry below, not a silent implementation choice.
 
 Append here when a locked decision changes or a significant implementation choice is made
 that future phases depend on. Date, decision, reason, phases affected.
+
+**2026-09-25 — A malformed request is a 400 across the whole API, not a 500.** (build)
+
+Found by the first test that posted a bad body over HTTP rather than calling a service directly.
+Every route validates with zod and calls `.parse`, which throws, and `buildServer` set no error
+handler — so all 51 of those call sites turned a client mistake into a server error. This is a
+client-visible contract change on every route in the app, which is why it is here: a caller can
+now distinguish "you sent something invalid" from "the server broke", and a validation failure
+no longer raises a 5xx alarm. Only `ZodError` is mapped; anything else keeps the status it had.
+
+The issues come back as path and message, never the value. `received` on some zod issue kinds
+would carry the figure itself into a response body and a log line, and a taxpayer amount belongs
+in neither (§11).
+
+**2026-09-25 — ESLint exists.** (build)
+
+`npm run lint` had been in `package.json` since P0, with both packages installed and no config
+ever committed, so it failed outright for the entire build and CI omitted the step. The config
+is deliberately narrow — a strict `tsc` already does the heavy lifting — and its centre is the
+one thing types cannot see here: `--experimental-strip-types` rejects parameter properties and
+enums, so either would compile in the built image and fail in `npm run dev`, the worker and the
+migration scripts. That CLAUDE.md rule now has something enforcing it besides memory. Rules are
+errors or they are absent; the two exceptions are scoped and carry their reason in the file.
 
 **2026-09-25 — The preparer supplies what no document carries, and may displace a document's
 figure with their own.** (P18)
