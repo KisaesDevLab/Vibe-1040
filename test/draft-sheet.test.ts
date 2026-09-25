@@ -197,6 +197,25 @@ const handCheck: HandCheckModel = {
   documentsWithheld: 1,
   generatedAt: new Date('2026-09-25T00:00:00Z'),
   omissions: draft.omissions,
+  // What a person typed, apart from what was read off a page (P18). The mortgage-interest line
+  // is the one that displaces a document, which is the case a checker most needs told.
+  preparerFigures: [
+    { group: 'This return', label: 'Filing status', valueCents: null, stated: 'Married filing jointly', supersedes: null },
+    {
+      group: 'Dependents',
+      label: 'ANNA SMITH — Daughter, born 2014-03-02, 12 month(s) in the home',
+      valueCents: null,
+      stated: 'Qualifying child for the child tax credit: not stated — no credit is computed',
+      supersedes: null,
+    },
+    {
+      group: 'Itemised deductions',
+      label: '8a. Home mortgage interest reported on Form 1098',
+      valueCents: 1_500_000,
+      stated: null,
+      supersedes: '1098 — HERITAGE MORTGAGE CO (box 1)',
+    },
+  ],
   rows: [
     {
       lineRef: '1040:1a',
@@ -303,6 +322,41 @@ describe('the Hand check sheet', () => {
   it('carries the expected-disagreement note so a checker does not chase it', async () => {
     const text = (await handCheckText(handCheck))!;
     expect(text).toContain('Expected: The 1099-R was withheld');
+  });
+
+  it('keeps what a person typed apart from what was read off a page', async () => {
+    const text = (await handCheckText(handCheck))!;
+    expect(text).toContain('Stated by the preparer — not read from any document');
+    expect(text).toContain('Married filing jointly');
+    expect(text).toContain('8a. Home mortgage interest reported on Form 1098');
+    // A checker has nothing in the packet to tick these against, and must be told so rather
+    // than left hunting for a form that was never there.
+    expect(text).toMatch(/nothing in the packet to tick them against/);
+  });
+
+  it('says which document a typed figure displaced, in the same row as the figure', async () => {
+    const text = (await handCheckText(handCheck))!;
+    // The one thing in that block a checker must not skim past: a 1098 is sitting in the pile
+    // in front of them and the draft deliberately did not use it.
+    expect(text).toContain('overrides a document');
+    expect(text).toContain('replaces 1098 — HERITAGE MORTGAGE CO (box 1)');
+    expect(text).toContain('15000');
+  });
+
+  it('carries the determination that decides whether a dependent earns a credit', async () => {
+    const text = (await handCheckText(handCheck))!;
+    expect(text).toContain('ANNA SMITH');
+    // "Not stated" earns no credit while looking like nothing at all, which is exactly why it
+    // is spelled out rather than left blank.
+    expect(text).toMatch(/not stated — no credit is computed/);
+  });
+
+  it('puts what a person typed above the line-by-line figures', async () => {
+    const text = (await handCheckText(handCheck))!;
+    const stated = text.indexOf('Stated by the preparer');
+    const firstFigure = text.indexOf('1040:1a');
+    expect(stated).toBeGreaterThan(-1);
+    expect(stated).toBeLessThan(firstFigure);
   });
 
   it('leaves somewhere to sign', async () => {

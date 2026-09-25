@@ -67,6 +67,26 @@ export interface HandCheckRow {
   sources: HandCheckSource[];
 }
 
+/**
+ * A figure the preparer typed rather than one read off a page (P18).
+ *
+ * On its own sheet block, and labelled, because the two are checked differently: a document
+ * figure is checked against the paper, and this is checked against whatever the preparer worked
+ * it out from — which is not in the packet at all. A checker who cannot tell them apart would
+ * hunt for a form that was never there.
+ */
+export interface HandCheckPreparerFigure {
+  /** `Filing status`, `Dependents`, `Itemised deductions`, `Businesses and rentals`. */
+  group: string;
+  label: string;
+  /** Null for a statement with no amount — a dependent, a filing status, an election. */
+  valueCents: number | null;
+  /** The stated value where it is not money: `Married filing jointly`, `Yes`, `Not stated`. */
+  stated: string | null;
+  /** Set where this figure displaces a document's, naming what it displaced. */
+  supersedes: string | null;
+}
+
 export interface HandCheckModel {
   taxYear: number;
   engineVersion: string;
@@ -78,6 +98,8 @@ export interface HandCheckModel {
   documentsWithheld: number;
   generatedAt: Date;
   omissions: DraftSheetOmission[];
+  /** What the preparer stated, because no document carries it (P18). */
+  preparerFigures: HandCheckPreparerFigure[];
   rows: HandCheckRow[];
 }
 

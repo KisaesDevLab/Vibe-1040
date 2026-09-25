@@ -730,6 +730,59 @@ function renderHandCheck(wb: ExcelJS.Workbook, check: HandCheckModel): void {
     row.getCell('verdict').font = { bold: true, color: { argb: 'FF7A4B00' } };
   }
 
+  // ── what a person typed, rather than what was read off a page ───────────────
+  //
+  // Its own block, because the two are checked differently: a document figure is checked
+  // against the paper, and this is checked against whatever the preparer worked it out from,
+  // which is not in the packet. A checker who could not tell them apart would hunt for a form
+  // that was never there.
+  if (check.preparerFigures.length > 0) {
+    sheet.addRow([]);
+    sheet.addRow(['Stated by the preparer — not read from any document']).font = {
+      bold: true,
+      size: 12,
+    };
+    const note = sheet.addRow([
+      'No source document carries a filing status, a dependent, an itemised deduction total or ' +
+        'a business summary. These were typed in. Check them against whatever they were worked ' +
+        'out from; there is nothing in the packet to tick them against.',
+    ]);
+    note.font = { italic: true };
+    sheet.mergeCells(note.number, 1, note.number, 8);
+    note.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+    sheet.getRow(note.number).height = 26;
+
+    let group = '';
+    for (const figure of check.preparerFigures) {
+      if (figure.group !== group) {
+        group = figure.group;
+        sheet.addRow({ line: group }).font = { bold: true };
+      }
+      const row = sheet.addRow({
+        label: figure.label,
+        // In the engine's column, because that is the side of the comparison it moved.
+        computed: figure.valueCents === null ? null : centsToDollars(figure.valueCents),
+        verdict: figure.supersedes === null ? 'preparer' : 'overrides a document',
+        source: figure.supersedes === null ? (figure.stated ?? '') : `replaces ${figure.supersedes}`,
+        tick: '',
+      });
+      row.getCell('computed').fill = FILL_COMPUTED;
+      row.getCell('source').alignment = { wrapText: true, vertical: 'top' };
+      row.getCell('tick').border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+      sheet.mergeCells(row.number, 6, row.number, 7);
+      if (figure.supersedes !== null) {
+        // The one thing in this block a checker must not skim past: a document in the pile in
+        // front of them was deliberately not used.
+        row.getCell('verdict').font = { bold: true, color: { argb: 'FFC00000' } };
+      }
+    }
+  }
+
   // ── the lines ───────────────────────────────────────────────────────────────
   sheet.addRow([]);
   sheet.addRow(['Line by line']).font = { bold: true, size: 12 };

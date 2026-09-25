@@ -22,16 +22,25 @@
  * **The omissions come first**, as everywhere else (§14). A checker reconciling figures that
  * are wrong by a withheld pension, without being told a pension was withheld, would be
  * checking the wrong thing carefully.
+ *
+ * **And what the preparer typed is listed apart from what was read** (P18). The two are checked
+ * differently: a document figure is checked against the paper, and a preparer's is checked
+ * against whatever they worked it out from, which is not in the packet. A checker who could not
+ * tell them apart would go hunting for a form that was never there — and would have no way to
+ * see that a 1098 in the pile was deliberately displaced.
  */
 import { buildWorksheetModel } from '../mapping/engine.ts';
 import { loadMappedDocuments } from '../worksheet/generate.ts';
 import type {
   DraftSheetOmission,
   HandCheckModel,
+  HandCheckPreparerFigure,
   HandCheckRow,
   HandCheckSource,
 } from '../worksheet/draft-sheet.ts';
 import { latestDraftReturn } from './generate.ts';
+import { documentBackedScheduleALines, draftInputsForBundle } from './inputs.ts';
+import { loadNodeMap } from './nodes.ts';
 
 /**
  * Build the sheet for a bundle's most recent draft return, or null when none exists.
@@ -83,6 +92,7 @@ export async function handCheckForBundle(bundleId: string): Promise<HandCheckMod
     }));
 
   return {
+    preparerFigures: await preparerFigures(bundleId, taxYear),
     taxYear: stored.draftReturn.taxYear,
     engineVersion: stored.draftReturn.engineVersion,
     nodeMapVersion: stored.draftReturn.nodeMapVersion,
@@ -102,4 +112,105 @@ export async function handCheckForBundle(bundleId: string): Promise<HandCheckMod
       })),
     rows,
   };
+}
+
+/**
+ * What the preparer stated for this bundle, flattened for one block of the sheet.
+ *
+ * Labels come from the node map, as they do on the entry surface, so the sheet and the screen
+ * cannot drift apart — and a Schedule A line added to the map appears here without anybody
+ * remembering to add it.
+ *
+ * A line the preparer left blank is left out. This is a list of what was stated, and 19 rows of
+ * "blank" would bury the four that say something.
+ */
+async function preparerFigures(
+  bundleId: string,
+  taxYear: number,
+): Promise<HandCheckPreparerFigure[]> {
+  const stored = await draftInputsForBundle(bundleId);
+  const file = await loadNodeMap(taxYear).catch(() => null);
+  const out: HandCheckPreparerFigure[] = [];
+
+  const statement = (group: string, label: string, stated: string | null): void => {
+    if (stated !== null) out.push({ group, label, valueCents: null, stated, supersedes: null });
+  };
+  const yesNo = (v: boolean | null): string | null => (v === null ? null : v ? 'Yes' : 'No');
+
+  statement(
+    'This return',
+    'Filing status',
+    stored.filingStatus === null
+      ? null
+      : (file?.filingStatuses.find((f) => f.code === stored.filingStatus)?.label ??
+        stored.filingStatus),
+  );
+  statement('This return', 'Taxpayer is 65 or older', yesNo(stored.taxpayerAge65OrOlder));
+  statement('This return', 'Spouse is 65 or older', yesNo(stored.spouseAge65OrOlder));
+  statement('This return', 'Taxpayer is blind', yesNo(stored.taxpayerBlind));
+  statement('This return', 'Spouse is blind', yesNo(stored.spouseBlind));
+
+  for (const d of stored.dependents) {
+    const relationship =
+      file?.preparerInputs?.dependents.relationships.find((r) => r.code === d.relationship)?.label ??
+      d.relationship;
+    out.push({
+      group: 'Dependents',
+      label: `${d.firstName} ${d.lastName} — ${relationship}, born ${d.dob}, ${d.monthsInHome} month(s) in the home`,
+      valueCents: null,
+      // The determination that decides whether a credit is computed, said in full. "Not stated"
+      // is the answer that earns no credit while looking like nothing at all.
+      stated:
+        d.qualifyingChildForCtc === null
+          ? 'Qualifying child for the child tax credit: not stated — no credit is computed'
+          : `Qualifying child for the child tax credit: ${d.qualifyingChildForCtc ? 'yes' : 'no'}`,
+      supersedes: null,
+    });
+  }
+
+  const inputs = file?.preparerInputs;
+  if (stored.scheduleA && inputs) {
+    const backed = new Map(
+      (await documentBackedScheduleALines(bundleId, taxYear)).map((b) => [b.column, b]),
+    );
+    for (const field of [...inputs.scheduleA.fields, ...inputs.scheduleA.flags]) {
+      const value = stored.scheduleA[field.column];
+      if (value === null || value === undefined) continue;
+      const conflict = backed.get(field.column);
+      out.push({
+        group: 'Itemised deductions',
+        label: field.label,
+        valueCents: typeof value === 'number' ? value : null,
+        stated: typeof value === 'boolean' ? (value ? 'Yes' : 'No') : null,
+        supersedes:
+          conflict === undefined
+            ? null
+            : conflict.sources
+                .map((sc) => `${sc.documentLabel} (${sc.fieldKey.replace(/_/g, ' ')})`)
+                .join('; '),
+      });
+    }
+  }
+
+  for (const a of stored.activities) {
+    const kind = inputs?.activities.find((k) => k.kind === a.kind)?.label ?? a.kind;
+    const gross = a.grossCents ?? null;
+    const expenses = a.expensesCents ?? null;
+    out.push({
+      group: 'Businesses and rentals',
+      label: `${a.description} — ${kind}`,
+      // The net, which is what reaches the 1040. Expenses left blank net nothing off, which is
+      // different from expenses of zero only in what the sheet says beside it.
+      valueCents: gross === null ? null : gross - (expenses ?? 0),
+      stated:
+        gross === null
+          ? 'No gross stated'
+          : `gross ${(gross / 100).toFixed(2)} less expenses ${
+              expenses === null ? 'not stated' : (expenses / 100).toFixed(2)
+            }`,
+      supersedes: null,
+    });
+  }
+
+  return out;
 }
