@@ -159,6 +159,15 @@ draft, and the worksheet does not go through that path at all. Never fatal at bo
   absent. The same lesson as the flat-`lines` mistake, from the other direction: a stand-in
   that knows *less* than the engine is as misleading as one that knows it wrongly.
 
+**A hole in the check itself, found by reading the translator afterwards and closed.** The
+`general` node carries what the *reviewer* states — filing status and the age and blindness
+flags — so it is on no form's map and its five engine field names live in code. The first
+version checked only `filing_status`. The other four are **optional** on the engine, which is
+exactly the silent-drop case: rename one and it is accepted, ignored, and the additional
+standard deduction for an elderly or blind taxpayer disappears from every draft with nothing
+saying so. They are now exported as `GENERAL_NODE_FIELDS` and checked like any other, with a
+test that deletes each in turn.
+
 **What this is not:** a name check, not a behaviour check. It cannot see a field that kept its
 name and changed its meaning, or arithmetic that moved. `npm run draft -- --truth` is what
 measures behaviour; an upgrade needs both, and `docs/opentax-draft-return.md` §7 now says so as
@@ -222,7 +231,7 @@ reading); the withheld 1099-R and the off-year 1098 both appear in it with their
 warning made visible; and there were no console errors and no failed requests. The workbook
 generated for the same bundle carries the `Draft Return` sheet with the omissions on it.
 
-The suite was **335 across 27 files** after this pass (330 before it), and is **349 across 28**
+The suite was **335 across 27 files** after this pass (330 before it), and is **351 across 28**
 after the catalogue check above. `npm run check:providers` is clean and
 `python fixtures/generate.py test/fixtures` leaves `manifest.json` untouched.
 

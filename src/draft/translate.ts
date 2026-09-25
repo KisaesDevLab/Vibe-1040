@@ -164,6 +164,26 @@ function fieldLabel(schema: FormSchema, fieldKey: string): string {
 }
 
 /**
+ * Every engine field name the `general` node can carry from here.
+ *
+ * Exported because these are the one set of field names that live in code rather than in the
+ * node map — `general` holds what the *reviewer* states rather than what a document says, so
+ * it is on no form's map. `src/draft/catalog.ts` reads this list to check them against the
+ * engine's catalogue like any other, which matters because four of the five are **optional**
+ * on the engine: rename one and it is accepted, ignored, and the extra standard deduction for
+ * an elderly or blind taxpayer quietly disappears from the draft.
+ *
+ * Keep this in step with the payload built in `buildDraftInput`.
+ */
+export const GENERAL_NODE_FIELDS = [
+  'filing_status',
+  'taxpayer_age_65_or_older',
+  'spouse_age_65_or_older',
+  'taxpayer_blind',
+  'spouse_blind',
+] as const;
+
+/**
  * Build the engine's input from a bundle's documents.
  *
  * Returns every node that can be sent and every reason something could not be, without

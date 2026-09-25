@@ -6,6 +6,7 @@ import {
 } from '../src/draft/catalog.ts';
 import type { EngineCatalog } from '../src/draft/client.ts';
 import { loadNodeMap, type NodeMapFile } from '../src/draft/nodes.ts';
+import { GENERAL_NODE_FIELDS } from '../src/draft/translate.ts';
 
 /**
  * The node map checked against the engine's own field catalogue (P17).
@@ -46,7 +47,12 @@ function catalogFor(file: NodeMapFile): EngineCatalog {
   nodes['general'] = {
     implemented: true,
     collection: null,
-    fields: { filing_status: { type: 'enum', required: true } },
+    fields: Object.fromEntries(
+      GENERAL_NODE_FIELDS.map((f) => [
+        f,
+        { type: f === 'filing_status' ? 'enum' : 'boolean', required: f === 'filing_status' },
+      ]),
+    ),
     otherFields: [],
   };
   return { engineVersion: '2.0.4', nodes };
@@ -110,6 +116,35 @@ describe('checking the node map against the engine catalogue', () => {
     const check = checkAgainstCatalog(file, catalog);
     expect(check.ok).toBe(false);
     expect(kinds(check.blocking)).toContain('field_unknown');
+  });
+
+  it('checks every field the general node sends, not only the filing status', async () => {
+    const file = await loadNodeMap(2025);
+
+    // The hole this closes, found by reading the translator rather than by a failing test:
+    // the age and blindness flags are engine field names held in code rather than in the map,
+    // and they are all OPTIONAL on the engine — so a rename is accepted and ignored, and the
+    // additional standard deduction for an elderly or blind taxpayer quietly disappears.
+    for (const field of GENERAL_NODE_FIELDS) {
+      const catalog = catalogFor(file);
+      delete catalog.nodes['general']!.fields![field];
+
+      const check = checkAgainstCatalog(file, catalog);
+      const finding = check.blocking.find((f) => f.engineField === field);
+      expect(finding, `a renamed general.${field} must be reported`).toBeDefined();
+      expect(finding!.nodeType).toBe('general');
+    }
+  });
+
+  it('blocks when the engine has no general node at all', async () => {
+    const file = await loadNodeMap(2025);
+    const catalog = catalogFor(file);
+    catalog.nodes['general'] = { implemented: false, reason: 'Unknown node type: general' };
+
+    const check = checkAgainstCatalog(file, catalog);
+    expect(kinds(check.blocking)).toContain('node_type_absent');
+    // One finding for the node, not one per field it would have carried.
+    expect(check.findings.filter((f) => f.nodeType === 'general')).toHaveLength(1);
   });
 
   it('advises, without blocking, when our engineRequired flag has gone stale either way', async () => {

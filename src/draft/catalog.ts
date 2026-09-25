@@ -32,6 +32,7 @@
  */
 import { fetchCatalog, type EngineCatalog } from './client.ts';
 import { type NodeMapFile } from './nodes.ts';
+import { GENERAL_NODE_FIELDS } from './translate.ts';
 
 export type CatalogFindingKind =
   /** The node map targets a node type the engine does not have. Nothing of that form computes. */
@@ -179,20 +180,48 @@ export function checkAgainstCatalog(file: NodeMapFile, catalog: EngineCatalog): 
     }
   }
 
-  // `general` is not a form, so it is checked on its own terms: the filing statuses the map
-  // offers the reviewer have to be values the engine's `general` node will accept.
+  /**
+   * `general` is not a form and is on no map, so it is checked from `GENERAL_NODE_FIELDS`
+   * instead — the one set of engine field names this app holds in code rather than in data,
+   * because they carry what the *reviewer* states rather than what a document says.
+   *
+   * Worth checking for the same reason as everything else, and nearly missed for that reason
+   * too. `filing_status` is required, so a rename there fails loudly and takes the whole tax
+   * computation with it. The four age and blindness flags are **optional**, so a rename is
+   * accepted and ignored — and the extra standard deduction for an elderly or blind taxpayer
+   * disappears from the draft with nothing saying so. A quiet few thousand dollars.
+   */
   const general = catalog.nodes['general'];
-  if (general && general.implemented !== false && (general.fields?.['filing_status'] === undefined)) {
+  if (!general || general.implemented === false) {
     findings.push({
       severity: 'blocking',
-      kind: 'field_unknown',
-      formType: '(filing status)',
+      kind: 'node_type_absent',
+      formType: '(reviewer-stated facts)',
       nodeType: 'general',
-      engineField: 'filing_status',
       detail:
-        "The engine's `general` node has no `filing_status` field. Nothing computes without " +
-        'it: the standard deduction and the entire tax calculation depend on it.',
+        "The engine has no `general` node. Filing status and the age and blindness flags have " +
+        'nowhere to go, and without a filing status nothing computes at all.',
     });
+  } else {
+    const known = new Set([...Object.keys(general.fields ?? {}), ...(general.otherFields ?? [])]);
+    for (const field of GENERAL_NODE_FIELDS) {
+      if (known.has(field)) continue;
+      const required = field === 'filing_status';
+      findings.push({
+        severity: 'blocking',
+        kind: 'field_unknown',
+        formType: '(reviewer-stated facts)',
+        nodeType: 'general',
+        engineField: field,
+        detail: required
+          ? "The engine's `general` node has no `filing_status` field. Nothing computes " +
+            'without it: the standard deduction and the entire tax calculation depend on it.'
+          : `\`general.${field}\` is not a field on the engine node. It is optional there, so ` +
+            'the engine accepts the payload and ignores it — and the additional standard ' +
+            'deduction for an elderly or blind taxpayer silently disappears from every draft. ' +
+            'Find what it was renamed to and update `GENERAL_NODE_FIELDS`.',
+      });
+    }
   }
 
   const blocking = findings.filter((f) => f.severity === 'blocking');
