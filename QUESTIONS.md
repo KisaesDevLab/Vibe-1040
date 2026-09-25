@@ -11,6 +11,50 @@ to the Resolved section.
 
 ## Blocking
 
+### Q25 — Which TY2026 forms does somebody need to read before the season?
+**Gates:** the TY2026 season — not development, which is done. **Raised:** 2026-09-25.
+
+`data/line-mappings/2026.json` exists now, so a TY2026 bundle produces a worksheet instead of
+failing outright. It was derived from `2025.3` by carrying the structure forward **unchanged**:
+no line ref, label, sortOrder or mapping differs. That is defensible — the 1040's line numbering
+is stable between seasons — and it is not the same as somebody having checked.
+
+Its version is **`2026.0-unverified`**, deliberately. `mappingVersion` is printed on the workbook
+cover sheet, the PDF cover, the `Hand check` sheet caption and every stored draft return, so
+nobody can read a TY2026 worksheet without seeing that its mapping is unchecked. **Removing the
+suffix is the act that answers this question**, and it should be done by whoever did the reading.
+
+**What needs reading, and what to check on each.** Line numbers only; the amounts and the logic
+are already tested:
+
+| Form | What to confirm |
+|---|---|
+| Form 1040 | Lines 1a, 1b, 1z, 2a, 2b, 3a, 3b, 4a, 4b, 5a, 5b, 6a, 6b, 7, 8, 13b, 25a, 25b, 25c still carry what their TY2025 labels say |
+| Schedule 1 | Lines 1, 3, 5, 7, 8b, 8f, 8z, 18, 20, 21 |
+| Schedule 1-A | Still exists for TY2026, still totals to 1040 line 13b, still four component lines |
+| Schedule A | Lines 5a, 8a, 8c, 8d |
+| Schedule B | Lines 1, 5 |
+| Schedule D | Line 13 |
+| Forms 2441, 8889, 8962 | 2441 line 12; 8889 lines 9 and 14a; 8962 line 11 |
+
+**Separately: Form 1099-DA.** New for TY2026 (digital-asset broker proceeds), and deliberately
+**not registered**. An unregistered form type blocks the bundle until a human reads the page and
+is carried onto the finished worksheet as an annotation (§6), which is the right outcome for a
+layout nobody here has seen — extracting it against a guessed schema would be exactly the silent
+omission this app exists to prevent. Registering it needs the printed form, and a decision on
+whether it maps to Schedule D or lands wholly in Judgment Required the way K-1s do. Basis and
+holding period on digital assets are §9 determinations.
+
+**Also not blocking anything yet, but true:** OpenTax 2.0.4 computes **TY2025 only** — measured,
+not assumed. So even with this mapping, a TY2026 *draft return* will fail at the engine until
+upstream ships a TY2026 release. Decided 2026-09-25 to leave that alone rather than build a
+message for an engine that does not exist; the worksheet is unaffected, and the draft return is
+an optional aid that is off by default.
+
+**A:**
+
+---
+
 ### Q11 — When does Router region pinning (R6) land?
 **Gates:** P14. **Raised:** 2026-08-26.
 

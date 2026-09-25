@@ -82,7 +82,21 @@ had been broken or missing since P0 were closed, and each found a real defect on
   only where it matters. Rendering it found a third: a sidecar refusing an action surfaced as a
   **500**, so `DraftEngineError` now maps to 409/503/502 the way `ZodError` maps to 400.
 
-**Totals after this pass:** 409 tests across 31 files in the server package and 15 in the UI,
+- **TY2026 will produce a worksheet.** `loadMapping` throws when a season's file is absent —
+  unlike the schema registry, which substitutes the nearest year and annotates it — so until
+  now the first TY2026 bundle of the January 2027 season would have failed outright.
+  `data/line-mappings/2026.json` is the 2025 mapping carried forward unchanged, and it is
+  versioned **`2026.0-unverified`** rather than `2026.0`, because nobody has read a printed
+  TY2026 Form 1040. That string prints on the workbook cover, the PDF cover, the `Hand check`
+  caption and every stored draft return, so the caveat travels with the artifact instead of
+  living in a note nobody opens. **Form 1099-DA is deliberately not registered**: it stays an
+  unregistered form type, which blocks the bundle until a human reads the page, rather than
+  being extracted against a box map nobody has checked. QUESTIONS.md **Q25** lists what needs
+  reading. A TY2026 *draft return* still fails at the engine — OpenTax 2.0.4 computes TY2025
+  only, measured — and that was left alone rather than building a message for an engine that
+  does not exist yet.
+
+**Totals after this pass:** 414 tests across 31 files in the server package and 15 in the UI,
 none skipped, against a real Postgres at 0013. `npm run lint` clean. `npm run draft -- --truth` still 13 agreed, 0 disagreed.
 `npm run check:providers` clean. No fixture-manifest drift.
 
