@@ -55,7 +55,10 @@ if (!dbAvailable) {
 }
 
 const mockedJson = completeJson as unknown as ReturnType<typeof vi.fn>;
-const queued = pipelineQueue.add as unknown as ReturnType<typeof vi.fn>;
+// `vi.mocked` rather than a cast: taking `queue.add` off its object loses `this`, which is
+// harmless for a mock and a real bug for anything else — so the lint rule that catches it stays
+// on, and this says explicitly that it is a mock.
+const queued = vi.mocked(pipelineQueue.add);
 
 const classification = (over: Record<string, unknown>) => ({
   form_type: null,

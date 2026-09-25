@@ -68,6 +68,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # `npm run lint` has been in package.json since P0 and failed outright for the whole build,
+      # because no eslint config was ever committed — so this step could not exist. It exists now,
+      # and it is the only thing enforcing the two syntaxes `--experimental-strip-types` rejects:
+      # a parameter property or an enum compiles in the built image and fails in `npm run dev`,
+      # the worker and the migration scripts.
+      - name: Lint
+        run: npm run lint
+
       # Forward, back, forward: migrations running in both directions is a P0 exit criterion
       # and nothing enforced it. The values are the same throwaway ones vitest.config.ts uses.
       - name: Migrate the test database (up, down, up)

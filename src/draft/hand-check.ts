@@ -32,7 +32,6 @@
 import { buildWorksheetModel } from '../mapping/engine.ts';
 import { loadMappedDocuments } from '../worksheet/generate.ts';
 import type {
-  DraftSheetOmission,
   HandCheckModel,
   HandCheckPreparerFigure,
   HandCheckRow,

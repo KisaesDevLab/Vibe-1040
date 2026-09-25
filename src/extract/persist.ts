@@ -37,7 +37,7 @@ export function moneyTokenIn(raw: string): string | null {
   const tokens = raw.match(MONEY_TOKEN) ?? [];
   const amounts = tokens.filter((t) => /[.,]/.test(t));
   if (amounts.length === 1) return amounts[0]!;
-  if (amounts.length === 0 && tokens.length === 1) return tokens[0]!;
+  if (amounts.length === 0 && tokens.length === 1) return tokens[0];
   return null;
 }
 

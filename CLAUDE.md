@@ -67,7 +67,7 @@ Working rules:
 ```bash
 node scripts/install-deps.mjs        # NOT `npm install` — see below
 npm run typecheck                    # tsc --noEmit (strict, exactOptionalPropertyTypes)
-npm run lint                         # eslint . — known broken: no eslint.config.* was ever committed
+npm run lint                         # eslint . — flat config, type-aware; runs in CI
 npm test                             # vitest run — test/**/*.test.ts
 npx vitest run test/layout.test.ts   # one file
 npm run build                        # tsc + copy migrations into dist/

@@ -210,8 +210,8 @@ export async function computeReturn(
     returnId: body.returnId,
     year: typeof body.year === 'number' ? body.year : taxYear,
     engineVersion: typeof body.engineVersion === 'string' ? body.engineVersion : 'unknown',
-    summary: (body.summary ?? {}) as Record<string, number>,
-    lines: body.lines as Record<string, unknown>,
+    summary: (body.summary ?? {}),
+    lines: body.lines,
     forms: Array.isArray(body.forms) ? body.forms : [],
     warnings: Array.isArray(body.warnings) ? body.warnings : [],
     validation: {

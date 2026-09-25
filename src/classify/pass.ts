@@ -298,7 +298,7 @@ export function preclassifyFromText(text: string | null, known: readonly string[
  * prints twice and which is not the tax year.
  */
 export function dominantYear(upper: string): number | null {
-  const calendar = upper.match(/(?:FOR\s+)?CALENDAR\s+YEAR\s*[:\-]?\s*(20[0-9]{2})\b/);
+  const calendar = upper.match(/(?:FOR\s+)?CALENDAR\s+YEAR\s*[:-]?\s*(20[0-9]{2})\b/);
   if (calendar) return Number(calendar[1]);
   // The year printed in the title box sits next to the form name: "2025 Form 1098-E",
   // "Form 5498 2025", "Form 1099-INT (Rev. January 2024) 2025". A due date or a

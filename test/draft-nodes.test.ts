@@ -121,7 +121,7 @@ describe('the shipped 2025 node map', () => {
 
 describe('load-time refusals', () => {
   const base = async (): Promise<NodeMapFile> =>
-    structuredClone(await loadNodeMap(2025)) as NodeMapFile;
+    structuredClone(await loadNodeMap(2025));
 
   it('refuses a map that leaves a field neither mapped nor ignored', async () => {
     const file = await base();

@@ -9,7 +9,6 @@
  * the database, and `settingsForAdmin` never returns one — the UI shows whether a secret is
  * set, not what it is.
  */
-import { eq } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
 import { db } from '../db/client.ts';
 import { firmSettings } from '../db/schema.ts';
@@ -45,7 +44,7 @@ async function load(): Promise<Map<string, unknown>> {
     const raw = stored.get(def.key);
     // Unset settings fall back to the environment, so an existing deployment keeps behaving
     // exactly as its .env said until someone changes it.
-    values.set(def.key, raw === undefined ? def.default() : decode(def as SettingDef, raw));
+    values.set(def.key, raw === undefined ? def.default() : decode(def, raw));
   }
 
   cache = { at: Date.now(), values };
@@ -145,13 +144,13 @@ export async function updateSettings(
       .insert(firmSettings)
       .values({
         key: def.key,
-        value: stored as never,
+        value: stored,
         isSecret: def.secret ?? false,
         updatedBy: actor.id,
       })
       .onConflictDoUpdate({
         target: firmSettings.key,
-        set: { value: stored as never, updatedBy: actor.id, updatedAt: new Date() },
+        set: { value: stored, updatedBy: actor.id, updatedAt: new Date() },
       });
 
     await audit({

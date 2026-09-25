@@ -62,7 +62,7 @@ function headerRow(sheet: ExcelJS.Worksheet, row = 1): void {
 
 /** Excel sheet names: 31 chars, none of []:*?/\ */
 export function sheetNameFor(formType: string, taken: Set<string>): string {
-  let base = formType.replace(/[[\]:*?/\\]/g, '-').slice(0, 28);
+  const base = formType.replace(/[[\]:*?/\\]/g, '-').slice(0, 28);
   let name = base;
   let n = 2;
   while (taken.has(name)) name = `${base} (${n++})`;
@@ -223,7 +223,7 @@ function renderFormSheet(wb: ExcelJS.Workbook, plan: FormSheetPlan): void {
     let blank = 0;
     for (const doc of docs) {
       const f = doc.fields.find((x) => x.fieldKey === template.fieldKey);
-      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId)!);
+      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId));
       if (!f) continue;
       cell.value = cellValueFor(f);
       styleFieldCell(cell, f);
@@ -256,7 +256,7 @@ function renderFormSheet(wb: ExcelJS.Workbook, plan: FormSheetPlan): void {
     for (const doc of docs) {
       const c = doc.checks.find((x) => x.checkKey === key);
       if (!c) continue;
-      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId)!);
+      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId));
       cell.value = checkCellText(c);
       cell.alignment = { wrapText: true, vertical: 'top' };
       if (c.outcome === 'fail') {
@@ -280,7 +280,7 @@ function renderFormSheet(wb: ExcelJS.Workbook, plan: FormSheetPlan): void {
     sheet.getCell(row, 2).value = label;
     sheet.getCell(row, 2).font = { bold: true, size: 9 };
     for (const doc of docs) {
-      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId)!);
+      const cell = sheet.getCell(row, plan.docCol.get(doc.documentId));
       cell.value = get(doc);
       cell.font = { size: 9 };
     }

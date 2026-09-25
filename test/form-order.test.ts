@@ -2,7 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { compareFormTypes, loadFormOrder, placementOf, sortDocuments } from '../src/worksheet/form-order.ts';
 import { bookmarkTitle } from '../src/worksheet/sorted-pdf.ts';
 
-const doc = (formType: string | null, payerName = '', extra: Record<string, unknown> = {}) => ({
+interface TestDoc {
+  formType: string | null;
+  payerName: string;
+  /** `A`–`F` on a 1099-B, null on everything else. Typed as it is used: the helper declared it
+   *  `null` outright, so `d.sectionCode ? … : ''` narrowed to `never` and the section-ordering
+   *  assertions were checking a field the type said could never be set. */
+  sectionCode: string | null;
+  isSupplemental: boolean;
+  createdAt?: Date;
+}
+
+const doc = (
+  formType: string | null,
+  payerName = '',
+  extra: Partial<TestDoc> = {},
+): TestDoc => ({
   formType,
   payerName,
   sectionCode: null,

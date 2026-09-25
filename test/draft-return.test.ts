@@ -29,7 +29,6 @@ vi.mock('../src/storage/index.ts', () => ({
 const { db, pool } = await import('../src/db/client.ts');
 const schema = await import('../src/db/schema.ts');
 const { eq } = await import('drizzle-orm');
-const { engineHealth } = await import('../src/draft/client.ts');
 const { DraftReturnDisabledError, generateDraftReturn, latestDraftReturn } = await import(
   '../src/draft/generate.ts'
 );
@@ -282,7 +281,7 @@ describe.skipIf(!dbAvailable)('draft return, end to end', () => {
     // engine would accept the payload and ignore the unknown key, so the amount would vanish
     // and the line would read as absent — no rejection, no diagnostic, nothing in the
     // omissions. Refusing the whole draft is the only way that failure becomes visible.
-    const broken = structuredClone(real) as typeof real;
+    const broken = structuredClone(real);
     for (const form of broken.forms) {
       for (const field of form.fields) {
         if (form.formType === 'W-2' && field.nodeField === 'box1_wages') {

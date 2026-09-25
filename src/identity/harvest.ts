@@ -49,7 +49,7 @@ const LABELLED_BARE_TIN =
 const MASKED_PATTERN = /(?:[X*•●]{3}[-‑ ]?[X*•●]{2}[-‑ ]?(\d{4})\b|\b(?:ending in|last four|last 4)\D{0,6}(\d{4})\b)/gi;
 
 /** Two to five capitalised words. Rejects addresses, which start with a number. */
-const NAME_SHAPED = /^[A-Z][A-Za-z.'\-]*(?: [A-Z][A-Za-z.'\-]*){1,4}$/;
+const NAME_SHAPED = /^[A-Z][A-Za-z.'-]*(?: [A-Z][A-Za-z.'-]*){1,4}$/;
 
 export interface HarvestedIdentity {
   /** Plaintext, in memory only. Never persisted and never logged (§7). */

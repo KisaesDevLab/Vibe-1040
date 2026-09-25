@@ -19,6 +19,6 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "drizzle.config.ts"],
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "drizzle.config.ts", "vitest.config.ts", "eslint.config.mjs"],
   "exclude": ["node_modules", "dist", "ui", "sidecar"]
 }

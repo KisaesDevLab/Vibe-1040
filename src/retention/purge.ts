@@ -12,7 +12,6 @@
  */
 import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
-import { env } from '../config/env.ts';
 import { db } from '../db/client.ts';
 import {
   bundles,

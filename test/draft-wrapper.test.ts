@@ -17,6 +17,41 @@ import { OPENTAX_TEST_URL } from './helpers/opentax-global.ts';
  */
 const base = OPENTAX_TEST_URL;
 
+/**
+ * The wrapper's own response shapes, written out rather than read as `any`.
+ *
+ * This test exists to pin the wire contract between the app and `opentax/server.mjs`, so
+ * reading the body as `any` gave up the very thing it is here to hold: a renamed key would have
+ * gone on compiling and only shown up as a failed assertion, or not at all on a path no
+ * assertion touched. Loose where the engine itself is loose — a line value is a number or a
+ * two-element array of the same figure, which is measured behaviour (see `toCents`).
+ */
+interface DraftResponse {
+  returnId: string;
+  year: number;
+  engineVersion: string;
+  summary: Record<string, number>;
+  lines: Record<string, number | number[]>;
+  forms: string[];
+  warnings: string[];
+  validation: { hard: { code: string; message: string }[]; soft: { code: string; message: string }[] };
+  rejected: { nodeType: string; documentId: string | null; message: string }[];
+}
+
+interface CatalogResponse {
+  engineVersion: string;
+  nodes: Record<
+    string,
+    {
+      implemented: boolean;
+      reason?: string;
+      collection?: string | null;
+      fields?: Record<string, { type: string; required: boolean }>;
+      otherFields?: string[];
+    }
+  >;
+}
+
 describe('health', () => {
   it('reports the engine version the binary prints', async () => {
     const res = await fetch(`${base}/health`);
@@ -45,7 +80,7 @@ describe('POST /draft', () => {
       }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, any>;
+    const body = (await res.json()) as DraftResponse;
 
     expect(body.returnId).toBe('fake-return-1');
     expect(body.year).toBe(2025);
@@ -72,15 +107,15 @@ describe('POST /draft', () => {
       }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, any>;
+    const body = (await res.json()) as DraftResponse;
 
     // The good node still computed.
     expect(body.lines.line1z_total_wages).toBe(1_000);
     // And the bad one is named, with the document it came from.
     expect(body.rejected).toHaveLength(1);
-    expect(body.rejected[0].nodeType).toBe('reject_me');
-    expect(body.rejected[0].documentId).toBe('doc-bad');
-    expect(body.rejected[0].message).toContain('unknown node type');
+    expect(body.rejected[0]!.nodeType).toBe('reject_me');
+    expect(body.rejected[0]!.documentId).toBe('doc-bad');
+    expect(body.rejected[0]!.message).toContain('unknown node type');
   });
 
   it('splits diagnostics, and treats an unclassified one as hard', async () => {
@@ -89,7 +124,7 @@ describe('POST /draft', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taxYear: 2025, nodes: [] }),
     });
-    const body = (await res.json()) as Record<string, any>;
+    const body = (await res.json()) as DraftResponse;
 
     const hard = body.validation.hard.map((d: { code: string }) => d.code);
     const soft = body.validation.soft.map((d: { code: string }) => d.code);
@@ -166,8 +201,8 @@ describe('no taxpayer amounts survive the response (§11)', () => {
           nodes: [{ nodeType: 'w2', documentId: 'd', payload: { box1_wages: wages } }],
         }),
       });
-      const body = (await res.json()) as Record<string, any>;
-      return body.lines.line1z_total_wages;
+      const body = (await res.json()) as DraftResponse;
+      return body.lines['line1z_total_wages'] as number;
     };
 
     const [a, b] = await Promise.all([draft(10_000), draft(20_000)]);
@@ -183,55 +218,55 @@ describe('no taxpayer amounts survive the response (§11)', () => {
  * are about the real formatting rather than a tidied-up version of it.
  */
 describe('GET /catalog', () => {
-  const catalog = async (nodes: string): Promise<any> => {
+  const catalog = async (nodes: string): Promise<CatalogResponse> => {
     const res = await fetch(`${base}/catalog?nodes=${nodes}`);
     expect(res.status).toBe(200);
-    return res.json();
+    return (await res.json()) as CatalogResponse;
   };
 
   it('reports an array node\'s item fields, which is what a payload carries', async () => {
     const body = await catalog('w2');
     expect(body.engineVersion).toBe('9.9.9-fake');
-    expect(body.nodes.w2.implemented).toBe(true);
-    expect(body.nodes.w2.collection).toBe('w2s');
-    expect(Object.keys(body.nodes.w2.fields)).toContain('box1_wages');
+    expect(body.nodes.w2!.implemented).toBe(true);
+    expect(body.nodes.w2!.collection).toBe('w2s');
+    expect(Object.keys(body.nodes.w2!.fields!)).toContain('box1_wages');
     // Requiredness survives a description sitting between the type and `(optional)`.
-    expect(body.nodes.w2.fields.box1_wages.required).toBe(true);
-    expect(body.nodes.w2.fields.employer_ein.required).toBe(false);
-    expect(body.nodes.w2.fields.box3_ss_wages.required).toBe(false);
+    expect(body.nodes.w2!.fields!.box1_wages!.required).toBe(true);
+    expect(body.nodes.w2!.fields!.employer_ein!.required).toBe(false);
+    expect(body.nodes.w2!.fields!.box3_ss_wages!.required).toBe(false);
     // The collection header is not itself a field.
-    expect(body.nodes.w2.fields.w2s).toBeUndefined();
+    expect(body.nodes.w2!.fields!.w2s).toBeUndefined();
   });
 
   it('keeps a top-level field that follows an array block out of the payload fields', async () => {
     const body = await catalog('f1099int');
-    expect(body.nodes.f1099int.collection).toBe('f1099ints');
+    expect(body.nodes.f1099int!.collection).toBe('f1099ints');
     // The item fields, which is what a payload carries.
-    expect(Object.keys(body.nodes.f1099int.fields)).toEqual(
+    expect(Object.keys(body.nodes.f1099int!.fields!)).toEqual(
       expect.arrayContaining(['box1', 'payer_name', 'payer_tin']),
     );
-    expect(body.nodes.f1099int.fields.payer_name.required).toBe(true);
-    expect(body.nodes.f1099int.fields.box1.required).toBe(false);
+    expect(body.nodes.f1099int!.fields!.payer_name!.required).toBe(true);
+    expect(body.nodes.f1099int!.fields!.box1!.required).toBe(false);
     // `filing_status` sits at the top level, after the array block — known to exist on the
     // node, so a rename check still sees it, but not an item field.
-    expect(body.nodes.f1099int.otherFields).toContain('filing_status');
-    expect(Object.keys(body.nodes.f1099int.fields)).not.toContain('filing_status');
+    expect(body.nodes.f1099int!.otherFields).toContain('filing_status');
+    expect(Object.keys(body.nodes.f1099int!.fields!)).not.toContain('filing_status');
   });
 
   it('reads a flat node as flat even though it contains an array of its own', async () => {
     const body = await catalog('general');
     // The bug this pins: `general` embeds `dependents`, and treating that as the payload shape
     // picks a dependent's `first_name` over the taxpayer's `filing_status`.
-    expect(body.nodes.general.collection).toBeNull();
-    expect(body.nodes.general.fields.filing_status).toEqual({ type: 'enum', required: true });
-    expect(body.nodes.general.fields.first_name).toBeUndefined();
-    expect(body.nodes.general.otherFields).toContain('dependents');
+    expect(body.nodes.general!.collection).toBeNull();
+    expect(body.nodes.general!.fields!.filing_status).toEqual({ type: 'enum', required: true });
+    expect(body.nodes.general!.fields!.first_name).toBeUndefined();
+    expect(body.nodes.general!.otherFields).toContain('dependents');
   });
 
   it('reports a node type the engine does not have, rather than inventing an empty one', async () => {
     const body = await catalog('not_a_node');
-    expect(body.nodes.not_a_node.implemented).toBe(false);
-    expect(body.nodes.not_a_node.fields).toBeUndefined();
+    expect(body.nodes.not_a_node!.implemented).toBe(false);
+    expect(body.nodes.not_a_node!.fields!).toBeUndefined();
   });
 
   it('refuses a request that names no node types', async () => {

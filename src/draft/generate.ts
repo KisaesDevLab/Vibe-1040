@@ -9,7 +9,7 @@
  * never computes one, because inference is not the cost — a number nobody asked for, presented
  * beside numbers a preparer trusts, is.
  */
-import { and, desc, eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { audit } from '../audit/log.ts';
 import { env } from '../config/env.ts';
 import { db } from '../db/client.ts';
