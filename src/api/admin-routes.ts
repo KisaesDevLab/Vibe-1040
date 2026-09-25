@@ -15,6 +15,13 @@ import { changeOwnPassword, completeReset, passwordProblem, requestReset } from 
 import { satisfyMfa } from '../auth/session.ts';
 import { db } from '../db/client.ts';
 import { engineReadiness } from '../draft/generate.ts';
+import {
+  activateStagedEngine,
+  discardStagedEngine,
+  rollbackStagedEngine,
+  stageAndCheck,
+  stagedReport,
+} from '../draft/install.ts';
 import { auditLog, notificationLog, users } from '../db/schema.ts';
 import { breakglassStatus, isBreakglassEmail } from '../lib/vibeAuthUsers.ts';
 import { normalizePhone, verifyEmail } from '../notify/channels.ts';
@@ -328,6 +335,82 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     const { taxYear } = z.object({ taxYear: z.coerce.number().int().optional() }).parse(req.query);
     await auditAccess(req, 'admin.draft_engine_checked', { detail: { taxYear: taxYear ?? null } });
     return engineReadiness(taxYear);
+  });
+
+  /**
+   * Staging an engine upgrade (Q23), and the three acts that follow it.
+   *
+   * The read-only endpoint above stays what it was. These four are the "button" that was asked
+   * for twice, built the way that keeps §14 intact: a caller names an exact version and an
+   * exact SHA-256, the sidecar verifies the digest **before** running anything, and the
+   * candidate is checked against the node map's field names — the check that catches a renamed
+   * optional field, which the engine would otherwise accept and ignore.
+   *
+   * Nothing here is reachable unless the deployment configured a staging directory, and
+   * `GET /staged` says `allowed: false` rather than erroring so the page can explain itself.
+   */
+  app.get('/api/admin/draft-engine/staged', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin']);
+    if (!user) return;
+    const { taxYear } = z.object({ taxYear: z.coerce.number().int().optional() }).parse(req.query);
+    return stagedReport(taxYear);
+  });
+
+  app.post('/api/admin/draft-engine/staged', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin']);
+    if (!user) return;
+    const body = z
+      .object({
+        // An exact release, never a range and never `latest`.
+        version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, 'an exact release version'),
+        sha256: z.string().regex(/^[0-9a-f]{64}$/, '64 lowercase hex characters'),
+        url: z.string().url().startsWith('https://').optional(),
+        /** A file an operator dropped into the staging directory, for an appliance with no egress. */
+        file: z.string().min(1).optional(),
+        taxYear: z.coerce.number().int().optional(),
+      })
+      .refine((b) => b.url !== undefined || b.file !== undefined, {
+        message: 'either url or file is required',
+      })
+      .parse(req.body ?? {});
+
+    const { taxYear, ...spec } = body;
+    const result = await stageAndCheck(spec, taxYear);
+    // The digest, not the URL, is what identifies what was staged.
+    await auditAccess(req, 'admin.draft_engine_staged', {
+      detail: {
+        version: result.staged.version,
+        sha256: result.staged.sha256,
+        from: result.staged.from,
+        blocking: result.report.check?.blocking.length ?? null,
+      },
+    });
+    return result;
+  });
+
+  app.post('/api/admin/draft-engine/staged/activate', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin']);
+    if (!user) return;
+    const result = await activateStagedEngine();
+    // The one call in this group that changes what computes a taxpayer's figures.
+    await auditAccess(req, 'admin.draft_engine_activated', { detail: { version: result.version } });
+    return result;
+  });
+
+  app.post('/api/admin/draft-engine/staged/rollback', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin']);
+    if (!user) return;
+    const result = await rollbackStagedEngine();
+    await auditAccess(req, 'admin.draft_engine_rolled_back', { detail: { version: result.version } });
+    return result;
+  });
+
+  app.delete('/api/admin/draft-engine/staged', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin']);
+    if (!user) return;
+    const result = await discardStagedEngine();
+    await auditAccess(req, 'admin.draft_engine_discarded', {});
+    return result;
   });
 
   // ── audit ──────────────────────────────────────────────────────────────────

@@ -339,3 +339,13 @@ a.button.sso-button[aria-disabled='true'] { opacity: 0.6; }
 /* Amber, not red: a determination the preparer has not made yet is not an error. Red is kept
    for the one thing here that cannot be saved at all — both deduction elections set to yes. */
 .pi-note-block { grid-column: auto; margin-bottom: 8px; }
+
+/* staged engine upgrade (Q23) */
+.staged-engine { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
+.staged-engine h4 { margin: 0 0 6px; font-size: 13px; }
+.staged-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; font-size: 13px; margin-bottom: 8px; }
+.staged-sha { font-size: 11px; color: var(--muted); word-break: break-all; }
+.staged-check { font-size: 12px; line-height: 1.5; border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; }
+.staged-check.good { background: #e7f6ec; color: var(--ok); }
+/* Red, because activating over a blocking finding withholds every draft return. */
+.staged-check.bad { background: #fee4e2; color: var(--hard); }

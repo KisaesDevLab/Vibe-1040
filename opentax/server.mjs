@@ -22,10 +22,11 @@
  * Node runtime and this file.
  */
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 const PORT = Number(process.env.PORT ?? 8230);
 const BIN = process.env.OPENTAX_BIN ?? '/usr/local/bin/opentax';
@@ -40,9 +41,9 @@ const CHILD_TIMEOUT_MS = Number(process.env.OPENTAX_CHILD_TIMEOUT_MS ?? 60_000);
  * entries rather than through a shell — no `shell: true` anywhere, so a payload cannot become
  * a command. Taxpayer JSON reaches the CLI as a single argv element.
  */
-function run(args, cwd) {
+function run(args, cwd, bin = BIN) {
   return new Promise((resolve) => {
-    const child = spawn(BIN, args, {
+    const child = spawn(bin, args, {
       cwd,
       env: { ...process.env, HOME: cwd },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -86,8 +87,8 @@ function parseJson(text) {
   }
 }
 
-async function engineVersion() {
-  const { stdout } = await run(['version'], tmpdir());
+async function engineVersion(bin = BIN) {
+  const { stdout } = await run(['version'], tmpdir(), bin);
   // Capture the prerelease and build metadata too. Truncating `0.1.0-rc.1` to `0.1.0` would
   // make the app's OPENTAX_VERSION check pass on a binary that is not the pinned release,
   // which is the one thing that check exists to catch.
@@ -206,11 +207,11 @@ function parseSchema(lines) {
  */
 const CATALOG_CONCURRENCY = Number(process.env.OPENTAX_CATALOG_CONCURRENCY ?? 4);
 
-async function inspectNode(nodeType) {
+async function inspectNode(nodeType, bin = BIN) {
   if (!/^[a-z0-9_]+$/i.test(nodeType)) {
     return { implemented: false, reason: 'not a valid node type name' };
   }
-  const { stdout, code } = await run(['node', 'inspect', '--node_type', nodeType, '--json'], tmpdir());
+  const { stdout, code } = await run(['node', 'inspect', '--node_type', nodeType, '--json'], tmpdir(), bin);
   // An unknown node type prints `Error: Unknown node type: x` rather than JSON, so the absence
   // of a parseable schema is what decides, not the exit code alone.
   const parsed = parseJson(stdout);
@@ -223,18 +224,18 @@ async function inspectNode(nodeType) {
   return { implemented: parsed.implemented !== false, ...parseSchema(parsed.schema) };
 }
 
-async function catalog(nodeTypes) {
+async function catalog(nodeTypes, bin = BIN) {
   const nodes = {};
   const queue = [...nodeTypes];
   const worker = async () => {
     for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
-      nodes[next] = await inspectNode(next);
+      nodes[next] = await inspectNode(next, bin);
     }
   };
   await Promise.all(
     Array.from({ length: Math.min(CATALOG_CONCURRENCY, queue.length) }, () => worker()),
   );
-  return { engineVersion: await engineVersion(), nodes };
+  return { engineVersion: await engineVersion(bin), nodes };
 }
 
 /**
@@ -348,6 +349,186 @@ async function draft(body) {
   }
 }
 
+/**
+ * Staged install (P17, QUESTIONS.md Q23).
+ *
+ * **Off unless `OPENTAX_STAGING_DIR` is set.** It needs a writable volume on a container that
+ * ships `read_only: true`, and — for the download form — outbound access from the appliance to
+ * the release host. Neither exists by default, and both belong in the WISP review Q21 opened,
+ * so the feature is inert until an operator provides them. That is the right default.
+ *
+ * What it does **not** do is as important as what it does. There is no `latest`: a caller names
+ * an exact version and an exact SHA-256, and a binary whose digest does not match is deleted
+ * rather than kept. Nothing is ever served by a staged binary — `activate` is a separate call a
+ * person makes after reading the report, and §14's rule that the pin lives in the image is
+ * unchanged, because staging replaces one pinned artefact with another under an operator's hand.
+ */
+const STAGING_DIR = process.env.OPENTAX_STAGING_DIR ?? '';
+const INSTALL_ALLOWED = STAGING_DIR !== '';
+/**
+ * A staged binary keeps the live one's **exact file name**, in a subdirectory of its own.
+ *
+ * Not `opentax.staged` beside it, which is the obvious first shape and is wrong: a runtime that
+ * dispatches on the file name would treat the renamed copy differently from the thing it is a
+ * copy of. That is not hypothetical — it is how this was caught, by a stand-in engine that ran
+ * perfectly as `opentax-next` and failed to start as `opentax.staged`. Whatever an operator
+ * activates should differ from what is running in one respect only: its contents.
+ */
+const STAGED_PATH = INSTALL_ALLOWED ? join(STAGING_DIR, 'staged', basename(BIN)) : '';
+const PREVIOUS_PATH = INSTALL_ALLOWED ? join(STAGING_DIR, 'previous', basename(BIN)) : '';
+/** A release binary is tens of megabytes; anything far larger is not one. */
+const MAX_BINARY_BYTES = 512 * 1024 * 1024;
+
+const exists = async (path) => {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const sha256Of = async (path) => {
+  const { readFile } = await import('node:fs/promises');
+  return createHash('sha256').update(await readFile(path)).digest('hex');
+};
+
+/**
+ * Put a candidate binary at `STAGED_PATH`, or throw with a reason.
+ *
+ * Two sources, and the app only ever uses the first. `url` downloads; `file` takes a basename
+ * an operator has already dropped into the staging directory, which is how an appliance with no
+ * outbound access upgrades at all. `file` is a basename by construction — any path separator is
+ * refused — so this cannot be pointed at an arbitrary file on the container.
+ */
+async function fetchCandidate({ url, file }) {
+  if (file !== undefined) {
+    if (file !== basename(file) || file.startsWith('.')) {
+      throw new Error('file must be a plain name inside the staging directory');
+    }
+    const source = join(STAGING_DIR, file);
+    if (!(await exists(source))) throw new Error(`no such file in the staging directory: ${file}`);
+    const { size } = await stat(source);
+    if (size > MAX_BINARY_BYTES) throw new Error('file is implausibly large for a release binary');
+    await copyFile(source, STAGED_PATH);
+    return { from: `file:${file}` };
+  }
+
+  if (typeof url !== 'string' || !url.startsWith('https://')) {
+    throw new Error('url must be https, or pass a file already in the staging directory');
+  }
+  const res = await fetch(url, { redirect: 'follow' });
+  if (!res.ok) throw new Error(`download failed: ${res.status}`);
+  const body = Buffer.from(await res.arrayBuffer());
+  if (body.byteLength > MAX_BINARY_BYTES) throw new Error('download is implausibly large');
+  await writeFile(STAGED_PATH, body);
+  return { from: url };
+}
+
+/**
+ * Stage, verify, and read the version back out of the candidate — in that order.
+ *
+ * The digest is checked **before** the binary is ever executed, and a mismatch deletes it. Then
+ * it is run once, for `version` and nothing else, and a version that disagrees with what the
+ * caller asked for is also a failure: a release re-tagged under the same name is exactly the
+ * thing a checksum plus a version pin exists to catch.
+ */
+async function stageBinary({ version, sha256, url, file }) {
+  if (!INSTALL_ALLOWED) throw new Error('staging is not configured on this deployment');
+  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+/.test(version)) {
+    throw new Error('version is required, and must be an exact release version');
+  }
+  if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) {
+    throw new Error('sha256 is required, and must be 64 lowercase hex characters');
+  }
+
+  await mkdir(dirname(STAGED_PATH), { recursive: true });
+  await rm(STAGED_PATH, { force: true });
+  const { from } = await fetchCandidate({ url, file });
+
+  const digest = await sha256Of(STAGED_PATH);
+  if (digest !== sha256) {
+    await rm(STAGED_PATH, { force: true });
+    throw new Error(`checksum mismatch: expected ${sha256}, got ${digest}`);
+  }
+  await chmod(STAGED_PATH, 0o755);
+
+  const reported = await engineVersion(STAGED_PATH).catch((err) => {
+    throw new Error(`the staged binary did not run: ${String(err?.message ?? err)}`);
+  });
+  if (reported !== version) {
+    await rm(STAGED_PATH, { force: true });
+    throw new Error(`the staged binary reports ${reported}, not the ${version} that was asked for`);
+  }
+
+  return { version: reported, sha256: digest, from, path: STAGED_PATH };
+}
+
+/** What is staged and what is live, for a page that has to show both before anybody acts. */
+async function stagedState() {
+  if (!INSTALL_ALLOWED) return { allowed: false, staged: null, live: null, previous: false };
+  const live = await engineVersion().then((v) => ({ version: v, path: BIN })).catch(() => null);
+  if (!(await exists(STAGED_PATH))) return { allowed: true, staged: null, live, previous: await exists(PREVIOUS_PATH) };
+  const [version, sha256, info] = await Promise.all([
+    engineVersion(STAGED_PATH).catch(() => null),
+    sha256Of(STAGED_PATH),
+    stat(STAGED_PATH),
+  ]);
+  return {
+    allowed: true,
+    staged: { version, sha256, stagedAt: info.mtime.toISOString(), path: STAGED_PATH },
+    live,
+    previous: await exists(PREVIOUS_PATH),
+  };
+}
+
+/**
+ * Make the staged binary the live one, keeping the outgoing one beside it.
+ *
+ * A rename, so there is no window in which `BIN` is absent or half-written, and every later
+ * `spawn` picks up the new file with no restart. The previous binary is kept rather than
+ * deleted: the fastest fix for an upgrade that turns out wrong is putting the old one back.
+ */
+async function activateStaged() {
+  if (!INSTALL_ALLOWED) throw new Error('staging is not configured on this deployment');
+  if (!(await exists(STAGED_PATH))) throw new Error('nothing is staged');
+  const version = await engineVersion(STAGED_PATH);
+  if (await exists(BIN)) {
+    await mkdir(dirname(PREVIOUS_PATH), { recursive: true });
+    await rm(PREVIOUS_PATH, { force: true });
+    await copyFile(BIN, PREVIOUS_PATH);
+    await chmod(PREVIOUS_PATH, 0o755);
+  }
+  // Copy into the live binary's **own directory** first, then rename within it.
+  //
+  // A direct `rename` from the staging volume would work in a test, where both paths sit on
+  // /tmp, and fail with EXDEV on a real appliance, where the staging volume and
+  // `/usr/local/bin` are different filesystems — the worst kind of bug, one that only appears
+  // where it matters. A rename inside one directory is atomic, so there is no instant at which
+  // `BIN` is missing or half-written while a draft is being computed.
+  const incoming = `${BIN}.incoming`;
+  await rm(incoming, { force: true });
+  await copyFile(STAGED_PATH, incoming);
+  await chmod(incoming, 0o755);
+  await rename(incoming, BIN);
+  await rm(STAGED_PATH, { force: true });
+  return { version, path: BIN, previousKept: PREVIOUS_PATH };
+}
+
+/** Put the previous binary back, for an upgrade that went live and turned out wrong. */
+async function rollbackStaged() {
+  if (!INSTALL_ALLOWED) throw new Error('staging is not configured on this deployment');
+  if (!(await exists(PREVIOUS_PATH))) throw new Error('there is no previous binary to roll back to');
+  // Same shape as activation, for the same reason: never write `BIN` in place.
+  const incoming = `${BIN}.incoming`;
+  await rm(incoming, { force: true });
+  await copyFile(PREVIOUS_PATH, incoming);
+  await chmod(incoming, 0o755);
+  await rename(incoming, BIN);
+  await rm(PREVIOUS_PATH, { force: true });
+  return { version: await engineVersion(), path: BIN };
+}
+
 const server = createServer((req, res) => {
   const send = (status, body) => {
     const text = JSON.stringify(body);
@@ -388,7 +569,62 @@ const server = createServer((req, res) => {
     return;
   }
 
-  if (req.method !== 'POST' || path !== '/draft') {
+  // ── staged install (Q23) ───────────────────────────────────────────────────
+  //
+  // Read-only endpoints first. `GET /staged` answers even when staging is unconfigured, with
+  // `allowed: false`, so the page can say why the buttons are absent instead of erroring.
+  if (req.method === 'GET' && path === '/staged') {
+    stagedState()
+      .then((body) => send(200, body))
+      .catch((err) => send(500, { error: 'staged state failed', detail: String(err?.message ?? err) }));
+    return;
+  }
+
+  // The catalogue of the **staged** binary, which is how the app checks a candidate against the
+  // node map before anybody activates it. Same parser, different binary.
+  if (req.method === 'GET' && path === '/staged/catalog') {
+    if (!INSTALL_ALLOWED) {
+      send(409, { error: 'staging is not configured on this deployment' });
+      return;
+    }
+    const raw = new URL(req.url ?? '/', 'http://local').searchParams.get('nodes') ?? '';
+    const nodeTypes = [...new Set(raw.split(',').map((n) => n.trim()).filter(Boolean))];
+    if (nodeTypes.length === 0 || nodeTypes.length > 60) {
+      send(400, { error: 'nodes is required: a comma-separated list of at most 60 node types' });
+      return;
+    }
+    exists(STAGED_PATH)
+      .then((there) =>
+        there
+          ? catalog(nodeTypes, STAGED_PATH).then((body) => send(200, body))
+          : send(409, { error: 'nothing is staged' }),
+      )
+      .catch((err) => send(500, { error: 'catalog failed', detail: String(err?.message ?? err) }));
+    return;
+  }
+
+  if (req.method === 'DELETE' && path === '/staged') {
+    if (!INSTALL_ALLOWED) {
+      send(409, { error: 'staging is not configured on this deployment' });
+      return;
+    }
+    rm(STAGED_PATH, { force: true })
+      .then(() => send(200, { discarded: true }))
+      .catch((err) => send(500, { error: 'discard failed', detail: String(err?.message ?? err) }));
+    return;
+  }
+
+  // The two acts that change what serves. Both are deliberate calls the app makes only when a
+  // person has pressed something, and both are audited on the app's side.
+  if (req.method === 'POST' && (path === '/staged/activate' || path === '/staged/rollback')) {
+    const act = path.endsWith('activate') ? activateStaged : rollbackStaged;
+    act()
+      .then((body) => send(200, body))
+      .catch((err) => send(409, { error: 'not activated', detail: String(err?.message ?? err) }));
+    return;
+  }
+
+  if (req.method !== 'POST' || (path !== '/draft' && path !== '/staged')) {
     send(404, { error: 'not found' });
     return;
   }
@@ -411,6 +647,18 @@ const server = createServer((req, res) => {
       parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     } catch {
       send(400, { error: 'body is not JSON' });
+      return;
+    }
+    if (path === '/staged') {
+      if (!INSTALL_ALLOWED) {
+        send(409, { error: 'staging is not configured on this deployment' });
+        return;
+      }
+      // 409 rather than 500 on a refusal: a checksum mismatch or a version that disagrees is
+      // the request being wrong about the world, not the wrapper failing.
+      stageBinary(parsed)
+        .then((body) => send(200, body))
+        .catch((err) => send(409, { error: 'not staged', detail: String(err?.message ?? err) }));
       return;
     }
     draft(parsed)

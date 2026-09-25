@@ -68,8 +68,21 @@ had been broken or missing since P0 were closed, and each found a real defect on
   way, which cannot be a load-time check because enumerating a release's output lines means
   computing a return.
 
-**Totals after this pass:** 399 tests across 30 files, none skipped, against a real Postgres at
-0013. `npm run lint` clean. `npm run draft -- --truth` still 13 agreed, 0 disagreed.
+- **The engine upgrade is a staged install now** (Q23, answered the other way on the second
+  ask). An admin names an exact version and an exact SHA-256; the sidecar verifies the digest
+  **before** running anything, reads the candidate's own field catalogue so the node map can be
+  checked against it, and serves nothing from it until a person activates. The outgoing binary
+  is kept for a one-press rollback. Off unless a deployment provides a staging volume and, for
+  the download form, outbound access — both WISP decisions (Q21). Two defects found by running
+  it rather than reading it: a staged binary renamed to `opentax.staged` would not start,
+  because a runtime that dispatches on the file name treats it differently from the thing it is
+  a copy of; and activation used a cross-filesystem `rename`, which works where both paths are
+  on `/tmp` and fails with `EXDEV` on a real appliance — the worst kind of bug, one that appears
+  only where it matters. Rendering it found a third: a sidecar refusing an action surfaced as a
+  **500**, so `DraftEngineError` now maps to 409/503/502 the way `ZodError` maps to 400.
+
+**Totals after this pass:** 409 tests across 31 files in the server package and 15 in the UI,
+none skipped, against a real Postgres at 0013. `npm run lint` clean. `npm run draft -- --truth` still 13 agreed, 0 disagreed.
 `npm run check:providers` clean. No fixture-manifest drift.
 
 **Still not verified, and none of it is small.** The extraction accuracy run still needs the

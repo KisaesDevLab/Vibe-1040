@@ -32,6 +32,7 @@ import {
 } from './router/client.ts';
 import { registry } from './schemas/registry.ts';
 import { ZodError } from 'zod';
+import { DraftEngineError } from './draft/client.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -94,6 +95,26 @@ export async function buildServer() {
         issues: error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
       });
     }
+    /**
+     * A sidecar refusing an action is not this server failing.
+     *
+     * Found by rendering the staged-upgrade page: pressing "roll back" when there was nothing
+     * to roll back to produced a 500 and a red console error, for a state the sidecar reports
+     * perfectly clearly. `invalid_input` is the sidecar saying the request was wrong about the
+     * world — nothing staged, a digest that does not match, a version that disagrees — which is
+     * a 409; an unreachable engine is a 503, because an optional checking aid being down is a
+     * degraded state and not a failure (§3); anything else it says is a 502.
+     */
+    if (error instanceof DraftEngineError) {
+      req.log.warn({ code: error.code, detail: error.detail }, 'the draft engine refused');
+      const status = error.code === 'invalid_input' ? 409 : error.isUnavailable ? 503 : 502;
+      return reply.code(status).send({
+        error: error.code,
+        message: error.message,
+        detail: error.detail ?? null,
+      });
+    }
+
     req.log.error({ err: error }, 'request failed');
     const fastifyError = error as { statusCode?: number; code?: string; message?: string };
     const status = fastifyError.statusCode ?? 500;

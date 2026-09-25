@@ -659,9 +659,16 @@ failure this whole app is built to prevent:
   reading of its AGPL licence and it keeps the integration severable (§13, QUESTIONS.md Q22).
   Do not move it in-process. Do not vendor its source into `src/`.
 - **Pin the version and verify the binary by checksum.** It is a young, largely
-  AI-maintained engine; `install.sh | sh` into a floating latest is not acceptable here. That
-  rule is why there is no upgrade button: the pin lives in the image build so nothing at
-  runtime can move it (QUESTIONS.md Q23). Admin → Draft engine reports and never installs.
+  AI-maintained engine; `install.sh | sh` into a floating latest is not acceptable here.
+  **Amended 2026-09-25 (Q23 answered):** an admin may now *stage* an upgrade — name an exact
+  version and an exact SHA-256, have the digest verified **before** the binary is ever run, have
+  it checked against the node map's catalogue, and then activate it deliberately. The rule is
+  intact, because staging is not installing: there is still no `latest`, still no
+  `install.sh | sh`, and still no path by which the running system chooses its own engine. What
+  changed is who does the tedious half. Read `src/draft/install.ts` before touching any of it,
+  and do not add a path that activates without a person. The feature is inert unless the
+  deployment gives the sidecar a staging directory, which needs a writable volume and outbound
+  access that are a WISP decision (Q21).
 - **Check the node map against the engine's own catalogue before sending** (`src/draft/
   catalog.ts`). A renamed *required* field is refused loudly; a renamed **optional** field is
   accepted and ignored, so the amount vanishes and the line reads as absent — the silent

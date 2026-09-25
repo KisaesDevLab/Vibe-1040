@@ -109,8 +109,11 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
   }
 
   const text = await res.text();
-  if (res.status === 400) {
-    throw new DraftEngineError('invalid_input', 'the OpenTax engine refused the input', text.slice(0, 2000));
+  // 400 is the engine refusing a payload; 409 is the sidecar refusing an action because the
+  // world is not what the request assumed — nothing staged, a checksum that does not match, a
+  // version that disagrees. Both are the caller's problem and both carry the reason.
+  if (res.status === 400 || res.status === 409) {
+    throw new DraftEngineError('invalid_input', 'the OpenTax sidecar refused the request', text.slice(0, 2000));
   }
   if (!res.ok) {
     throw new DraftEngineError('engine_error', `the OpenTax engine returned ${res.status}`, text.slice(0, 2000));
@@ -192,6 +195,72 @@ export async function fetchCatalog(nodeTypes: readonly string[]): Promise<Engine
     engineVersion: typeof body.engineVersion === 'string' ? body.engineVersion : 'unknown',
     nodes: body.nodes,
   };
+}
+
+// ── staged install (Q23) ─────────────────────────────────────────────────────
+//
+// The sidecar owns the binary, so it does the staging; this is the app's side of those calls.
+// Every one of them is inert unless the deployment configured a staging directory, and the
+// sidecar says so in `allowed` rather than erroring, so the page can explain itself.
+
+export interface StagedEngineState {
+  allowed: boolean;
+  staged: { version: string | null; sha256: string; stagedAt: string; path: string } | null;
+  live: { version: string; path: string } | null;
+  previous: boolean;
+}
+
+export interface StagedRelease {
+  version: string;
+  sha256: string;
+  /** `https://…` for a download, or `file:<name>` for one an operator dropped in place. */
+  from: string;
+  path: string;
+}
+
+export async function stagedState(): Promise<StagedEngineState> {
+  return get<StagedEngineState>('/staged');
+}
+
+/**
+ * Stage a candidate: download or copy it, verify its digest, and read its version back.
+ *
+ * A refusal here is the sidecar saying the request was wrong about the world — a checksum that
+ * does not match, a version that disagrees, a file that is not there — so it comes back as
+ * `invalid_input` rather than as an engine failure, and the reason is the sidecar's own words.
+ */
+export async function stageRelease(spec: {
+  version: string;
+  sha256: string;
+  url?: string | undefined;
+  file?: string | undefined;
+}): Promise<StagedRelease> {
+  return post<StagedRelease>('/staged', spec);
+}
+
+/** The catalogue of the **staged** binary, for checking a candidate before it serves anything. */
+export async function fetchStagedCatalog(nodeTypes: readonly string[]): Promise<EngineCatalog> {
+  const query = encodeURIComponent([...new Set(nodeTypes)].join(','));
+  const body = await get<Partial<EngineCatalog>>(`/staged/catalog?nodes=${query}`);
+  if (typeof body.nodes !== 'object' || body.nodes === null) {
+    throw new DraftEngineError('invalid_response', 'the OpenTax sidecar returned a catalog with no nodes');
+  }
+  return {
+    engineVersion: typeof body.engineVersion === 'string' ? body.engineVersion : 'unknown',
+    nodes: body.nodes,
+  };
+}
+
+export async function activateStaged(): Promise<{ version: string; path: string }> {
+  return post<{ version: string; path: string }>('/staged/activate', {});
+}
+
+export async function rollbackEngine(): Promise<{ version: string; path: string }> {
+  return post<{ version: string; path: string }>('/staged/rollback', {});
+}
+
+export async function discardStaged(): Promise<{ discarded: boolean }> {
+  return request<{ discarded: boolean }>('/staged', { method: 'DELETE' });
 }
 
 /** Compute a return from the nodes the translator produced. */

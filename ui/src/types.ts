@@ -431,3 +431,19 @@ export interface DraftInputs {
   unsupportedActivities: { kind: string; label: string; reason: string; detail: string }[];
   documentBacked: DraftDocumentBackedLine[];
 }
+
+// ── staged engine install (Q23) ──────────────────────────────────────────────
+
+export interface StagedEngineReport {
+  state: {
+    /** False unless the deployment gave the sidecar a staging directory. */
+    allowed: boolean;
+    staged: { version: string | null; sha256: string; stagedAt: string; path: string } | null;
+    live: { version: string; path: string } | null;
+    /** True when an activation left a binary to roll back to. */
+    previous: boolean;
+  };
+  check: CatalogCheck | null;
+  findings: string[];
+  nodeMap: { taxYear: number; version: string } | null;
+}

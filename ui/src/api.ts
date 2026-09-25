@@ -7,6 +7,7 @@ import type {
   DraftEngineReadiness,
   DraftInputs,
   DraftReturn,
+  StagedEngineReport,
   StoredDraftReturn,
   DocumentRow,
   EnvSetting,
@@ -395,6 +396,31 @@ Proceed and discard them?`)) return { ok: false };
     if (!res.ok) throw new Error(`draft return failed: ${res.status}`);
     return res.json() as Promise<StoredDraftReturn>;
   },
+
+  // ── staged engine install (Q23) ────────────────────────────────────────────
+  //
+  // The read-only check above is unchanged. These four are the staged upgrade: a caller names
+  // an exact version and an exact SHA-256, nothing is served by a staged binary until
+  // `activateStagedEngine`, and the outgoing one is kept so a bad upgrade is one button to
+  // undo rather than a rebuild.
+
+  stagedEngine: (taxYear?: number | null) =>
+    request<StagedEngineReport>(`/api/admin/draft-engine/staged${taxYear ? `?taxYear=${taxYear}` : ''}`),
+
+  stageEngine: (spec: { version: string; sha256: string; url?: string; file?: string; taxYear?: number }) =>
+    request<{ staged: { version: string; sha256: string; from: string }; report: StagedEngineReport }>(
+      '/api/admin/draft-engine/staged',
+      { method: 'POST', body: JSON.stringify(spec) },
+    ),
+
+  activateStagedEngine: () =>
+    request<{ version: string; path: string }>('/api/admin/draft-engine/staged/activate', { method: 'POST', body: '{}' }),
+
+  rollbackEngine: () =>
+    request<{ version: string; path: string }>('/api/admin/draft-engine/staged/rollback', { method: 'POST', body: '{}' }),
+
+  discardStagedEngine: () =>
+    request<{ discarded: boolean }>('/api/admin/draft-engine/staged', { method: 'DELETE' }),
 
   renameBundle: (id: string, label: string) =>
     request<{ ok: boolean; label: string }>(`/api/bundles/${id}/label`, {

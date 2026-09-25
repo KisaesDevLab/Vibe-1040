@@ -62,6 +62,12 @@ export type AuditAction =
   | 'admin.retention_run'
   /** Who looked at the draft-return engine's version pins and node-map agreement. */
   | 'admin.draft_engine_checked'
+  // Staging an engine upgrade (Q23). Each is a deliberate act by a named admin, and the last
+  // two change what computes a taxpayer's figures — so the record says who, and when.
+  | 'admin.draft_engine_staged'
+  | 'admin.draft_engine_activated'
+  | 'admin.draft_engine_rolled_back'
+  | 'admin.draft_engine_discarded'
   | 'auth.phone_verified'
   | 'auth.password_reset_requested'
   | 'auth.password_reset_failed'

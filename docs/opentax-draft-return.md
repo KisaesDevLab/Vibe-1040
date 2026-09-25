@@ -370,14 +370,59 @@ the draft the preparer is looking at. The provenance is rebuilt from the documen
 stand now, so if a field has been corrected since, the checker sees that rather than having it
 hidden.
 
+### Staging an upgrade from Admin (Q23, answered 2026-09-25)
+
+The first answer to "should upgrading be a button" was *report, never install*. That was
+reversed, and what exists now is the shape that keeps §14's rule intact: **staging is not
+installing.**
+
+An admin names an **exact version** and an **exact SHA-256** — there is no list to pick from and
+no `latest`, because the point of a pin is that a person chose it — and one of two sources: an
+`https://` URL, or the name of a file an operator has already dropped in the staging directory,
+which is how an appliance with no egress upgrades at all. Then, in order:
+
+1. The file is fetched or copied into the staging directory.
+2. **Its digest is checked before it is ever executed.** A mismatch deletes it.
+3. It is run once, for `version` and nothing else. A version that disagrees with the one asked
+   for is also a failure, and also deletes it — a release re-tagged under the same name is
+   exactly what a version pin plus a checksum exists to catch, and neither catches it alone.
+4. Its **own** field catalogue is read and the node map checked against it, which is the check
+   that catches a renamed *optional* field. Blocking findings are shown in red.
+5. Nothing is served by it. **Activate** is a separate press.
+
+Activation copies the staged binary into the live binary's own directory and renames it into
+place — never a cross-filesystem `rename`, which works in a test where both paths are on `/tmp`
+and fails with `EXDEV` on a real appliance, and never a write to `BIN` in place, so there is no
+instant at which the engine is missing or half-written while a draft is being computed. The
+outgoing binary is kept, so **Roll back to the previous engine** is one more press rather than a
+rebuild.
+
+Every one of stage, activate, roll back and discard writes an audit row naming the admin.
+
+**It is off unless configured**, and the page says so rather than showing dead buttons. Two
+prerequisites are deployment decisions, not code, and both belong in the WISP review Q21 opened:
+
+- `OPENTAX_STAGING_DIR` pointing at a **writable volume** on the engine container, which ships
+  `read_only: true`;
+- **outbound access** from the appliance to the release host, for the download form only.
+
+**What it does not replace.** A name check is not a behaviour check. After activating, run
+`npm run draft -- --truth` and `npm run draft:conflicts` against the new engine before trusting
+a draft it produced — step 6 and step 8 of the procedure above still apply, and the second one
+matters more now that the engine can change without an image rebuild.
+
 ### What Admin → Draft engine does and does not do
 
 It reports: which binary is running, what both pins say, and every catalogue finding with its
-remedy. **It does not upgrade anything, and there is no button that would.** The version is
-pinned and checksum-verified at image build precisely so nothing can replace the binary at
-runtime; a click that downloaded and swapped an engine would be `install.sh | sh` with better
-manners, and §14's pin-and-verify rule exists to forbid exactly that. The page is the part of
-this procedure a person can see without a shell — see QUESTIONS.md Q23.
+remedy. **Superseded in part on 2026-09-25**, when Q23 was answered the other way: the page can
+now also stage an upgrade, as described in the section above.
+
+What has not changed is the reason the original answer was no. A click that downloaded and
+swapped an engine would be `install.sh | sh` with better manners, and §14's pin-and-verify rule
+forbids exactly that. Staging is not that: an exact version, an exact digest verified before
+execution, a catalogue check against the node map, and an activation a person performs having
+read the result. **There is still no button that picks a version, and none that activates on
+its own.**
 
 ### What CI verifies about the image
 

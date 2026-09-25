@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AuthSettingsPage } from '@kisaesdevlab/vibe-auth/react';
 import { api } from '../api';
-import type { AuditRow, DraftEngineReadiness, EnvSetting, SettingRow, UserRow } from '../types';
+import type {
+  AuditRow,
+  DraftEngineReadiness,
+  EnvSetting,
+  SettingRow,
+  StagedEngineReport,
+  UserRow,
+} from '../types';
 
 /**
  * Admin section — Settings, Users, Audit, Retention.
@@ -228,6 +235,183 @@ function DraftEngineTab({ onError }: { onError: (m: string) => void }) {
         changed its meaning, or arithmetic that moved. Run <code>npm run draft -- --truth</code>{' '}
         for that; an upgrade needs both.
       </p>
+
+      <StagedEngine onError={onError} onActivated={load} />
+    </div>
+  );
+}
+
+/**
+ * Staging an upgrade for a person to approve (Q23).
+ *
+ * The page above reports; this section is the part that acts, and it is deliberately four
+ * separate presses rather than one. A caller names an exact version and an exact checksum —
+ * there is no "latest" and no list to pick from, because the point of a pin is that somebody
+ * chose it. Staging verifies the digest before the binary is ever run and then checks it
+ * against the node map's field names, which is the check that catches a renamed *optional*
+ * field: the engine would accept it, ignore it, and leave the line reading as absent.
+ *
+ * **Nothing here serves anything until Activate.** That press is the one act on this page that
+ * changes what computes a taxpayer's figures, so it says so, and the outgoing binary is kept so
+ * that undoing it is one more press rather than a rebuild.
+ */
+function StagedEngine({ onError, onActivated }: { onError: (m: string) => void; onActivated: () => void }) {
+  const [report, setReport] = useState<StagedEngineReport | null>(null);
+  const [version, setVersion] = useState('');
+  const [sha256, setSha256] = useState('');
+  const [source, setSource] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    api.stagedEngine().then(setReport).catch(() => setReport(null));
+  }, []);
+  useEffect(load, [load]);
+
+  const act = (fn: () => Promise<unknown>, after?: () => void) => {
+    setBusy(true);
+    fn()
+      .then(() => {
+        load();
+        after?.();
+      })
+      .catch((e: Error) => onError(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  if (!report) return null;
+
+  // Not configured is the shipped default, and it needs a writable volume and outbound access
+  // that are a deployment decision — so the page says that rather than showing dead buttons.
+  if (!report.state.allowed) {
+    return (
+      <div className="staged-engine">
+        <h4>Staged upgrade</h4>
+        <p className="draft-hint">
+          Not configured on this deployment. Staging needs a writable volume on the engine
+          container, which ships <code>read_only</code>, and — to download rather than to take a
+          file an operator has already placed — outbound access to the release host. Both are
+          deployment decisions and both belong in the WISP review. Until then an upgrade is a
+          rebuild of the sidecar image, which is what <code>docs/opentax-draft-return.md</code>{' '}
+          §7 describes.
+        </p>
+      </div>
+    );
+  }
+
+  const staged = report.state.staged;
+  const blocking = report.check?.blocking.length ?? 0;
+
+  return (
+    <div className="staged-engine">
+      <h4>Staged upgrade</h4>
+
+      {staged === null ? (
+        <>
+          <p className="draft-hint">
+            An exact version and an exact SHA-256, from the release you intend to run. There is
+            no <em>latest</em>: a pin is only a pin because a person chose it. The digest is
+            checked before the binary is ever executed, and a file that fails is deleted.
+          </p>
+          <div className="pi-new">
+            <input placeholder="2.0.5" value={version} onChange={(e) => setVersion(e.target.value)} />
+            <input
+              placeholder="sha256 (64 hex characters)"
+              value={sha256}
+              onChange={(e) => setSha256(e.target.value.trim().toLowerCase())}
+              size={40}
+            />
+            <input
+              placeholder="https://… or a file already in the staging directory"
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              size={44}
+            />
+            <button
+              type="button"
+              disabled={busy || version === '' || !/^[0-9a-f]{64}$/.test(sha256) || source === ''}
+              onClick={() =>
+                act(() =>
+                  api.stageEngine({
+                    version,
+                    sha256,
+                    ...(source.startsWith('https://') ? { url: source } : { file: source }),
+                  }),
+                )
+              }
+            >
+              {busy ? 'Staging…' : 'Stage'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="staged-summary">
+            <div>
+              <span className="muted">Staged</span> {staged.version ?? 'unreadable'}{' '}
+              <span className="muted">· {new Date(staged.stagedAt).toLocaleString()}</span>
+            </div>
+            <div>
+              <span className="muted">Running</span> {report.state.live?.version ?? 'unknown'}
+            </div>
+            <code className="staged-sha">{staged.sha256}</code>
+          </div>
+
+          {report.check !== null && (
+            <div className={blocking > 0 ? 'staged-check bad' : 'staged-check good'}>
+              {blocking > 0 ? (
+                <>
+                  <strong>{blocking} blocking finding(s)</strong> against node map{' '}
+                  {report.nodeMap?.version}. Activating this would withhold draft returns until
+                  the map is updated.
+                </>
+              ) : (
+                <>
+                  No blocking findings against node map {report.nodeMap?.version}
+                  {report.findings.length > 0 ? `, ${report.findings.length} advisory` : ''}.
+                </>
+              )}
+            </div>
+          )}
+          {report.findings.map((f) => (
+            <div key={f} className="draft-diag">
+              {f}
+            </div>
+          ))}
+
+          <div className="pi-actions">
+            <button
+              type="button"
+              disabled={busy}
+              title="Makes the staged binary the one that computes draft returns. The outgoing one is kept."
+              onClick={() => act(() => api.activateStagedEngine(), onActivated)}
+            >
+              {busy ? 'Working…' : `Activate ${staged.version ?? ''}`}
+            </button>
+            <button type="button" disabled={busy} onClick={() => act(() => api.discardStagedEngine())}>
+              Discard
+            </button>
+          </div>
+          <p className="draft-hint">
+            Activating changes what computes a taxpayer&rsquo;s figures, and is recorded against
+            your account. A name check is still not a behaviour check — run{' '}
+            <code>npm run draft -- --truth</code> and <code>npm run draft:conflicts</code> against
+            the new engine before trusting a draft it produced.
+          </p>
+        </>
+      )}
+
+      {report.state.previous && (
+        <div className="pi-actions">
+          <button
+            type="button"
+            disabled={busy}
+            title="Put the binary that was running before the last activation back."
+            onClick={() => act(() => api.rollbackEngine(), onActivated)}
+          >
+            Roll back to the previous engine
+          </button>
+        </div>
+      )}
     </div>
   );
 }
