@@ -455,3 +455,20 @@ export interface StagedEngineReport {
   findings: string[];
   nodeMap: { taxYear: number; version: string } | null;
 }
+
+/** Admin → Draft engine's "is there a newer one" report. Reports only; installs nothing. */
+export interface EngineReleaseCheck {
+  enabled: boolean;
+  expected: string;
+  latest: {
+    tag: string;
+    version: string;
+    publishedAt: string | null;
+    url: string | null;
+    assetName: string | null;
+    sha256: string | null;
+  } | null;
+  newerAvailable: boolean;
+  unavailable: string | null;
+  checkedAt: string;
+}

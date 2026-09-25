@@ -6,6 +6,7 @@ import type {
   DraftEngineReadiness,
   EnvSetting,
   SettingRow,
+  EngineReleaseCheck,
   StagedEngineReport,
   UserRow,
 } from '../types';
@@ -195,6 +196,8 @@ function DraftEngineTab({ onError }: { onError: (m: string) => void }) {
           </tr>
         </tbody>
       </table>
+
+      <LatestRelease />
 
       {state.engine.ok && !state.versionsAgree && (
         <p className="engine-bad">
@@ -414,6 +417,102 @@ function StagedEngine({ onError, onActivated }: { onError: (m: string) => void; 
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * "Is there a newer OpenTax?" — and deliberately nothing more (Q23's middle option).
+ *
+ * The temptation with a panel like this is an Upgrade button. There isn't one, and the copy says
+ * why rather than leaving it looking unfinished: on this engine a release that renames an
+ * *optional* field has its amounts accepted and ignored, so the line reads as absent rather than
+ * wrong — which is the one failure this whole app exists to prevent. Being told a release exists
+ * removes the argument for floating; installing it unattended would reintroduce the risk the pin
+ * was protecting against.
+ */
+function LatestRelease() {
+  const [check, setCheck] = useState<EngineReleaseCheck | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback((refresh?: boolean) => {
+    setBusy(true);
+    api
+      .latestEngine(refresh)
+      .then(setCheck)
+      .catch(() => setCheck(null))
+      .finally(() => setBusy(false));
+  }, []);
+
+  useEffect(() => load(), [load]);
+
+  // Off is the default and is not a fault: say where to turn it on and what it costs.
+  if (check && !check.enabled) {
+    return (
+      <p className="muted engine-latest">
+        Release checking is off. Turn it on in <strong>Settings → Engine and pipeline</strong> —
+        it opens an outbound connection from the appliance to the release host, which is a
+        network-policy decision rather than a default.
+      </p>
+    );
+  }
+
+  if (!check) return <p className="muted engine-latest">{busy ? 'Checking for a newer engine…' : null}</p>;
+
+  return (
+    <div className="engine-latest">
+      {check.unavailable ? (
+        <p className="muted">
+          Could not reach the release feed: {check.unavailable}. Nothing is wrong with the running
+          engine — this check is a convenience and its absence is not an error.
+        </p>
+      ) : check.newerAvailable && check.latest ? (
+        <>
+          <p className="engine-newer">
+            <strong>{check.latest.tag}</strong> is available
+            {check.latest.publishedAt && <> (published {new Date(check.latest.publishedAt).toLocaleDateString()})</>}
+            . This deployment expects <strong>{check.expected}</strong>.
+          </p>
+          {check.latest.sha256 && (
+            <p className="setting-help">
+              Published digest for <code>{check.latest.assetName}</code>:{' '}
+              <code className="engine-digest">{check.latest.sha256}</code>
+              <br />
+              {/*
+                Said plainly, because a checksum next to a download link reads as proof and this
+                one is not: it comes from the same place as the binary. It saves retyping, and the
+                checks that actually protect you run later and are unchanged.
+              */}
+              This digest comes from the same source as the binary, so it is not independent
+              verification — it is here to save retyping into the staging form. What protects you
+              is that a staged candidate&rsquo;s digest is checked before it is ever run, its own
+              field catalogue is checked against the node map, and{' '}
+              <code>npm run draft -- --truth</code> measures behaviour rather than names.
+            </p>
+          )}
+          <p className="setting-help">
+            <strong>Nothing here installs it.</strong> Upgrading stays the procedure in{' '}
+            <code>docs/opentax-draft-return.md</code> §7 — and remember the version has two homes:
+            staging moves the running binary, while <code>opentax/pinned.json</code> and the image
+            build decide what a redeploy brings back.
+          </p>
+        </>
+      ) : (
+        <p className="engine-good">
+          {check.latest
+            ? `Up to date — ${check.latest.tag} is the newest release and this deployment expects ${check.expected}.`
+            : `No newer release reported. This deployment expects ${check.expected}.`}
+        </p>
+      )}
+      {/*
+        Not "Check again": the catalogue check directly below this had that label already, and
+        rendering the two together put two identically-named buttons one above the other doing
+        entirely different things — one asks a third party what exists, the other runs the local
+        binary. Found by looking at it.
+      */}
+      <button type="button" disabled={busy} onClick={() => load(true)}>
+        {busy ? 'Checking…' : 'Check for releases'}
+      </button>
     </div>
   );
 }

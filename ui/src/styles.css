@@ -405,3 +405,10 @@ a.button.sso-button[aria-disabled='true'] { opacity: 0.6; }
 
 /* The save bar is a flex row; the blocking-reason note must not push the button off the end. */
 .save-bar .warn-note { flex: 1 1 auto; margin: 0 12px; }
+
+/* Admin → Draft engine: the "is there a newer one" panel (Q23 middle option). */
+.engine-latest { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 4px; }
+.engine-latest p { margin: 0 0 6px 0; }
+.engine-latest .setting-help { display: block; grid-column: auto; }
+.engine-newer { font-size: 13px; }
+.engine-digest { word-break: break-all; font-size: 11px; }

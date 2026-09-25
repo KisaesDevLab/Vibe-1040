@@ -448,6 +448,38 @@ export const SETTINGS = [
     options: ['local_only', 'cloud_deidentified', 'cloud_identified'],
   }),
   def({
+    key: 'engine.update_check_enabled',
+    group: 'engine',
+    label: 'Check for newer OpenTax releases',
+    help:
+      'Asks the release feed whether a newer engine exists and reports it on Admin → Draft ' +
+      'engine. It installs nothing and cannot: there is no code path from this to a running ' +
+      'binary. Staging an upgrade stays a separate, deliberate act, and the version that runs ' +
+      'is still pinned and checksum-verified when the image is built (§14).',
+    schema: z.boolean(),
+    default: () => false,
+    input: 'boolean',
+    acknowledge:
+      'This opens an outbound connection from the appliance to a host it otherwise never ' +
+      'contacts. No taxpayer data is sent — it is an unauthenticated read of public release ' +
+      'metadata — but the egress itself is a network-policy and WISP question (Q21). Turn it ' +
+      'on only if the appliance is allowed to reach the release host.',
+    note:
+      'Cached for 15 minutes. A feed it cannot reach reports as unavailable rather than as an ' +
+      'error: an optional convenience must not break the page carrying the engine’s real status.',
+  }),
+  def({
+    key: 'engine.release_feed_url',
+    group: 'engine',
+    label: 'Release feed',
+    help:
+      'Where the check above looks. Read-only metadata, never a download — the binary itself ' +
+      'is only ever fetched by the staging flow, against a version and digest a person typed.',
+    schema: z.string().url().max(512),
+    default: () => 'https://api.github.com/repos/filedcom/opentax/releases/latest',
+    input: 'text',
+  }),
+  def({
     key: 'extraction.attach_page_image',
     group: 'engine',
     label: 'Send the page image to the field binder',

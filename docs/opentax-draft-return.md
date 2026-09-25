@@ -383,6 +383,43 @@ the draft the preparer is looking at. The provenance is rebuilt from the documen
 stand now, so if a field has been corrected since, the checker sees that rather than having it
 hidden.
 
+### Knowing a release exists (Q23's middle option, built 2026-09-25)
+
+Asked as *"how do we always use the latest"*. The answer is that you do not, and this is the
+thing that removes the reason to want to.
+
+**Admin → Draft engine reports whether a newer release exists. It installs nothing, and there
+is no code path from it to a running binary** — `test/draft-releases.test.ts` asserts that by
+reading the module's own source, so a later change that adds a download has to fail a test and
+be argued for rather than slipping in.
+
+Why not float:
+
+- **Measured on 2.0.4**: a release that renames an *optional* field has its amounts accepted and
+  ignored. The line then reads as **absent**, identical to "the documents reported nothing here".
+  An unattended upgrade makes that arrive with nobody watching.
+- A checksum pin is meaningless against a binary nobody has seen yet.
+- `npm run draft -- --truth` measures *behaviour*, not field names, and no button can do it.
+
+**Off by default.** It opens an outbound connection from the appliance to a host it otherwise
+never contacts. No taxpayer data is sent — it is an unauthenticated read of public release
+metadata — but that egress is a network-policy and WISP question (Q21), so it is an audited
+opt-in under Settings → Engine and pipeline, cached for 15 minutes, and a feed it cannot reach
+reports as unavailable rather than as an error.
+
+**The digest it shows is not independent verification.** It comes from the same source as the
+binary, so a compromised release would publish a matching one. It is there to save retyping into
+the staging form. What protects you is unchanged: the staged candidate's digest is checked before
+it is ever executed, its own field catalogue is checked against the node map, and `--truth`
+measures behaviour.
+
+**A pre-release is never reported as the latest**, because quietly treating one as such is how an
+unfinished tax engine ends up computing somebody's return.
+
+**And the trap worth repeating: the version has two homes.** Staging moves the *running* binary.
+`opentax/pinned.json` and the image build decide what a redeploy brings back. Move one without
+the other and the next `docker compose up` silently reverts the engine.
+
 ### Staging an upgrade from Admin (Q23, answered 2026-09-25)
 
 The first answer to "should upgrading be a button" was *report, never install*. That was

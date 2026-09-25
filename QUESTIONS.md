@@ -521,6 +521,15 @@ check the engine's releases feed and say "2.1.0 is available, here is its checks
 installing nothing. That needs an outbound call to GitHub from the appliance, which is a WISP
 and network-policy question rather than a code one — hence a question rather than a choice.
 
+**Built 2026-09-25**, after Kurt asked how to always run the latest. The middle option is the
+answer to that: being *told* a release exists costs nothing and removes the reason to float,
+while upgrading unattended would make a renamed optional field arrive with nobody watching. It
+is off by default and is an audited opt-in, because the egress is the part somebody has to agree
+to; the digest it shows is explicitly labelled as not independent verification, since it comes
+from the same source as the binary; a pre-release is never reported as the latest; and a test
+reads the module's own source to assert it contains no download, write or execute path, so a
+later change that adds one has to fail and be argued for.
+
 **Asked for, 2026-09-25, and not delivered — `add the install`.** The answer to the above was
 to build the installing half after all. That is a legitimate reversal to ask for; §14 is this
 repository's own rule and whoever owns it can change it. The attempt was made, with the two

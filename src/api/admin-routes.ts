@@ -15,6 +15,7 @@ import { changeOwnPassword, completeReset, passwordProblem, requestReset } from 
 import { satisfyMfa } from '../auth/session.ts';
 import { db } from '../db/client.ts';
 import { engineReadiness } from '../draft/generate.ts';
+import { checkForNewerEngine } from '../draft/releases.ts';
 import {
   activateStagedEngine,
   discardStagedEngine,
@@ -360,6 +361,26 @@ export function registerAdminRoutes(app: FastifyInstance): void {
     const { taxYear } = z.object({ taxYear: z.coerce.number().int().optional() }).parse(req.query);
     await auditAccess(req, 'admin.draft_engine_checked', { detail: { taxYear: taxYear ?? null } });
     return engineReadiness(taxYear);
+  });
+
+  /**
+   * Whether a newer engine release exists (Q23's middle option, built 2026-09-25).
+   *
+   * **Reads and reports. There is no code path from here to a running binary** — that is the
+   * answer to "always use the latest": being told costs nothing, while upgrading automatically
+   * would make a renamed optional field arrive unannounced, and a renamed optional field is
+   * accepted by the engine, ignored, and leaves the line reading as absent.
+   *
+   * Unaudited: it reports deployment posture and touches no taxpayer data. Off unless the firm
+   * switched it on, because it is an outbound connection the appliance otherwise never makes.
+   */
+  app.get('/api/admin/draft-engine/latest', async (req, reply) => {
+    const user = await requireRole(req, reply, ['admin']);
+    if (!user) return;
+    const { refresh } = z
+      .object({ refresh: z.enum(['true', '1']).optional() })
+      .parse(req.query);
+    return checkForNewerEngine(refresh ? { force: true } : {});
   });
 
   /**

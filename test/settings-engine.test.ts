@@ -109,6 +109,8 @@ describe.skipIf(!dbAvailable)('the engine and pipeline settings', () => {
       'extraction.attach_page_image',
       'extraction.ocr_fallback_enabled',
       'router.expected_sensitivity',
+      'engine.update_check_enabled',
+      'engine.release_feed_url',
     ]) {
       await db.delete(schema.firmSettings).where(eq(schema.firmSettings.key, key));
     }
@@ -137,19 +139,30 @@ describe.skipIf(!dbAvailable)('the engine and pipeline settings', () => {
     expect(res.json<SettingsBody>().settings.find((s) => s.key === 'draft.return_enabled')!.value).toBe(false);
   });
 
-  it('serves the five as editable settings, with their semantics as data', async () => {
+  it('serves the engine group as editable settings, with their semantics as data', async () => {
     const res = await get('/api/admin/settings');
     expect(res.statusCode).toBe(200);
     const body = res.json<SettingsBody>();
     const engine = body.settings.filter((s) => s.group === 'engine');
 
+    // Exhaustive on purpose: a new engine setting has to come past this assertion, so nobody
+    // adds one without deciding whether it needs an acknowledgement or a restart badge. The
+    // release check (2026-09-25) is the first thing it caught.
     expect(engine.map((s) => s.key).sort()).toEqual([
       'draft.return_enabled',
       'engine.opentax_version',
+      'engine.release_feed_url',
+      'engine.update_check_enabled',
       'extraction.attach_page_image',
       'extraction.ocr_fallback_enabled',
       'router.expected_sensitivity',
     ]);
+
+    // The release check is off until a firm opts in — it opens an outbound connection the
+    // appliance otherwise never makes — and asks before it is switched on.
+    const updates = engine.find((s) => s.key === 'engine.update_check_enabled')!;
+    expect(updates.value).toBe(false);
+    expect(updates.acknowledge).toMatch(/outbound connection/);
 
     // The two that only bite at boot say so in data, not in prose the UI has to parse.
     const restart = engine.filter((s) => s.restartRequired).map((s) => s.key);

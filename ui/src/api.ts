@@ -18,6 +18,7 @@ import type {
   QueueFailure,
   RouterJobRow,
   WorksheetRow,
+  EngineReleaseCheck,
   SettingRow,
   SpanRow,
   UserRow,
@@ -136,6 +137,10 @@ export const api = {
    */
   draftEngine: (taxYear?: number | null) =>
     request<DraftEngineReadiness>(`/api/admin/draft-engine${taxYear ? `?taxYear=${taxYear}` : ''}`),
+
+  /** Whether a newer engine exists. Reports only — nothing here can install anything. */
+  latestEngine: (refresh?: boolean) =>
+    request<EngineReleaseCheck>(`/api/admin/draft-engine/latest${refresh ? '?refresh=true' : ''}`),
 
   runRetention: () =>
     request<Record<string, unknown>>('/api/admin/retention/run', { method: 'POST' }),
