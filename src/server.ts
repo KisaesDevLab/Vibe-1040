@@ -31,6 +31,7 @@ import {
   setRouterReachable,
 } from './router/client.ts';
 import { registry } from './schemas/registry.ts';
+import { ZodError } from 'zod';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -64,6 +65,42 @@ export async function buildServer() {
     void reply.header(
       'Content-Security-Policy',
       "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+    );
+  });
+
+  /**
+   * A malformed request is the client's fault, and must say so.
+   *
+   * Every route here validates with zod and calls `.parse`, which throws — and with no error
+   * handler Fastify turned all 51 of those call sites into a **500**. Found by the first test
+   * that posted a bad body over HTTP rather than calling the service directly: a reviewer
+   * mistyping a date got the same status as the database falling over, and every validation
+   * failure raised a server-error alarm.
+   *
+   * Only `ZodError` is mapped. Anything else keeps the status it already had, so a genuine 5xx
+   * is still a 5xx and is still logged in full.
+   *
+   * **The issues are returned without their values.** `path` and `message` say which field was
+   * wrong and why, which is what a client needs; `received` on some issue kinds would carry the
+   * figure itself into a response body and a log line, and a taxpayer amount does not belong in
+   * either (§11).
+   */
+  app.setErrorHandler((error, req, reply) => {
+    if (error instanceof ZodError) {
+      req.log.info({ issues: error.issues.map((i) => ({ path: i.path.join('.'), code: i.code })) }, 'invalid request');
+      return reply.code(400).send({
+        error: 'invalid_request',
+        message: 'The request body, query or path did not validate.',
+        issues: error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      });
+    }
+    req.log.error({ err: error }, 'request failed');
+    const fastifyError = error as { statusCode?: number; code?: string; message?: string };
+    const status = fastifyError.statusCode ?? 500;
+    return reply.code(status).send(
+      status >= 500
+        ? { error: 'internal_error' }
+        : { error: fastifyError.code ?? 'request_failed', message: fastifyError.message },
     );
   });
 
