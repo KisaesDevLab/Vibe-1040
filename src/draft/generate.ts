@@ -153,6 +153,19 @@ export async function generateDraftReturn(
   const tolerance = await setting<number>('reconcile.tolerance_cents');
   const comparison = compareDraft(file, worksheet, result, tolerance);
 
+  // An engine line the node map declares nowhere is a figure the engine computed and this app
+  // shows no one. It is netted into the totals either way, so the draft looks complete and is
+  // quietly missing a line — which is how the child tax credit went unseen when dependents
+  // first landed. Loud, and named, because the remedy is a one-line data change: declare it in
+  // `lines.computedOnly`, or in `lines.ignoredLines` with a reason a preparer could read.
+  if (comparison.undeclaredLines.length > 0) {
+    console.warn(
+      `[draft] engine ${result.engineVersion} returned ${comparison.undeclaredLines.length} ` +
+        `line(s) that data/opentax-nodes/${taxYear}.json declares nowhere, so nothing shows ` +
+        `them: ${comparison.undeclaredLines.join(', ')}. See docs/opentax-draft-return.md §7.`,
+    );
+  }
+
   // A node the engine refused is an omission too, and belongs in the same list — the reviewer
   // should not have to read two places to learn what is missing.
   const omissions: DraftOmission[] = [

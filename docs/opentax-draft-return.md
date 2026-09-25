@@ -130,6 +130,14 @@ Two load-time rules, both refusals rather than warnings:
   `sensitive: 'tin'` field must be `ignored` with reason `tin_withheld` — a TIN is never
   forwarded (§7).
 
+And one rule the same in spirit that **cannot** be a load-time refusal: **every line the engine
+returns is accounted for once**, in `lines.comparable`, `lines.computedOnly` or
+`lines.ignoredLines`. Enumerating a release's output lines means computing a return, so it is
+checked on every draft and reported in the log rather than at startup — §7 step 8. The `ignored`
+side takes a reason from a closed set (`echoes_an_input`, `not_a_money_figure`,
+`superseded_by_another_line`) plus prose, so it stays a decision rather than a way to silence a
+figure.
+
 ### Shapes beyond a flat rename
 
 - `codeGroups` — W-2 boxes 12a–12d are four code/amount pairs here and one
@@ -252,6 +260,14 @@ married-filing-jointly standard deduction, with taxable income correctly compute
 two lines therefore need not reconcile on the face of the draft. Worth reporting upstream; it is
 recorded in STATE.md's risk register and does not affect any line the harness scores.
 
+**What resolves it on the face of the draft is the pair beside it**, declared in the map since
+P18: `line12a_standard_deduction` and `line12e_itemized_deductions`. 12e is the itemised amount
+the engine actually applied, so 12e at zero beside a figure on 12a says the standard deduction
+won, and 12e equal to 12c says it did not. Measured on one bundle both ways: itemising at 33,005
+against a 31,500 standard deduction, then the same bundle with all four age and blindness flags
+set, which lifted 12a to 37,900 and made the standard deduction win. That is reporting the
+engine's own output more completely, not correcting it.
+
 ### Looking at the panel
 
 The panel lives in the review aside, which is about 290 CSS pixels wide. That is narrow enough
@@ -325,6 +341,20 @@ returns** until resolved; the worksheet is never affected.
 7. **Run the suite** (`npx vitest run`) and re-read `lines.comparable` and `lines.computedOnly`
    in the node map: an engine that surfaces new 1040 lines may make a `notCompared` line
    comparable, and one that stops surfacing a line will make a comparison go quietly silent.
+8. **Compute one draft and read the log for undeclared lines.** Every draft reports the engine
+   lines the node map accounts for in no way — not `comparable`, not `computedOnly`, not
+   `ignoredLines` — because the only way to enumerate the lines a release emits is to compute a
+   return, so unlike the field check this cannot run at load time:
+   ```
+   [draft] engine 2.0.4 returned 1 line(s) that data/opentax-nodes/2025.json declares nowhere,
+   so nothing shows them: line20_nonrefundable_credits
+   ```
+   Declare each one in `computedOnly` with a label, or in `ignoredLines` with a reason a
+   preparer could read. This is the mirror image of the rename failure above and arrives through
+   the engine's *output*: the figure is netted into the totals either way, so a draft looks
+   complete while a line is missing from every surface. It is how the child tax credit went
+   unseen when preparer-supplied dependents first landed — the credit changed total tax, and
+   nothing showed that a dependent had been counted.
 
 ### The hand check
 

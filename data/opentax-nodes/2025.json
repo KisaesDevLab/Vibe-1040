@@ -1565,9 +1565,21 @@
       },
       {
         "engineForm": "f1040",
+        "engineLine": "line12a_standard_deduction",
+        "label": "Standard deduction",
+        "note": "The standard deduction for the stated filing status, including any additional amount for age or blindness. Read together with line 12c and line 12e this resolves what 2.0.4 leaves ambiguous on its own: 12c reports the itemised total whether or not it was used, while 12e reports the itemised amount actually applied — so 12e at zero beside a figure on 12a means the standard deduction won."
+      },
+      {
+        "engineForm": "f1040",
         "engineLine": "line12c_deduction_total",
         "label": "Standard or itemized deduction",
         "note": "Engine 2.0.4 reports the itemised total here even when the standard deduction is larger and is what the same run actually applied to taxable income, so this figure and taxable income need not reconcile on the face of the draft. Verified 2026-09-25 on a bundle whose only Schedule A items came to 18,349 against a 31,500 married-filing-jointly standard deduction: this line read 18,349 while taxable income was computed on 31,500. Reported as the engine produced it, not corrected — and the app decides neither deduction (§14)."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line12e_itemized_deductions",
+        "label": "Itemized deductions applied",
+        "note": "Zero when the standard deduction was larger and was the one applied, which is what makes this the line that disambiguates 12c. Verified against engine 2.0.4 on 2026-09-25."
       },
       {
         "engineForm": "f1040",
@@ -1592,8 +1604,46 @@
       },
       {
         "engineForm": "f1040",
+        "engineLine": "line18_total_tax_before_credits",
+        "label": "Tax before credits"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line20_nonrefundable_credits",
+        "label": "Nonrefundable credits",
+        "note": "Where the child tax credit and the credit for other dependents land. This line is the only place a draft shows that the dependents a preparer entered were counted at all — the credit is otherwise netted into total tax, where an unapplied dependent and a correctly applied one look identical."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line21_credits_total",
+        "label": "Total credits"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line22_tax_after_credits",
+        "label": "Tax after credits"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line23_other_taxes",
+        "label": "Other taxes",
+        "note": "Self-employment tax on a Schedule C or F summary lands here."
+      },
+      {
+        "engineForm": "f1040",
         "engineLine": "line24_total_tax",
         "label": "Total tax"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line25d_total_withholding",
+        "label": "Total withholding"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line32_refundable_credits_total",
+        "label": "Refundable credits",
+        "note": "The refundable portion of the child tax credit, the earned income credit and the American opportunity credit, to the extent the engine computes them from what it was sent."
       },
       {
         "engineForm": "f1040",
@@ -1614,6 +1664,48 @@
         "engineForm": "f1040",
         "engineLine": "line37_amount_owed",
         "label": "Amount owed"
+      }
+    ],
+    "ignoredLines": [
+      {
+        "engineLine": "filing_status",
+        "reason": "echoes_an_input",
+        "detail": "The filing status the reviewer stated, echoed back. Shown on the draft already, as the reviewer's own statement rather than as a computed figure."
+      },
+      {
+        "engineLine": "dependent_count",
+        "reason": "not_a_money_figure",
+        "detail": "A count of the dependents the reviewer entered, echoed back. The dependents are listed on the entry surface and their effect is visible on line 20."
+      },
+      {
+        "engineLine": "qualifying_child_tax_credit_count",
+        "reason": "not_a_money_figure",
+        "detail": "How many of the entered dependents the engine treated as qualifying children. Not shown as a figure; the credit it produces is on line 20."
+      },
+      {
+        "engineLine": "other_dependent_count",
+        "reason": "not_a_money_figure",
+        "detail": "How many of the entered dependents the engine treated as other dependents. Same as above: the credit is on line 20."
+      },
+      {
+        "engineLine": "taxpayer_age_65_or_older",
+        "reason": "echoes_an_input",
+        "detail": "The age and blindness statements the reviewer made, echoed back. They are shown on the entry surface as the reviewer's own answers, and their effect is in the standard deduction on line 12a."
+      },
+      {
+        "engineLine": "spouse_age_65_or_older",
+        "reason": "echoes_an_input",
+        "detail": "The age and blindness statements the reviewer made, echoed back. They are shown on the entry surface as the reviewer's own answers, and their effect is in the standard deduction on line 12a."
+      },
+      {
+        "engineLine": "taxpayer_blind",
+        "reason": "echoes_an_input",
+        "detail": "The age and blindness statements the reviewer made, echoed back. They are shown on the entry surface as the reviewer's own answers, and their effect is in the standard deduction on line 12a."
+      },
+      {
+        "engineLine": "spouse_blind",
+        "reason": "echoes_an_input",
+        "detail": "The age and blindness statements the reviewer made, echoed back. They are shown on the entry surface as the reviewer's own answers, and their effect is in the standard deduction on line 12a."
       }
     ]
   },

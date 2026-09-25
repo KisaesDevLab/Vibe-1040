@@ -166,6 +166,25 @@ const computedOnlyLine = z
   })
   .strict();
 
+/**
+ * Why an engine line is deliberately shown nowhere.
+ *
+ * The counterpart to the field rule — every field of a mapped form type is accounted for exactly
+ * once — applied to the engine's *output* rather than its input. It cannot be checked at load
+ * time, because the only way to enumerate the lines a release emits is to compute a return, so
+ * `compareDraft` checks it per draft and this is what keeps the expected ones quiet.
+ *
+ * Declaring one is a decision with a reason a preparer could read, never a way to silence a
+ * figure that is inconvenient.
+ */
+const ignoredLine = z
+  .object({
+    engineLine: z.string(),
+    reason: z.enum(['echoes_an_input', 'not_a_money_figure', 'superseded_by_another_line']),
+    detail: z.string().min(1),
+  })
+  .strict();
+
 const lineMapSection = z
   .object({
     comparable: z.array(comparableLine).default([]),
@@ -173,6 +192,7 @@ const lineMapSection = z
       .array(z.object({ lineRef: z.string(), reason: notComparedReason }).strict())
       .default([]),
     computedOnly: z.array(computedOnlyLine).default([]),
+    ignoredLines: z.array(ignoredLine).default([]),
   })
   .strict();
 
@@ -285,7 +305,7 @@ const nodeMapFile = z
     notes: z.array(z.string()).default([]),
     forms: z.array(formMap).min(1),
     unmappable: z.array(unmappableForm).default([]),
-    lines: lineMapSection.default({ comparable: [], notCompared: [], computedOnly: [] }),
+    lines: lineMapSection.default({ comparable: [], notCompared: [], computedOnly: [], ignoredLines: [] }),
     filingStatuses: z.array(filingStatus).min(1),
     /** Optional so a season's map can be written before the inputs are mapped for it. */
     preparerInputs: preparerInputs.optional(),
@@ -298,6 +318,7 @@ export type UnmappableForm = z.infer<typeof unmappableForm>;
 export type IgnoreReason = z.infer<typeof ignoreReason>;
 export type ComparableLine = z.infer<typeof comparableLine>;
 export type ComputedOnlyLine = z.infer<typeof computedOnlyLine>;
+export type IgnoredLine = z.infer<typeof ignoredLine>;
 export type NotComparedReason = z.infer<typeof notComparedReason>;
 export type FilingStatusOption = z.infer<typeof filingStatus>;
 export type PreparerInputs = z.infer<typeof preparerInputs>;

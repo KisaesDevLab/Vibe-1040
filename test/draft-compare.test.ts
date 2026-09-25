@@ -206,3 +206,63 @@ describe('ordering', () => {
     expect(known.map((l) => l.lineRef)).toEqual(['1040:1z', '1040:2b', '1040:25a']);
   });
 });
+
+describe('engine lines the node map declares nowhere', () => {
+  /**
+   * The failure measured against engine 2.0.4 when dependents landed (P18): the engine began
+   * returning `line20_nonrefundable_credits`, the credit for every dependent entered, and the
+   * node map declared no such line — so the figure went into total tax and appeared nowhere. An
+   * applied dependent and an ignored one looked identical on every surface.
+   *
+   * This cannot be checked at load time: enumerating the lines a release emits means computing a
+   * return. So it is checked per draft, which also means an engine upgrade cannot add a line
+   * without the next draft naming it.
+   */
+  it('reports a line the engine returned and the map accounts for in no way', async () => {
+    const c = compareDraft(
+      await nodeMap(),
+      worksheet([line('1040:1a', 12_700_000)]),
+      engine({ line1a_wages: 127_000, line99_new_credit_the_engine_invented: 2_200 }),
+      TOLERANCE,
+    );
+    expect(c.undeclaredLines).toEqual(['line99_new_credit_the_engine_invented']);
+  });
+
+  it('stays quiet about every line the shipped map does account for', async () => {
+    const file_ = await nodeMap();
+    // Everything the map knows about, in one return: nothing here is news.
+    const lines: Record<string, unknown> = {};
+    for (const c of file_.lines.comparable) lines[c.engineLine] = 1;
+    for (const c of file_.lines.computedOnly) lines[c.engineLine] = 1;
+    for (const c of file_.lines.ignoredLines) lines[c.engineLine] = 1;
+
+    const c = compareDraft(file_, worksheet([]), engine(lines), TOLERANCE);
+    expect(c.undeclaredLines).toEqual([]);
+  });
+
+  it('declares the credit line the dependents feed, with what it is for', async () => {
+    const file_ = await nodeMap();
+    const credit = file_.lines.computedOnly.find((c) => c.engineLine === 'line20_nonrefundable_credits');
+    expect(credit, 'the child tax credit must be shown somewhere, not only netted into total tax').toBeDefined();
+    expect(credit!.note).toMatch(/dependents/);
+    // And the pair that resolves what 2.0.4 leaves ambiguous about line 12c.
+    const declared = file_.lines.computedOnly.map((c) => c.engineLine);
+    expect(declared).toContain('line12a_standard_deduction');
+    expect(declared).toContain('line12e_itemized_deductions');
+  });
+
+  it('counts a line as accounted for only with a reason a preparer could read', async () => {
+    const file_ = await nodeMap();
+    expect(file_.lines.ignoredLines.length).toBeGreaterThan(0);
+    for (const ignored of file_.lines.ignoredLines) {
+      // Not a silencing mechanism: every entry says why, in prose, and the reasons are a
+      // closed set so "we did not get round to it" cannot become one of them.
+      expect(ignored.detail.length).toBeGreaterThan(20);
+      expect(['echoes_an_input', 'not_a_money_figure', 'superseded_by_another_line']).toContain(
+        ignored.reason,
+      );
+    }
+    // A figure the engine computes about money is never in here.
+    expect(file_.lines.ignoredLines.map((i) => i.engineLine)).not.toContain('line20_nonrefundable_credits');
+  });
+});

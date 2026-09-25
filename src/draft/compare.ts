@@ -60,6 +60,22 @@ export interface DraftComparison {
   counts: Record<ComparisonVerdict, number>;
   /** Lines worth a reviewer's attention: a real disagreement, note or no note. */
   differing: ComparedLine[];
+  /**
+   * Engine lines this return carried that the node map declares nowhere — not comparable, not
+   * computed-only, not ignored with a reason.
+   *
+   * This exists because of a measured loss, not a hypothetical one. When preparer-supplied
+   * dependents landed (P18), engine 2.0.4 began returning `line20_nonrefundable_credits` — the
+   * child tax credit for every dependent entered — and the map declared no such line, so the
+   * figure was netted into total tax and shown nowhere. A preparer could not tell an applied
+   * dependent from an ignored one. That is the silent-absence failure this app exists to
+   * prevent, arriving through the engine's output instead of its input.
+   *
+   * The map's field rule is checked at load. This cannot be: the only way to enumerate the lines
+   * a release emits is to compute a return. So it is checked on every draft instead, which also
+   * means an engine upgrade cannot add a line without the next draft saying so.
+   */
+  undeclaredLines: string[];
 }
 
 /**
@@ -88,6 +104,24 @@ export function toCents(value: unknown): number | null {
  */
 function engineCents(result: EngineResult, _form: string, line: string): number | null {
   return toCents(result.lines[line]);
+}
+
+/**
+ * Every line key the engine returned that the map accounts for in no way at all.
+ *
+ * Sorted, so a report of it is stable, and a line the engine returns as `null` still counts:
+ * the question is whether the map knows the line exists, not whether this return had a figure
+ * for it.
+ */
+function undeclaredEngineLines(file: NodeMapFile, result: EngineResult): string[] {
+  const declared = new Set<string>([
+    ...file.lines.comparable.map((c) => c.engineLine),
+    ...file.lines.computedOnly.map((c) => c.engineLine),
+    ...file.lines.ignoredLines.map((c) => c.engineLine),
+  ]);
+  return Object.keys(result.lines)
+    .filter((line) => !declared.has(line))
+    .sort();
 }
 
 export function compareDraft(
@@ -152,6 +186,7 @@ export function compareDraft(
     // `engine_silent` is usually a withheld document rather than a defect, and is listed
     // separately in the omissions rather than dressed up as a disagreement here.
     differing: lines.filter((l) => l.verdict === 'differs'),
+    undeclaredLines: undeclaredEngineLines(file, result),
   };
 }
 
