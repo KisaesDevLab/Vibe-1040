@@ -563,12 +563,21 @@ them may be softened to make a draft look more complete:
    the same gate as the worksheet, so a bundle with an undispositioned hard failure gets no
    draft return either. Do not add a `force` flag; the gate deliberately has none.
 
-**Why the omissions list is part of the answer, not an appendix to it.** An engine computes a
-line it received no documents for as **zero**, and that zero is indistinguishable from a zero
-the documents reported. The figure alone cannot tell a preparer which it is. So the omissions
-are rendered above the figures in the UI, on the same sheet in the workbook, and stored beside
-the lines in the database — and each surface says in words that the figures are wrong by
-whatever was left out. Do not move them to a second screen, a second sheet, or a footnote.
+**Why the omissions list is part of the answer, not an appendix to it.** Verified against
+engine 2.0.4, a withheld document leaves two different traces, and the dangerous one is the
+second:
+
+- The **source line** it would have fed comes back **absent**, which looks exactly like "the
+  documents reported nothing on this line".
+- The engine's **computed totals are confident numbers regardless**. AGI, taxable income, total
+  tax and the refund are all computed as though the withheld document did not exist, so a draft
+  can show a plausible refund that is wrong by the whole of a pension. Nothing in the figures
+  says so.
+
+So the omissions are rendered above the figures in the UI, on the same sheet in the workbook,
+and stored beside the lines in the database — and each surface says in words that the figures
+are wrong by whatever was left out. Do not move them to a second screen, a second sheet, or a
+footnote.
 
 ### The node map is data
 

@@ -141,7 +141,7 @@ const schema = z.object({
    * sidecar reports. A young, largely AI-maintained tax engine must not drift underneath a
    * mapping nobody re-checked, so a mismatch warns loudly rather than passing quietly.
    */
-  OPENTAX_VERSION: z.string().min(1).default('0.1.0'),
+  OPENTAX_VERSION: z.string().min(1).default('2.0.4'),
   OPENTAX_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
 
   RECONCILE_TOLERANCE_CENTS: z.coerce.number().int().nonnegative().default(100),

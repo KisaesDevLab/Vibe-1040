@@ -64,6 +64,7 @@ async function runFromTruth() {
   const { loadNodeMap } = await import('../src/draft/nodes.ts');
   const { buildDraftInput } = await import('../src/draft/translate.ts');
   const { computeReturn, engineHealth } = await import('../src/draft/client.ts');
+  const { toCents } = await import('../src/draft/compare.ts');
   const { registry } = await import('../src/schemas/registry.ts');
 
   const health = await engineHealth();
@@ -124,7 +125,9 @@ async function runFromTruth() {
 
     // Filing status is the reviewer's to state; the harness states one so the engine has a
     // complete `general` node, and says so.
-    const input = buildDraftInput(file, documents, { filingStatus: 'married_filing_jointly' });
+    // The engine's own code, from the map, rather than a long name it would refuse.
+    const mfj = file.filingStatuses.find((f) => f.code === 'mfj') ?? file.filingStatuses[0];
+    const input = buildDraftInput(file, documents, { filingStatus: mfj.code });
     const result = await computeReturn(taxYear, input.nodes);
 
     console.log(`── ${bundle.name} ${'─'.repeat(Math.max(0, 52 - bundle.name.length))}`);
@@ -132,6 +135,11 @@ async function runFromTruth() {
     console.log(
       `   ${input.documentsIncluded} document(s) to the engine, ${input.documentsWithheld} withheld`,
     );
+    // A node the engine refused contributes nothing, so its lines read as absent. Say so here
+    // rather than leaving a reader to infer it from a column of dashes.
+    for (const r of result.rejected) {
+      console.log(`   ! engine refused the ${r.nodeType} node: ${r.message.split('\n')[0]}`);
+    }
 
     const comparable = new Map(file.lines.comparable.map((l) => [l.lineRef, l]));
     for (const [lineRef, want] of Object.entries(expected.lines ?? {})) {
@@ -143,9 +151,10 @@ async function runFromTruth() {
         console.log(`   ~ ${lineRef.padEnd(16)} not compared against the engine`);
         continue;
       }
-      const raw = result.lines?.[map.engineForm]?.[map.engineLine];
-      const actual =
-        typeof raw === 'number' && Number.isFinite(raw) ? Math.round(raw * 100) : null;
+      // The engine's `lines` map is flat, keyed by line name; `engineForm` is a label. The
+      // conversion is imported rather than repeated: a local copy missed that some values
+      // arrive as arrays, and every array-valued line silently read as nothing.
+      const actual = toCents(result.lines?.[map.engineLine]);
       const want_ = want.engineVisible ?? null;
 
       if (actual === want_) {

@@ -603,7 +603,8 @@ export function registerRoutes(app: FastifyInstance): void {
   app.get('/api/draft-return/status', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
-    return draftReturnStatus();
+    const { taxYear } = z.object({ taxYear: z.coerce.number().int().optional() }).parse(req.query);
+    return draftReturnStatus(taxYear);
   });
 
   /**

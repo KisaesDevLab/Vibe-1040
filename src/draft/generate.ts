@@ -25,7 +25,7 @@ import { setting } from '../settings/store.ts';
 import { loadMappedDocuments } from '../worksheet/generate.ts';
 import { computeReturn, DraftEngineError, engineHealth, type EngineResult } from './client.ts';
 import { compareDraft, type DraftComparison } from './compare.ts';
-import { loadNodeMap } from './nodes.ts';
+import { type FilingStatusOption, loadNodeMap } from './nodes.ts';
 import { buildDraftInput, type DraftOmission, type DraftParams } from './translate.ts';
 
 /** Raised when the draft return is not switched on for this deployment. */
@@ -80,11 +80,14 @@ export async function generateDraftReturn(
   // under it, which produces plausible wrong numbers — the one outcome worth shouting about.
   // Not fatal, because a version string is weaker evidence than the harness, but never silent.
   if (result.engineVersion !== 'unknown') {
+    // A release tag is `v2.0.4` and the binary reports `2.0.4`; the same version either way.
+    const bare = (v: string): string => v.replace(/^v/, '');
+    const reported = bare(result.engineVersion);
     const disagrees: string[] = [];
-    if (result.engineVersion !== file.engine.pinnedVersion) {
+    if (reported !== bare(file.engine.pinnedVersion)) {
       disagrees.push(`the ${file.version} node map was written against ${file.engine.pinnedVersion}`);
     }
-    if (result.engineVersion !== env.OPENTAX_VERSION) {
+    if (reported !== bare(env.OPENTAX_VERSION)) {
       disagrees.push(`OPENTAX_VERSION pins ${env.OPENTAX_VERSION}`);
     }
     if (disagrees.length > 0) {
@@ -247,15 +250,33 @@ export async function latestDraftReturn(bundleId: string): Promise<{
  * Reports rather than throws: an unreachable optional engine is a degraded state, not an
  * outage, and the same reasoning as router-down parking applies (§3).
  */
-export async function draftReturnStatus(): Promise<{
+export async function draftReturnStatus(taxYear?: number): Promise<{
   enabled: boolean;
   engine: Awaited<ReturnType<typeof engineHealth>> | null;
   expectedVersion: string;
+  /**
+   * The engine's own filing-status vocabulary, served so the UI cannot hardcode codes that
+   * differ from the engine's. Hardcoding them once already meant every draft would have been
+   * refused at the `general` node.
+   */
+  filingStatuses: FilingStatusOption[];
 }> {
-  if (!env.DRAFT_RETURN_ENABLED) {
-    return { enabled: false, engine: null, expectedVersion: env.OPENTAX_VERSION };
+  // Read from whichever year's map we have; the vocabulary is per release, not per bundle.
+  let filingStatuses: FilingStatusOption[] = [];
+  try {
+    filingStatuses = (await loadNodeMap(taxYear ?? new Date().getFullYear())).filingStatuses;
+  } catch {
+    // No map for that year is not an error here — the UI just gets no options and says so.
   }
-  return { enabled: true, engine: await engineHealth(), expectedVersion: env.OPENTAX_VERSION };
+  if (!env.DRAFT_RETURN_ENABLED) {
+    return { enabled: false, engine: null, expectedVersion: env.OPENTAX_VERSION, filingStatuses };
+  }
+  return {
+    enabled: true,
+    engine: await engineHealth(),
+    expectedVersion: env.OPENTAX_VERSION,
+    filingStatuses,
+  };
 }
 
 export { DraftEngineError };

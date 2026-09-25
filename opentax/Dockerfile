@@ -11,13 +11,17 @@
 # underneath it can move. `install.sh | sh` into a floating latest is not acceptable here.
 #
 #   docker build -t vibe-1040-opentax \
-#     --build-arg OPENTAX_VERSION=v0.1.0 \
-#     --build-arg OPENTAX_SHA256=<sha256 of opentax-linux-x64> \
+#     --build-arg OPENTAX_VERSION=v2.0.4 \
+#     --build-arg OPENTAX_SHA256=7f0911050f7f34e10c149330e4bff9a1001a9eba5a70f50621e7c2c3aaaa02d4 \
 #     opentax/
 #
-# To find the checksum for a release, download the asset once and `sha256sum` it, then record
-# the pair in docs/opentax-draft-return.md so the next operator does not have to trust a fresh
-# download to tell them what a good download looks like.
+# That pair is for v2.0.4's opentax-linux-x64, verified on 2026-09-25 by downloading the asset
+# and running it. Record every new pair in docs/opentax-draft-return.md so the next operator
+# does not have to trust a fresh download to tell them what a good download looks like.
+#
+# Note the two forms of the version: the build arg is the release TAG (`v2.0.4`) because that
+# is what the download URL wants, while `opentax version` prints `2.0.4` and that is what
+# OPENTAX_VERSION is compared against. The app tolerates a leading `v` on either.
 FROM node:24-bookworm-slim AS engine
 
 ARG OPENTAX_VERSION

@@ -35,7 +35,7 @@ function worksheet(lines: WorksheetLine[]): WorksheetModel {
   return { taxYear: 2025, mappingVersion: '2025.3', lines };
 }
 
-function engine(lines: Record<string, Record<string, unknown>>): EngineResult {
+function engine(lines: Record<string, unknown>): EngineResult {
   return {
     returnId: 'r-1',
     year: 2025,
@@ -54,7 +54,7 @@ describe('verdicts', () => {
     const c = compareDraft(
       await nodeMap(),
       worksheet([line('1040:1z', 5_500_000)]),
-      engine({ f1040: { line1z_total_wages: 55_000 } }),
+      engine({ line1z_total_wages: 55_000 }),
       TOLERANCE,
     );
     const l = c.lines.find((x) => x.lineRef === '1040:1z')!;
@@ -68,7 +68,7 @@ describe('verdicts', () => {
     const inside = compareDraft(
       await nodeMap(),
       worksheet([line('1040:1z', 5_500_000)]),
-      engine({ f1040: { line1z_total_wages: 55_000.99 } }),
+      engine({ line1z_total_wages: 55_000.99 }),
       TOLERANCE,
     );
     expect(inside.lines.find((x) => x.lineRef === '1040:1z')!.verdict).toBe('agrees');
@@ -76,7 +76,7 @@ describe('verdicts', () => {
     const outside = compareDraft(
       await nodeMap(),
       worksheet([line('1040:1z', 5_500_000)]),
-      engine({ f1040: { line1z_total_wages: 55_010 } }),
+      engine({ line1z_total_wages: 55_010 }),
       TOLERANCE,
     );
     const l = outside.lines.find((x) => x.lineRef === '1040:1z')!;
@@ -89,7 +89,7 @@ describe('verdicts', () => {
     const c = compareDraft(
       await nodeMap(),
       worksheet([line('1040:6a', 2_400_000)]),
-      engine({ f1040: {} }),
+      engine({}),
       TOLERANCE,
     );
     const l = c.lines.find((x) => x.lineRef === '1040:6a')!;
@@ -103,7 +103,7 @@ describe('verdicts', () => {
     const c = compareDraft(
       await nodeMap(),
       worksheet([line('1040:6b', null)]),
-      engine({ f1040: { line6b_ss_taxable: 12_000 } }),
+      engine({ line6b_ss_taxable: 12_000 }),
       TOLERANCE,
     );
     expect(c.lines.find((x) => x.lineRef === '1040:6b')!.verdict).toBe('worksheet_silent');
@@ -121,7 +121,7 @@ describe('a blank is not a zero, on the way in as well as out (§5)', () => {
     const c = compareDraft(
       await nodeMap(),
       worksheet([line('1040:1z', null)]),
-      engine({ f1040: {} }),
+      engine({}),
       TOLERANCE,
     );
     expect(c.lines.find((x) => x.lineRef === '1040:1z')!.computedCents).toBeNull();
@@ -131,7 +131,7 @@ describe('a blank is not a zero, on the way in as well as out (§5)', () => {
     const c = compareDraft(
       await nodeMap(),
       worksheet([line('1040:1z', 0)]),
-      engine({ f1040: { line1z_total_wages: 0 } }),
+      engine({ line1z_total_wages: 0 }),
       TOLERANCE,
     );
     const l = c.lines.find((x) => x.lineRef === '1040:1z')!;
@@ -143,7 +143,7 @@ describe('a blank is not a zero, on the way in as well as out (§5)', () => {
     const c = compareDraft(
       await nodeMap(),
       worksheet([line('1040:1z', 100)]),
-      engine({ f1040: { line1z_total_wages: 'n/a' } }),
+      engine({ line1z_total_wages: 'n/a' }),
       TOLERANCE,
     );
     expect(c.lines.find((x) => x.lineRef === '1040:1z')!.computedCents).toBeNull();
@@ -153,7 +153,7 @@ describe('a blank is not a zero, on the way in as well as out (§5)', () => {
     const c = compareDraft(
       await nodeMap(),
       worksheet([line('1040:2b', 12_346)]),
-      engine({ f1040: { line2b_taxable_interest: 123.455 } }),
+      engine({ line2b_taxable_interest: 123.455 }),
       TOLERANCE,
     );
     expect(c.lines.find((x) => x.lineRef === '1040:2b')!.computedCents).toBe(12_346);
@@ -165,9 +165,7 @@ describe('computed-only figures', () => {
     const c = compareDraft(
       await nodeMap(),
       worksheet([]),
-      engine({
-        f1040: { line11_agi: 78_500, line15_taxable_income: 63_900, line37_amount_owed: 1_240 },
-      }),
+      engine({ line11_agi: [78_500, 78_500], line15_taxable_income: 63_900, line37_amount_owed: 1_240 }),
       TOLERANCE,
     );
     const byLine = new Map(c.computedOnly.map((x) => [x.engineLine, x.computedCents]));
@@ -184,7 +182,7 @@ describe('describeDifference', () => {
     const c = compareDraft(
       await nodeMap(),
       worksheet([line('1040:7', 1_500_000)]),
-      engine({ f1040: { line7_capital_gain: 0 } }),
+      engine({ line7_capital_gain: 0 }),
       TOLERANCE,
     );
     const l = c.lines.find((x) => x.lineRef === '1040:7')!;

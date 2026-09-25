@@ -66,15 +66,26 @@ export interface DraftComparison {
  * Rounding rather than truncating, and `null` for anything that is not a finite number — an
  * absent line is absent, and must not become a zero on the way in any more than on the way out
  * (§5). The engine does emit real zeros for lines it computed to zero, and those are kept.
+ *
+ * **A value may arrive as a two-element array of the same figure** — `[11420, 11420]` — which
+ * is why the first element is taken. Verified against engine 2.0.4: `line1a_wages` is a bare
+ * number while `line25a_w2_withheld` and `line2b_taxable_interest` are arrays. Exported
+ * because the harness needs exactly this and a second copy of it got the array case wrong.
  */
-function toCents(value: unknown): number | null {
+export function toCents(value: unknown): number | null {
   const n = Array.isArray(value) ? value[0] : value;
   if (typeof n !== 'number' || !Number.isFinite(n)) return null;
   return Math.round(n * 100);
 }
 
-function engineCents(result: EngineResult, form: string, line: string): number | null {
-  return toCents(result.lines[form]?.[line]);
+/**
+ * The engine's `lines` map is **flat** — keyed by line name (`line1a_wages`), not nested by
+ * form. Verified against engine 2.0.4 directly; the earlier nested reading was an assumption
+ * that the stand-in binary happened to share, so every test agreed with it and none caught it.
+ * `engineForm` on the map is documentation for a reader, not part of the lookup.
+ */
+function engineCents(result: EngineResult, _form: string, line: string): number | null {
+  return toCents(result.lines[line]);
 }
 
 export function compareDraft(

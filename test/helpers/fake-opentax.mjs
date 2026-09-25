@@ -46,6 +46,24 @@ if (group === 'return' && sub === 'create') {
 
 if (group === 'form' && sub === 'add') {
   const nodeType = flag('node_type');
+  // Mirror engine 2.0.4's own refusals, so a test cannot pass against a fiction: the filing
+  // status vocabulary is single|mfs|mfj|hoh|qss, and f1099div/f1099m have required fields.
+  if (nodeType === 'general') {
+    const payload = JSON.parse(argv[argv.length - 1]);
+    if (!['single', 'mfs', 'mfj', 'hoh', 'qss'].includes(payload.filing_status)) {
+      process.stderr.write(`Error: Validation error: invalid filing_status ${payload.filing_status}\n`);
+      process.exit(1);
+    }
+  }
+  if (nodeType === 'f1099div') {
+    const payload = JSON.parse(argv[argv.length - 1]);
+    for (const required of ['payerName', 'isNominee', 'box11', 'box1a']) {
+      if (payload[required] === undefined) {
+        process.stderr.write(`Error: Validation error: ${required} Required\n`);
+        process.exit(1);
+      }
+    }
+  }
   if (nodeType === 'reject_me') {
     process.stderr.write('unknown node type: reject_me\n');
     process.exit(2);
@@ -73,6 +91,8 @@ if (group === 'return' && sub === 'get') {
   const interest = sum('f1099int', 'box1') + sum('f1099oid', 'box2_other_interest');
   const ordinaryDividends = sum('f1099div', 'box1a');
   const qualifiedDividends = sum('f1099div', 'box1b');
+  // 1099-MISC is unmappable against engine 2.0.4 (it demands the taxpayer's recipient_tin,
+  // which §7 forbids sending), so nothing here sums an f1099m node.
   const mortgageInterest = sum('f1098', 'box1_mortgage_interest');
   // Routed on box 7's IRA/SEP/SIMPLE indicator, as the real form is: IRA distributions to
   // line 4a, everything else to 5a. Enough to make a §9 withholding regression visible.
@@ -89,21 +109,31 @@ if (group === 'return' && sub === 'get') {
       year: Number(readFileSync(join(stateDir, 'year'), 'utf8')),
       summary: { line1z_total_wages: wages, line11_agi: wages },
       forms: [...new Set(entries.map((e) => e.nodeType))],
+      // FLAT, keyed by line name, as engine 2.0.4 actually returns it — and some values come
+      // back as a two-element array of the same figure, which is why a few are wrapped here.
+      // This file previously mirrored a nested shape that the engine does not use, so every
+      // test agreed with the mistake. Keep it honest to the real thing.
+      // Two behaviours, both taken from engine 2.0.4 rather than invented:
+      //   a SOURCE line nothing feeds is ABSENT, not zero;
+      //   a COMPUTED total is always present, even at zero.
+      // The first is the one this file previously got wrong, which let every test agree with a
+      // claim the real engine does not make.
       lines: {
-        f1040: {
-          line1a_wages: wages,
-          line1z_total_wages: wages,
-          line2b_taxable_interest: interest,
-          line3a_qualified_dividends: qualifiedDividends,
-          line3b_ordinary_dividends: ordinaryDividends,
-          line4a_ira_gross: iraGross,
-          line5a_pension_gross: pensionGross,
-          line25a_w2_withheld: withheld,
-          line9_total_income: wages + interest + ordinaryDividends,
-          line11_agi: wages + interest + ordinaryDividends,
-          line15_taxable_income: wages + interest + ordinaryDividends - 15_750,
-        },
-        schedule_a: { line8a_mortgage_interest: mortgageInterest },
+        ...(wages ? { line1a_wages: wages, line1z_total_wages: wages } : {}),
+        ...(interest ? { line2b_taxable_interest: [interest, interest] } : {}),
+        ...(qualifiedDividends ? { line3a_qualified_dividends: [qualifiedDividends, qualifiedDividends] } : {}),
+        ...(ordinaryDividends ? { line3b_ordinary_dividends: [ordinaryDividends, ordinaryDividends] } : {}),
+        ...(iraGross ? { line4a_ira_gross: iraGross } : {}),
+        ...(pensionGross ? { line5a_pension_gross: pensionGross } : {}),
+        ...(withheld ? { line25a_w2_withheld: [withheld, withheld] } : {}),
+        ...(mortgageInterest ? { line12e_itemized_deductions: [mortgageInterest, mortgageInterest] } : {}),
+        // Computed aggregates, present regardless — the confident numbers a withheld document
+        // silently corrupts.
+        line9_total_income: wages + interest + ordinaryDividends,
+        line10_adjustments: 0,
+        line11_agi: [wages + interest + ordinaryDividends, wages + interest + ordinaryDividends],
+        line15_taxable_income: wages + interest + ordinaryDividends - 31_500,
+        line21_credits_total: 0,
       },
       warnings: entries.length === 0 ? ['no forms were added'] : [],
     })}\n`,

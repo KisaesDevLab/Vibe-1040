@@ -293,6 +293,7 @@ Proceed and discard them?`)) return { ok: false };
       enabled: boolean;
       engine: { ok: boolean; version: string | null; reason?: string } | null;
       expectedVersion: string;
+      filingStatuses: { code: string; label: string }[];
     }>('/api/draft-return/status'),
 
   /**

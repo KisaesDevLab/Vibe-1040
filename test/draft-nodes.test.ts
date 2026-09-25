@@ -129,7 +129,7 @@ describe('load-time refusals', () => {
     const file = await base();
     const reg = await registry();
     const w2 = file.forms.find((f) => f.formType === 'W-2')!;
-    w2.fields.push({ fieldKey: 'box_99', nodeField: 'box99', engineRequired: false });
+    w2.fields.push({ fieldKey: 'box_99', nodeField: 'box99', engineRequired: false, falseWhenBlank: false });
     await expect(assertConsistent(file, reg)).rejects.toThrow(/box_99 is not on the schema/);
   });
 
@@ -156,6 +156,17 @@ describe('load-time refusals', () => {
     await expect(assertConsistent(file, reg)).rejects.toThrow(/box1_wages is targeted twice/);
   });
 
+  it('refuses falseWhenBlank on a money field, because a blank money box is never a zero', async () => {
+    const file = await base();
+    const reg = await registry();
+    const w2 = file.forms.find((f) => f.formType === 'W-2')!;
+    const box1 = w2.fields.find((f) => f.fieldKey === 'box_1')!;
+    box1.falseWhenBlank = true;
+    await expect(assertConsistent(file, reg)).rejects.toThrow(
+      /box_1 is 'money', not a checkbox, so falseWhenBlank must not be set/,
+    );
+  });
+
   it('has no node map for a year with no file, and says adding one is a data change', async () => {
     await expect(loadNodeMap(1999)).rejects.toThrow(/data change, not a code change/);
   });
@@ -175,7 +186,7 @@ describe('load-time refusals', () => {
     const a = file.lines.comparable.find((l) => l.lineRef === '1040:1a')!;
     a.engineLine = 'line1z_total_wages';
     await expect(assertConsistent(file, reg)).rejects.toThrow(
-      /engine line f1040.line1z_total_wages is compared against twice/,
+      /engine line line1z_total_wages is compared against twice/,
     );
   });
 
@@ -211,9 +222,13 @@ describe('the line comparison map', () => {
   it('notes the lines where a disagreement is expected rather than a defect', async () => {
     const file = await loadNodeMap(2025);
     const noted = new Map(file.lines.comparable.filter((l) => l.note).map((l) => [l.lineRef, l.note!]));
-    // These three are withheld from the engine by design, so they cannot agree.
+    // Both are withheld from the engine by design, so they cannot agree.
     expect(noted.get('1040:6a')).toContain('withholds every SSA-1099');
     expect(noted.get('1040:7')).toContain('1099-B is unmappable');
-    expect(noted.get('SCH1:21')).toContain('by meaning, not by number');
+    // Schedule 1 refs are no longer compared at all: engine 2.0.4 surfaces Form 1040 lines
+    // only, so there is nothing on its side to compare them against.
+    expect(noted.has('SCH1:21')).toBe(false);
+    const notCompared = new Set(file.lines.notCompared.map((l) => l.lineRef));
+    for (const ref of ['SCH1:1', 'SCH1:7', 'SCH1:21']) expect(notCompared.has(ref)).toBe(true);
   });
 });

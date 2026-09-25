@@ -14,8 +14,9 @@ import type { DraftReturn, DraftVerdict } from '../types.ts';
  *  - The reviewer **states the filing status** before anything computes. No document carries
  *    it, so the app must not infer one — and making it a required first step puts the
  *    determination where §11 requires it.
- *  - **Omissions are open by default**, above the figures, and they say that the figures are
- *    wrong by whatever was left out. The same treatment Judgment Required gets.
+ *  - **Omissions are open by default**, above the figures, because a withheld document leaves
+ *    no mark on them: the line it would have fed is absent, and every computed total is a
+ *    confident number regardless. The same treatment Judgment Required gets.
  *  - A **disagreement the design expects** (a withheld SSA-1099, a 1099-B the engine cannot
  *    take) is labelled as expected, because a panel that cries wolf gets ignored wholesale.
  */
@@ -29,14 +30,6 @@ const VERDICT_LABEL: Record<DraftVerdict, string> = {
   computed_only: 'computed',
 };
 
-const FILING_STATUSES: { value: string; label: string }[] = [
-  { value: 'single', label: 'Single' },
-  { value: 'married_filing_jointly', label: 'Married filing jointly' },
-  { value: 'married_filing_separately', label: 'Married filing separately' },
-  { value: 'head_of_household', label: 'Head of household' },
-  { value: 'qualifying_surviving_spouse', label: 'Qualifying surviving spouse' },
-];
-
 export function DraftReturnPanel({
   bundleId,
   onError,
@@ -44,9 +37,13 @@ export function DraftReturnPanel({
   bundleId: string;
   onError: (message: string) => void;
 }) {
+  // The filing-status codes come from the server, which reads them out of the node map.
+  // Hardcoding them here once meant every draft would have been refused at the engine's
+  // `general` node — the codes are the engine's vocabulary and change per release.
   const [status, setStatus] = useState<{
     enabled: boolean;
     engine: { ok: boolean; version: string | null; reason?: string } | null;
+    filingStatuses: { code: string; label: string }[];
   } | null>(null);
   const [filingStatus, setFilingStatus] = useState('');
   const [draft, setDraft] = useState<DraftReturn | null>(null);
@@ -56,7 +53,7 @@ export function DraftReturnPanel({
     api
       .draftReturnStatus()
       .then(setStatus)
-      .catch(() => setStatus({ enabled: false, engine: null }));
+      .catch(() => setStatus({ enabled: false, engine: null, filingStatuses: [] }));
   }, []);
 
   // Not enabled here, or the engine is not up: show nothing at all rather than a dead
@@ -93,8 +90,8 @@ export function DraftReturnPanel({
             Filing status
             <select value={filingStatus} onChange={(e) => setFilingStatus(e.target.value)}>
               <option value="">Choose…</option>
-              {FILING_STATUSES.map((f) => (
-                <option key={f.value} value={f.value}>
+              {status.filingStatuses.map((f) => (
+                <option key={f.code} value={f.code}>
                   {f.label}
                 </option>
               ))}
@@ -124,9 +121,10 @@ export function DraftReturnPanel({
               Not in this draft — {draft.omissions.length} item(s)
             </summary>
             <p className="draft-hint">
-              The figures below are wrong by whatever these would have contributed. A line the
-              engine received no documents for computes to zero, and that zero looks exactly
-              like a zero the documents reported.
+              The figures below are wrong by whatever these would have contributed. The line each
+              one would have fed is simply absent, and every total &mdash; adjusted gross income,
+              taxable income, total tax, the refund &mdash; was computed as though it did not
+              exist. Nothing in the numbers says so.
             </p>
             {draft.omissions.map((o, i) => (
               <div key={`${o.documentId ?? 'bundle'}-${o.fieldKey ?? i}`} className="draft-omission">

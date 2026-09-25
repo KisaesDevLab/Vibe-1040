@@ -66,8 +66,9 @@ describe('with the engine listening', () => {
     expect(result.returnId).toBe('fake-return-1');
     expect(result.year).toBe(2025);
     expect(result.engineVersion).toBe('9.9.9-fake');
-    expect(result.lines['f1040']?.['line1z_total_wages']).toBe(55_000);
-    expect(result.lines['f1040']?.['line25a_w2_withheld']).toBe(4_100);
+    expect(result.lines['line1z_total_wages']).toBe(55_000);
+    // Passed through as the engine sends it — an array for this line. `toCents` flattens it.
+    expect(result.lines['line25a_w2_withheld']).toEqual([4_100, 4_100]);
     expect(result.forms).toEqual(['w2']);
     expect(result.validation.hard.map((d) => d.code)).toContain('F1040-001');
     expect(result.validation.soft.map((d) => d.code)).toContain('F1040-900');
@@ -79,7 +80,7 @@ describe('with the engine listening', () => {
       { nodeType: 'w2', documentId: 'doc-a', payload: { box1_wages: 9_000, box2_fed_withheld: 0 } },
       { nodeType: 'reject_me', documentId: 'doc-bad', payload: {} },
     ]);
-    expect(result.lines['f1040']?.['line1z_total_wages']).toBe(9_000);
+    expect(result.lines['line1z_total_wages']).toBe(9_000);
     expect(result.rejected).toHaveLength(1);
     expect(result.rejected[0]?.documentId).toBe('doc-bad');
   });

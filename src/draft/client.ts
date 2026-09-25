@@ -63,8 +63,12 @@ export interface EngineResult {
   year: number;
   engineVersion: string;
   summary: Record<string, number>;
-  /** Keyed by engine form (`f1040`, `schedule1`, …), then by engine line key. */
-  lines: Record<string, Record<string, unknown>>;
+  /**
+   * **Flat**, keyed by line name (`line1a_wages`, `line2b_taxable_interest`). Verified against
+   * engine 2.0.4: only Form 1040 lines are surfaced, Schedule 1 detail is not, and a value may
+   * arrive as a number, a float, or a two-element array of the same figure.
+   */
+  lines: Record<string, unknown>;
   forms: string[];
   warnings: string[];
   /** MeF business-rule diagnostics. This app reads them; it never emits MeF XML. */
@@ -166,7 +170,7 @@ export async function computeReturn(
     year: typeof body.year === 'number' ? body.year : taxYear,
     engineVersion: typeof body.engineVersion === 'string' ? body.engineVersion : 'unknown',
     summary: (body.summary ?? {}) as Record<string, number>,
-    lines: body.lines as Record<string, Record<string, unknown>>,
+    lines: body.lines as Record<string, unknown>,
     forms: Array.isArray(body.forms) ? body.forms : [],
     warnings: Array.isArray(body.warnings) ? body.warnings : [],
     validation: {

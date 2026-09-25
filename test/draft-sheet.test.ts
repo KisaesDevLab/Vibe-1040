@@ -161,11 +161,13 @@ describe('the Draft Return sheet', () => {
     expect(text).toContain('carryovers');
   });
 
-  it('says why a computed zero is not a reported zero', async () => {
+  it('says that a withheld document leaves no mark on the figures', async () => {
     const { text } = await sheetText(draft);
-    // This is the sentence that stops the sheet being read as a finished return.
-    expect(text).toContain('computes to zero');
+    // This is the sentence that stops the sheet being read as a finished return: the totals are
+    // confident numbers computed as though the withheld document did not exist.
     expect(text).toContain('wrong by');
+    expect(text).toContain('simply absent');
+    expect(text).toContain('as though it did not exist');
   });
 
   it("shows the engine's own diagnostics, hard and soft apart", async () => {

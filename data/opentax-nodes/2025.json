@@ -4,7 +4,7 @@
   "engine": {
     "name": "opentax",
     "formType": "f1040",
-    "pinnedVersion": "0.1.0"
+    "pinnedVersion": "2.0.4"
   },
   "notes": [
     "Form type and field mapping onto the OpenTax input-node catalogue (PHASES.md P17).",
@@ -15,7 +15,10 @@
     "W-2G boxes 2, 3, 5, 6, 7, 8 and 10 are ignored because the engine's w2g node numbers those boxes differently from the 2025 form revision this app reads; mapping them by number would move a date into a wager type.",
     "RRB-1099 binds to the ssa1099 node with is_rrb set. Box 4 (net SSEB tier 1 paid) is the gross benefit, box 5 the repayment.",
     "lines.comparable pairs this app's worksheet line refs with the engine's output keys, so a computed figure can sit beside the reported total it should equal. Mapped by MEANING, not by line number -- see the SCH1:21 note.",
-    "lines.computedOnly are engine figures with no worksheet counterpart -- AGI, taxable income, total tax, refund or amount owed. They are the new information a draft return adds, and they are displayed, never compared."
+    "lines.computedOnly are engine figures with no worksheet counterpart -- AGI, taxable income, total tax, refund or amount owed. They are the new information a draft return adds, and they are displayed, never compared.",
+    "Engine 2.0.4 observed directly, not read off documentation. Three things it forced, each of which would have produced a rejected node or a silently wrong draft: f1099div alone among the nodes uses camelCase (payerName) and requires isNominee and box11; f1099m requires the taxpayer's own recipient_tin, so it is unmappable under §7; and filing_status is single|mfs|mfj|hoh|qss, not the long names.",
+    "falseWhenBlank on 1099-DIV box 11 only: engine 2.0.4 requires that checkbox, and §5 stores an unticked box as blank, so without it every 1099-DIV with box 11 unticked would be withheld. The loader refuses the flag on any field that is not a checkbox.",
+    "Engine 2.0.4's `lines` is flat and carries Form 1040 lines only — a 1099-G's unemployment reaches line8_additional_income with no Schedule 1 line surfaced beside it. So every SCH1 ref is notCompared, and engineForm is a label for a reader rather than part of the lookup."
   ],
   "forms": [
     {
@@ -435,11 +438,8 @@
       "fields": [
         {
           "fieldKey": "payer_name",
-          "nodeField": "payer_name"
-        },
-        {
-          "fieldKey": "payer_tin",
-          "nodeField": "payer_tin"
+          "nodeField": "payerName",
+          "engineRequired": true
         },
         {
           "fieldKey": "box_1a",
@@ -508,7 +508,9 @@
         },
         {
           "fieldKey": "box_11",
-          "nodeField": "box11"
+          "nodeField": "box11",
+          "engineRequired": true,
+          "falseWhenBlank": true
         },
         {
           "fieldKey": "box_12",
@@ -547,8 +549,15 @@
         {
           "fieldKey": "box_15_state_id",
           "reason": "no_engine_field"
+        },
+        {
+          "fieldKey": "payer_tin",
+          "reason": "no_engine_field"
         }
-      ]
+      ],
+      "constants": {
+        "isNominee": false
+      }
     },
     {
       "formType": "1099-R",
@@ -743,111 +752,6 @@
         {
           "fieldKey": "corrected",
           "reason": "identity_or_metadata"
-        }
-      ]
-    },
-    {
-      "formType": "1099-MISC",
-      "nodeType": "f1099m",
-      "fields": [
-        {
-          "fieldKey": "payer_name",
-          "nodeField": "payer_name",
-          "engineRequired": true
-        },
-        {
-          "fieldKey": "account_number",
-          "nodeField": "account_number"
-        },
-        {
-          "fieldKey": "box_1",
-          "nodeField": "box1_rents"
-        },
-        {
-          "fieldKey": "box_2",
-          "nodeField": "box2_royalties"
-        },
-        {
-          "fieldKey": "box_3",
-          "nodeField": "box3_other_income"
-        },
-        {
-          "fieldKey": "box_4",
-          "nodeField": "box4_federal_withheld"
-        },
-        {
-          "fieldKey": "box_5",
-          "nodeField": "box5_fishing_boat"
-        },
-        {
-          "fieldKey": "box_6",
-          "nodeField": "box6_medical_payments"
-        },
-        {
-          "fieldKey": "box_7",
-          "nodeField": "box7_direct_sales"
-        },
-        {
-          "fieldKey": "box_8",
-          "nodeField": "box8_substitute_payments"
-        },
-        {
-          "fieldKey": "box_9",
-          "nodeField": "box9_crop_insurance"
-        },
-        {
-          "fieldKey": "box_10",
-          "nodeField": "box10_attorney_proceeds"
-        },
-        {
-          "fieldKey": "box_11",
-          "nodeField": "box11_fish_purchased"
-        },
-        {
-          "fieldKey": "box_12",
-          "nodeField": "box12_section_409a_deferrals"
-        },
-        {
-          "fieldKey": "box_13",
-          "nodeField": "box13_fatca"
-        },
-        {
-          "fieldKey": "box_14",
-          "nodeField": "box15_nqdc"
-        },
-        {
-          "fieldKey": "box_15",
-          "nodeField": "box16_state_tax_withheld"
-        },
-        {
-          "fieldKey": "box_17_state",
-          "nodeField": "box17_state_payer_id"
-        },
-        {
-          "fieldKey": "box_18",
-          "nodeField": "box18_state_income"
-        }
-      ],
-      "ignored": [
-        {
-          "fieldKey": "recipient_tin",
-          "reason": "tin_withheld"
-        },
-        {
-          "fieldKey": "recipient_name",
-          "reason": "identity_or_metadata"
-        },
-        {
-          "fieldKey": "payer_tin",
-          "reason": "identity_or_metadata"
-        },
-        {
-          "fieldKey": "corrected",
-          "reason": "identity_or_metadata"
-        },
-        {
-          "fieldKey": "box_16",
-          "reason": "no_engine_field"
         }
       ]
     },
@@ -1369,6 +1273,11 @@
       "formType": "5498-SA",
       "reason": "no_engine_node",
       "detail": "No engine input node. Informational, as 5498."
+    },
+    {
+      "formType": "1099-MISC",
+      "reason": "engine_requires_withheld_input",
+      "detail": "Engine 2.0.4's f1099m node requires payer_name, payer_tin AND recipient_tin, all non-optional — confirmed by probe: omitting recipient_tin is rejected with \"Required\". recipient_tin is the taxpayer's own number, and CLAUDE.md §7 forbids forwarding a TIN anywhere: it is extracted for identity resolution, never persisted and never sent. The engine and this app disagree, and §7 wins. Revisit if a future release makes recipient_tin optional; the field mapping is recorded in the repository history if so."
     }
   ],
   "lines": {
@@ -1470,43 +1379,6 @@
         "lineRef": "1040:25c",
         "engineForm": "f1040",
         "engineLine": "line25c_additional_medicare_withheld"
-      },
-      {
-        "lineRef": "SCH1:1",
-        "engineForm": "schedule1",
-        "engineLine": "line1_state_refund",
-        "note": "1099-G box 2 is judgmentRequired, so a populated one withholds its document. The engine sees a state refund only when the box is blank, which is to say never in practice."
-      },
-      {
-        "lineRef": "SCH1:3",
-        "engineForm": "schedule1",
-        "engineLine": "line3_schedule_c"
-      },
-      {
-        "lineRef": "SCH1:5",
-        "engineForm": "schedule1",
-        "engineLine": "line5_schedule_e"
-      },
-      {
-        "lineRef": "SCH1:7",
-        "engineForm": "schedule1",
-        "engineLine": "line7_unemployment"
-      },
-      {
-        "lineRef": "SCH1:18",
-        "engineForm": "schedule1",
-        "engineLine": "line18_early_withdrawal"
-      },
-      {
-        "lineRef": "SCH1:20",
-        "engineForm": "schedule1",
-        "engineLine": "line20_ira_deduction"
-      },
-      {
-        "lineRef": "SCH1:21",
-        "engineForm": "schedule1",
-        "engineLine": "line19_student_loan_interest",
-        "note": "Mapped by meaning, not by number. Student loan interest is Schedule 1 line 21 on the 2025 revision; the engine's key still says line19, which looks like a name carried over from an earlier season. Verify against the engine's own output before trusting the placement."
       }
     ],
     "notCompared": [
@@ -1645,6 +1517,34 @@
       {
         "lineRef": "JUDGMENT",
         "reason": "not_a_line"
+      },
+      {
+        "lineRef": "SCH1:1",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:3",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:5",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:7",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:18",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:20",
+        "reason": "engine_does_not_surface_it"
+      },
+      {
+        "lineRef": "SCH1:21",
+        "reason": "engine_does_not_surface_it"
       }
     ],
     "computedOnly": [
@@ -1714,5 +1614,27 @@
         "label": "Amount owed"
       }
     ]
-  }
+  },
+  "filingStatuses": [
+    {
+      "code": "single",
+      "label": "Single"
+    },
+    {
+      "code": "mfj",
+      "label": "Married filing jointly"
+    },
+    {
+      "code": "mfs",
+      "label": "Married filing separately"
+    },
+    {
+      "code": "hoh",
+      "label": "Head of household"
+    },
+    {
+      "code": "qss",
+      "label": "Qualifying surviving spouse"
+    }
+  ]
 }

@@ -90,11 +90,20 @@ never a default of zero.
 
 ### The reason this list is load-bearing
 
-An engine computes a line it received no documents for as **zero**. That zero is
-indistinguishable from a zero the documents actually reported — the figure alone cannot tell a
-preparer which it is. Found while building the harness, and it is the whole argument for the
-omissions contract: without the list, a withheld SSA-1099 shows as `0.00` on line 6a and reads
-as a taxpayer with no social security income.
+**Verified against engine 2.0.4, not reasoned about.** A withheld document leaves two traces:
+
+- The **source line** it would have fed is **absent** from the engine's output — not zero.
+  Absent reads as "the documents reported nothing on this line", so a withheld SSA-1099 looks
+  like a taxpayer with no social security income.
+- Every **computed total is still a confident number**. AGI, taxable income, total tax and the
+  refund are computed as though the document did not exist. A draft can show a plausible refund
+  that is wrong by the whole of a pension, and no figure on the page hints at it.
+
+An earlier version of this file claimed the engine returns a *zero* for an unfed line. That was
+wrong, and instructive about how: it was true of the stand-in binary the tests ran against, so
+every test agreed with the mistake and none of them could catch it. The engine returns `0` only
+for computed aggregates (`line10_adjustments`, `line21_credits_total`) that genuinely total to
+nothing.
 
 So the omissions go **above** the figures in the UI panel, on the **same sheet** as the figures
 in the workbook, and in `draft_return_omissions` beside `draft_return_lines` in the database.
@@ -210,6 +219,16 @@ on every draft — a node map must not drift under the engine. Check `/health`: 
   This is a young, largely AI-maintained tax engine — an arithmetic bug has already been filed and
   closed against it (its issue #8, Form 8959 reading the wrong Schedule SE line). Version-pinning
   is what makes a harness score mean anything.
+
+  **Verified 2026-09-25**, by downloading the asset and running it:
+
+  | release | asset | SHA-256 | `opentax version` prints |
+  |---|---|---|---|
+  | `v2.0.4` | `opentax-linux-x64` | `7f0911050f7f34e10c149330e4bff9a1001a9eba5a70f50621e7c2c3aaaa02d4` | `opentax 2.0.4` |
+
+  Two forms of the version, and they are not interchangeable: the download URL wants the **tag**
+  (`v2.0.4`), while the binary reports `2.0.4` and that is what `OPENTAX_VERSION` is compared
+  against. The app strips a leading `v` before comparing, so either form is accepted.
 - With the engine stopped the app **degrades and says so** at `/health`, as it does with the Router
   down. It never fails a bundle over a missing draft return.
 - Draft returns are **derived taxpayer data**: they purge on the retention schedule and vanish with

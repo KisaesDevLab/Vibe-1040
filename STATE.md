@@ -13,7 +13,7 @@ do not infer progress from the commit log.
 the same day so the appliance can register against a real image. **P17 (draft return via
 OpenTax) — implemented 2026-09-25**, all three stages, carrying migration 0012.
 **Status:** P0–P16 code complete and **integration-unverified**; P17 code complete and
-**engine-unverified** — no real OpenTax binary has ever run (see below).
+**scored against the real engine v2.0.4** — 13 of 13 comparable lines agree (see below).
 **Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
 lands (QUESTIONS.md Q11). P16 cannot *exit* until it has been signed into from a real browser
 against a real Vibe Auth (below). P17 cannot *exit* until Q21 is answered and the fixture
@@ -24,6 +24,78 @@ the five assumed Router dependencies already exist; the region-pinning one does 
 at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
+
+**Verified by execution on 2026-09-25 (second pass) — the real engine, at last.**
+
+`opentax-linux-x64` from release **v2.0.4** (SHA-256 `7f0911050f7f34e1…aaaa02d4`) was downloaded,
+run, and driven through the wrapper over HTTP. Docker is unavailable in that environment so
+`opentax/Dockerfile` is still unbuilt, but the binary is glibc and the host is Ubuntu 24.04, so
+pointing `OPENTAX_BIN` at it proves the engine and the wrapper without the image.
+
+- **`npm run draft -- --truth` scores 13 agreed, 0 disagreed, 2 not compared, exit 0 — against
+  the real engine.** Every income and withholding line that was hand-derived from the printed
+  boxes now matches an engine figure exactly: line 1a at 127,000.00 and 255,000.00, line 25a at
+  15,440.00 and 34,260.00, line 2b at 1,946.00 and 764.00, line 3b at 16,114.00 and 3,187.00,
+  line 3a at 14,683.00 and 2,914.00.
+- Seeded with a misrouted node field (W-2 box 1 aimed at `box7_ss_tips`), it reports
+  `1040:1a expected 127,000.00, engine —` and exits 1. Restored, exit 0.
+- 330 tests pass across 27 files, none skipped, with a real Postgres, excluding `test/sso.test.ts`
+  (the token-gated package again; **CI run 47/48 ran it and were green**).
+- `npm run check:providers` clean. `python fixtures/generate.py` is idempotent and the drift check
+  passes.
+
+**Seven things the real engine corrected. Every one would have shipped as a silent defect, and
+the first is the one worth reading:**
+
+1. **`lines` is flat, keyed by line name — not nested by form.** The whole comparison layer read
+   `lines[form][line]` and got nothing. The reason it survived review is the instructive part:
+   `test/helpers/fake-opentax.mjs` encoded the same wrong assumption, so all 328 tests agreed
+   with the mistake and none of them could catch it. **A stand-in that shares your
+   misunderstanding tests nothing.** The stub now mirrors the engine's real shapes.
+2. **Some values arrive as a two-element array** — `[11420, 11420]`. `compare.ts` handled that
+   defensively; `scripts/draft-check.mjs` had its own copy of the conversion that did not, so
+   every array-valued line read as absent. The conversion is now exported and shared, not copied.
+3. **An unfed source line is absent, not zero.** The earlier claim that "an engine computes a
+   line it received no documents for as zero" came from the stub and is wrong. Verified: source
+   lines (`line5a_pension_gross`, `line2b_taxable_interest`) are **absent**; only computed
+   aggregates (`line10_adjustments`, `line21_credits_total`) come back as real `0`. The omissions
+   argument is stronger stated accurately — a withheld document leaves the source line absent
+   *and* every computed total a confident number, so a draft can show a plausible refund that is
+   wrong by the whole of a pension. Corrected in §14, the design doc, the workbook sheet and the
+   UI panel.
+4. **The filing-status vocabulary is `single | mfs | mfj | hoh | qss`.** The long names the UI and
+   the harness sent are refused at the `general` node, which loses the standard deduction and the
+   entire tax computation with it — every draft return would have failed. The codes now live in
+   the node map as data, are served to the UI so it cannot hardcode them again, and an unknown
+   value becomes a named omission instead of an engine rejection.
+5. **Engine 2.0.4's `f1099m` requires the taxpayer's own `recipient_tin`**, confirmed by probe.
+   §7 forbids forwarding a TIN anywhere, so **1099-MISC is now unmappable** under a new reason
+   code, `engine_requires_withheld_input`. The engine and this app disagree and §7 wins.
+6. **`f1099div` alone among the nodes uses camelCase** (`payerName`), has no `payer_tin`, and
+   requires `isNominee` and `box11`. Mapping it by the other nodes' convention would have had
+   every 1099-DIV rejected.
+7. **A required *checkbox* needs `false` when blank, and that is §5 read correctly rather than a
+   hole in it.** §5 is about money; §5 itself says an unticked box "is `false` and has nothing on
+   the page to cite". Without `falseWhenBlank`, requiring `box11` would have withheld every
+   1099-DIV whose box 11 is unticked — nearly all of them. The loader refuses the flag on any
+   field that is not a checkbox, so it can never reach a money field, and a test pins that.
+
+**Also observed, not this repo's to fix:** with a single 1098 of 12,844 and an MFJ standard
+deduction of 31,500, the engine reports `line12c_deduction_total = 12844` while
+`line15_taxable_income` correctly reflects 31,500. Line 12c looks like it should be the greater of
+the two. Worth reporting upstream; this app does not compare that line, and it is listed among the
+computed-only figures, so a draft would display it. Raised rather than worked around.
+
+**Still not verified:**
+
+- `opentax/Dockerfile` has **never been built** — Docker is unavailable in the development
+  environment. The pinned tag and checksum are recorded and the binary was run directly instead.
+- The three draft-return routes have not been exercised over HTTP.
+- **The UI panel has still not been looked at.** It cannot render without
+  `@kisaesdevlab/vibe-auth/react`, which needs a `read:packages` token.
+- **P17 has not exited.** Q21 is unanswered, and the phase also wants a draft return hand-checked
+  line by line by a person against a known packet.
+
 
 **Verified by execution on 2026-09-25** (P17, all three stages; carries **migration 0012**):
 
@@ -506,7 +578,7 @@ what a model returns.
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
 | P16 | Single sign-on (Vibe Auth) | implemented, released v0.10.0 (2026-09-22) | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
-| P17 | Draft return (OpenTax) | **implemented 2026-09-25** (all three stages); carries migration 0012 | translator, node map, sidecar, comparison, workbook sheet, UI panel, harness. **Cannot exit**: Q21 unanswered, and no real engine binary has ever run — every figure so far came from a stand-in. See Current position |
+| P17 | Draft return (OpenTax) | **implemented and scored against engine v2.0.4, 2026-09-25**; carries migration 0012 | translator, node map, sidecar, comparison, workbook sheet, UI panel, harness. `npm run draft -- --truth` is 13/13 against the real engine. **Cannot exit**: Q21 unanswered, the Dockerfile unbuilt, and no person has hand-checked a draft line by line. See Current position |
 
 ---
 
@@ -1136,9 +1208,10 @@ and remains deferred.
 | Base64 inflation pushes request bodies past Router limits during season | P7 | Largely retired — Router default is 10 MiB vs ~800 KB/page. Still measure encoded sizes at P2 exit and confirm the deployed value |
 | K-1 renderings differ across UltraTax, CCH, Lacerte | P15 | Three-rendering fixture requirement in P15 exit criteria |
 | **A draft return computed from a documents-only bundle is structurally incomplete, and looks authoritative** | P17 | Incompleteness is a first-class enumerated output (`omissions[]`, §14), not a footnote: filing status comes from the reviewer, every §9 judgment item withholds its whole document, and `complete` is false whenever anything was withheld. Every computed figure is labelled advisory |
-| **The engine is three days old, largely AI-maintained, and its arithmetic is unverified here** | P17 | Pin the version and checksum the binary. P17 cannot exit until `npm run draft` has scored the fixture bundles and a person has checked a draft line by line. An engine bug is a wrong number on a 1040 line, which is the loudest place it could surface — that is the argument for the harness, not against it |
-| A draft return is built on extraction accuracy that has never been measured | P7, P8, P17 | Accepted 2026-09-25 and inverted deliberately: the draft return is the accuracy instrument (P17 stage 3). Values flagged for review or citing no span never reach the engine, so an unchecked number cannot silently feed a computed line |
+| **The engine is young and largely AI-maintained, and its arithmetic is only partly measured** | P17 | Pinned at v2.0.4 and checksummed. `npm run draft -- --truth` now scores 13/13 against it, which covers wages, withholding, interest and dividends — not tax, credits or phase-outs. One suspected engine defect already observed (line 12c ignoring the standard deduction; see Current position). P17 still cannot exit until a person has checked a draft line by line |
+| A draft return is built on extraction accuracy that has never been measured | P7, P8, P17 | Accepted 2026-09-25 and inverted deliberately: the draft return is the accuracy instrument (P17 stage 3). Values flagged for review or citing no span never reach the engine, so an unchecked number cannot silently feed a computed line. `--truth` mode now isolates the two: the node map and engine are measured at 13/13, so a future disagreement on a real bundle is extraction |
 | Relicensing to AGPL forecloses a proprietary licence for the combined work | P17, §13 | Q22. The engine is a separate process and a severable optional service; with the flag unset no OpenTax code is present at all. Do not move it in-process or vendor its source |
+| **A stand-in binary that shares a wrong assumption tests nothing** | P17 | Learned the hard way: the stub encoded a nested `lines` shape the engine does not use, so all 328 tests agreed with the mistake. `test/helpers/fake-opentax.mjs` now mirrors the engine's real shapes — flat keys, array-valued lines, absent source lines, present zero totals — and its comments say where each came from. Re-derive it against the binary whenever the pin moves |
 | Powered-off GPU droplets still bill if the Router ever provisions one | Router-side | Not this repo's concern, but flag to Router work |
 
 ---

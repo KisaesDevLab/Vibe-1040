@@ -51,8 +51,10 @@ describe('POST /draft', () => {
     expect(body.year).toBe(2025);
     expect(body.engineVersion).toBe('9.9.9-fake');
     // Both W-2s reached the engine and it saw them as one return.
-    expect(body.lines.f1040.line1z_total_wages).toBe(67_000);
-    expect(body.lines.f1040.line25a_w2_withheld).toBe(6_100);
+    expect(body.lines.line1z_total_wages).toBe(67_000);
+    // The engine sends some lines as a two-element array of the same figure; the wrapper
+    // passes the wire value through untouched, and `toCents` is what flattens it.
+    expect(body.lines.line25a_w2_withheld).toEqual([6_100, 6_100]);
     expect(body.forms).toEqual(['w2']);
     expect(body.rejected).toEqual([]);
   });
@@ -73,7 +75,7 @@ describe('POST /draft', () => {
     const body = (await res.json()) as Record<string, any>;
 
     // The good node still computed.
-    expect(body.lines.f1040.line1z_total_wages).toBe(1_000);
+    expect(body.lines.line1z_total_wages).toBe(1_000);
     // And the bad one is named, with the document it came from.
     expect(body.rejected).toHaveLength(1);
     expect(body.rejected[0].nodeType).toBe('reject_me');
@@ -165,7 +167,7 @@ describe('no taxpayer amounts survive the response (§11)', () => {
         }),
       });
       const body = (await res.json()) as Record<string, any>;
-      return body.lines.f1040.line1z_total_wages;
+      return body.lines.line1z_total_wages;
     };
 
     const [a, b] = await Promise.all([draft(10_000), draft(20_000)]);

@@ -554,9 +554,10 @@ function renderProvenance(wb: ExcelJS.Workbook, review: ReviewModel, ctx: Worksh
  *  - Every computed figure is **advisory**, and the engine and its version are named.
  *  - The draft is **incomplete**, and the omissions are on the same sheet rather than a
  *    different one. A preparer who reads only this sheet must still see what is missing.
- *  - A **zero the engine computed for a line it received no documents for is not a zero the
- *    documents reported.** That is the whole reason the omissions list is load-bearing: the
- *    two are indistinguishable in the figure alone.
+ *  - **A withheld document leaves no mark on the figures.** The source line it would have fed
+ *    is simply absent, and every computed total — AGI, taxable income, total tax, the refund —
+ *    is a confident number computed as though it did not exist. That is why the omissions list
+ *    is on this sheet and not another one.
  */
 function renderDraftReturn(wb: ExcelJS.Workbook, draft: DraftSheetModel): void {
   const sheet = wb.addWorksheet('Draft Return');
@@ -606,9 +607,10 @@ function renderDraftReturn(wb: ExcelJS.Workbook, draft: DraftSheetModel): void {
   omissionHeader.font = { bold: true, size: 12 };
   const why = sheet.addRow([
     'Everything below was left out of the computation, and the figures above are wrong by ' +
-      'whatever it would have contributed. A line the engine received no documents for ' +
-      'computes to zero, and that zero looks exactly like a zero the documents reported — ' +
-      'which is why this list is part of the answer rather than an appendix to it.',
+      'whatever it would have contributed. The line it would have fed is simply absent, and ' +
+      'every total above — adjusted gross income, taxable income, total tax, the refund — was ' +
+      'computed as though it did not exist. Nothing in the numbers says so, which is why this ' +
+      'list is part of the answer rather than an appendix to it.',
   ]);
   why.font = { italic: true };
   sheet.mergeCells(why.number, 1, why.number, 7);

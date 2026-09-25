@@ -193,10 +193,10 @@ DRAFT_EXPECTATIONS: dict = {
                 "why": "Two 1098s. The worksheet reports both and annotates the year mismatch; only the 2025 one belongs in a 2025 computation."
             },
             "1040:5a": {
-                "engineVisible": 0,
+                "engineVisible": None,
                 "worksheetReported": 2500000,
                 "withheldBecause": "judgment_required",
-                "why": "1099-R box 7's IRA/SEP/SIMPLE box is unchecked on this fixture, so the gross distribution is a pension on line 5a rather than an IRA distribution on 4a. It is withheld anyway: box 2b 'taxable amount not determined' is checked, so the whole document goes to Judgment Required (§9). Zero, not nothing: an engine computes a line it received no documents for as zero, and that zero is indistinguishable from a real zero. The divergence from worksheetReported is the signal, and the omissions list is what explains it — which is exactly why the omissions contract is load-bearing rather than cosmetic."
+                "why": "1099-R box 7's IRA/SEP/SIMPLE box is unchecked on this fixture, so the gross distribution is a pension on line 5a rather than an IRA distribution on 4a. It is withheld anyway: box 2b 'taxable amount not determined' is checked, so the whole document goes to Judgment Required (§9). A withheld source line comes back absent, not zero — verified against engine 2.0.4 — which looks exactly like \"the documents reported nothing on this line\". Worse, the engine's computed totals are confident numbers regardless: AGI, taxable income, total tax and the refund are all computed as though the withheld document did not exist. A draft can therefore show a plausible refund that is wrong by the whole of a pension. That is why the omissions list is part of the answer rather than an appendix to it."
             }
         }
     },
@@ -219,10 +219,10 @@ DRAFT_EXPECTATIONS: dict = {
                 "why": "291,400 + 1,102,800 + 74,100."
             },
             "SCHD:PROCEEDS": {
-                "engineVisible": 0,
+                "engineVisible": None,
                 "worksheetReported": 10537500,
                 "withheldBecause": "form_type_unmappable",
-                "why": "Every 1099-B section is withheld (§8). 2,454,500 + 2,240,000 + 4,410,000 + 318,000 + 1,115,000. Zero, not nothing: an engine computes a line it received no documents for as zero, and that zero is indistinguishable from a real zero. The divergence from worksheetReported is the signal, and the omissions list is what explains it — which is exactly why the omissions contract is load-bearing rather than cosmetic."
+                "why": "Every 1099-B section is withheld (§8). 2,454,500 + 2,240,000 + 4,410,000 + 318,000 + 1,115,000. A withheld source line comes back absent, not zero — verified against engine 2.0.4 — which looks exactly like \"the documents reported nothing on this line\". Worse, the engine's computed totals are confident numbers regardless: AGI, taxable income, total tax and the refund are all computed as though the withheld document did not exist. A draft can therefore show a plausible refund that is wrong by the whole of a pension. That is why the omissions list is part of the answer rather than an appendix to it."
             }
         }
     },
@@ -264,15 +264,14 @@ DRAFT_EXPECTATIONS: dict = {
                 "worksheetReported": 291400
             },
             "1040:5a": {
-                "engineVisible": 0,
+                "engineVisible": None,
                 "worksheetReported": 2500000,
                 "withheldBecause": "judgment_required",
-                "why": "1099-R box 7's IRA/SEP/SIMPLE box is unchecked on this fixture, so the gross distribution is a pension on line 5a rather than an IRA distribution on 4a. It is withheld anyway: box 2b 'taxable amount not determined' is checked, so the whole document goes to Judgment Required (§9). Zero, not nothing: an engine computes a line it received no documents for as zero, and that zero is indistinguishable from a real zero. The divergence from worksheetReported is the signal, and the omissions list is what explains it — which is exactly why the omissions contract is load-bearing rather than cosmetic."
+                "why": "1099-R box 7's IRA/SEP/SIMPLE box is unchecked on this fixture, so the gross distribution is a pension on line 5a rather than an IRA distribution on 4a. It is withheld anyway: box 2b 'taxable amount not determined' is checked, so the whole document goes to Judgment Required (§9). A withheld source line comes back absent, not zero — verified against engine 2.0.4 — which looks exactly like \"the documents reported nothing on this line\". Worse, the engine's computed totals are confident numbers regardless: AGI, taxable income, total tax and the refund are all computed as though the withheld document did not exist. A draft can therefore show a plausible refund that is wrong by the whole of a pension. That is why the omissions list is part of the answer rather than an appendix to it."
             }
         }
     }
 }
-
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)

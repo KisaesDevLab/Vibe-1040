@@ -284,14 +284,27 @@ describe('what a bundle cannot know is enumerated, never inferred', () => {
 
   it('emits a general node from what the reviewer states, and stops reporting that as missing', async () => {
     const input = buildDraftInput(await nodeMap(), [await plainW2()], {
-      filingStatus: 'married_filing_jointly',
+      filingStatus: 'mfj',
       taxpayerAge65OrOlder: true,
     });
     const general = input.nodes.find((n) => n.nodeType === 'general');
-    expect(general?.payload['filing_status']).toBe('married_filing_jointly');
+    expect(general?.payload['filing_status']).toBe('mfj');
     expect(general?.payload['taxpayer_age_65_or_older']).toBe(true);
     expect(general?.documentId).toBeNull();
     expect(input.omissions.some((o) => o.fieldKey === 'filing_status')).toBe(false);
+  });
+
+  it('refuses a filing status the engine does not know, rather than letting it be rejected', async () => {
+    // The engine's codes are single|mfs|mfj|hoh|qss in 2.0.4. A long name is refused at the
+    // `general` node, which loses the standard deduction and the whole tax computation — so a
+    // named omission is far better than a draft whose taxable income is silently its AGI.
+    const input = buildDraftInput(await nodeMap(), [await plainW2()], {
+      filingStatus: 'married_filing_jointly',
+    });
+    expect(input.nodes.some((n) => n.nodeType === 'general')).toBe(false);
+    const omission = input.omissions.find((o) => o.fieldKey === 'filing_status');
+    expect(omission?.detail).toContain('not a filing status this engine accepts');
+    expect(omission?.detail).toContain('mfj');
   });
 
   it('always reports basis, carryovers and estimated payments as outside the bundle', async () => {

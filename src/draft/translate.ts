@@ -258,6 +258,12 @@ export function buildDraftInput(
       const label = fieldLabel(doc.schema, map.fieldKey);
 
       if (!value || !value.present) {
+        // A checkbox nobody ticked is `false` — a fact on the page, not a zero invented for a
+        // money box. The node map may only set this on a `bool` field (the loader enforces it).
+        if (map.falseWhenBlank) {
+          payload[map.nodeField] = false;
+          continue;
+        }
         if (map.engineRequired) {
           blocked = withhold(
             doc,
@@ -385,8 +391,29 @@ export function buildDraftInput(
   }
 
   // What the reviewer stated, and everything still unstated.
+  //
+  // The filing status is checked against the engine's own vocabulary before it is sent. The
+  // codes are the engine's and change per release — 2.0.4 wants `mfj`, not
+  // `married_filing_jointly` — and an unchecked value is refused at the `general` node, which
+  // loses the standard deduction and the whole tax computation with it. Better a named
+  // omission than a draft whose taxable income is silently its AGI.
   const general: Record<string, unknown> = {};
-  if (params.filingStatus !== undefined) general['filing_status'] = params.filingStatus;
+  const knownStatus =
+    params.filingStatus !== undefined &&
+    file.filingStatuses.some((f) => f.code === params.filingStatus);
+
+  if (params.filingStatus !== undefined && !knownStatus) {
+    omissions.push({
+      documentId: null,
+      formType: null,
+      fieldKey: 'filing_status',
+      reason: 'not_in_bundle',
+      detail:
+        `"${params.filingStatus}" is not a filing status this engine accepts. Expected one of: ` +
+        `${file.filingStatuses.map((f) => f.code).join(', ')}.`,
+    });
+  }
+  if (knownStatus) general['filing_status'] = params.filingStatus;
   if (params.taxpayerAge65OrOlder !== undefined) general['taxpayer_age_65_or_older'] = params.taxpayerAge65OrOlder;
   if (params.spouseAge65OrOlder !== undefined) general['spouse_age_65_or_older'] = params.spouseAge65OrOlder;
   if (params.taxpayerBlind !== undefined) general['taxpayer_blind'] = params.taxpayerBlind;
@@ -396,7 +423,7 @@ export function buildDraftInput(
   }
 
   for (const missing of NOT_IN_BUNDLE) {
-    if (missing.key === 'filing_status' && params.filingStatus !== undefined) continue;
+    if (missing.key === 'filing_status' && knownStatus) continue;
     if (missing.key === 'dependents' && params.dependentCount === 0) continue;
     omissions.push({
       documentId: null,

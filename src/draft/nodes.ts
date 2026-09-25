@@ -46,6 +46,12 @@ const unmappableReason = z.enum([
   'policy_boxes_as_printed',
   /** A consolidated package; its sub-forms are separate documents. */
   'container',
+  /**
+   * A node exists, and the engine requires an input this app will not send. Observed on
+   * `f1099m` in engine 2.0.4, which demands the taxpayer's own `recipient_tin`: §7 forbids
+   * forwarding a TIN anywhere, so the engine and this app disagree and §7 wins.
+   */
+  'engine_requires_withheld_input',
 ]);
 
 const fieldMap = z
@@ -57,6 +63,19 @@ const fieldMap = z
      * cannot be emitted at all — it is never zero-filled to satisfy a required field (§5).
      */
     engineRequired: z.boolean().default(false),
+    /**
+     * Send `false` when the app has no value, for a **checkbox only**.
+     *
+     * This is not a hole in §5, it is §5 read correctly. §5 is about money: a blank money box
+     * is not a zero, and nothing may ever supply one. A checkbox is different — §5 itself says
+     * an unchecked box "is `false` and has nothing on the page to cite", so it is stored blank
+     * and is not a review item. Sending `false` for it reports a fact, not a guess.
+     *
+     * The loader refuses this flag on anything but a `bool` field, so it can never reach a
+     * money field. Without it, a required checkbox like 1099-DIV box 11 would withhold every
+     * document whose box is unticked — which is nearly all of them.
+     */
+    falseWhenBlank: z.boolean().default(false),
   })
   .strict();
 
@@ -143,6 +162,15 @@ const lineMapSection = z
   })
   .strict();
 
+/**
+ * The engine's filing-status vocabulary, which is the engine's and changes per release.
+ *
+ * Data rather than code because getting it wrong is silent until the engine rejects the
+ * `general` node — 2.0.4 wants `single | mfs | mfj | hoh | qss`, and the long names this app
+ * first used were refused on every draft.
+ */
+const filingStatus = z.object({ code: z.string().min(1), label: z.string().min(1) }).strict();
+
 const nodeMapFile = z
   .object({
     taxYear: z.number().int(),
@@ -154,6 +182,7 @@ const nodeMapFile = z
     forms: z.array(formMap).min(1),
     unmappable: z.array(unmappableForm).default([]),
     lines: lineMapSection.default({ comparable: [], notCompared: [], computedOnly: [] }),
+    filingStatuses: z.array(filingStatus).min(1),
   })
   .strict();
 
@@ -164,6 +193,7 @@ export type IgnoreReason = z.infer<typeof ignoreReason>;
 export type ComparableLine = z.infer<typeof comparableLine>;
 export type ComputedOnlyLine = z.infer<typeof computedOnlyLine>;
 export type NotComparedReason = z.infer<typeof notComparedReason>;
+export type FilingStatusOption = z.infer<typeof filingStatus>;
 export type UnmappableReason = z.infer<typeof unmappableReason>;
 
 const cache = new Map<number, NodeMapFile>();
@@ -247,6 +277,18 @@ export async function assertConsistent(file: NodeMapFile, reg: FormRegistry): Pr
 
     // And it must be a field the form actually has, covering every field the form has.
     const schema = reg.get(form.formType, file.taxYear);
+    if (schema) {
+      for (const f of form.fields) {
+        if (!f.falseWhenBlank) continue;
+        const type = schema.fields.find((x) => x.key === f.fieldKey)?.type;
+        if (type !== 'bool') {
+          problems.push(
+            `${form.formType}: ${f.fieldKey} is '${type}', not a checkbox, so falseWhenBlank ` +
+              'must not be set on it. A blank money box is never a zero (§5).',
+          );
+        }
+      }
+    }
     if (!schema) {
       problems.push(`${form.formType}: no registered schema for tax year ${file.taxYear}`);
       continue;
@@ -275,6 +317,9 @@ export async function assertConsistent(file: NodeMapFile, reg: FormRegistry): Pr
     }
   }
 
+  const codes = file.filingStatuses.map((f) => f.code);
+  if (new Set(codes).size !== codes.length) problems.push('a filing-status code is listed twice');
+
   // Every worksheet line is declared too, for the same reason every box is: a line quietly
   // absent from the comparison is a computed figure nobody checked.
   const mapping = await loadMapping(file.taxYear);
@@ -284,11 +329,14 @@ export async function assertConsistent(file: NodeMapFile, reg: FormRegistry): Pr
   for (const ref of comparable) {
     if (notCompared.has(ref)) problems.push(`line ${ref} is both compared and not compared`);
   }
+  // The engine's line namespace is flat, so `engineLine` alone must be unique: two worksheet
+  // lines pointing at one engine line would both claim the same figure.
   const engineTargets = new Set<string>();
   for (const line of file.lines.comparable) {
-    const key = `${line.engineForm}.${line.engineLine}`;
-    if (engineTargets.has(key)) problems.push(`engine line ${key} is compared against twice`);
-    engineTargets.add(key);
+    if (engineTargets.has(line.engineLine)) {
+      problems.push(`engine line ${line.engineLine} is compared against twice`);
+    }
+    engineTargets.add(line.engineLine);
   }
   const declaredRefs = new Set(mapping.lines.map((l) => l.ref));
   for (const ref of [...comparable, ...notCompared]) {
