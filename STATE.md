@@ -13,7 +13,9 @@ do not infer progress from the commit log.
 the same day so the appliance can register against a real image. **P17 (draft return via
 OpenTax) — implemented 2026-09-25**, all three stages, carrying migration 0012. **P18
 (preparer-supplied inputs) — implemented 2026-09-25**, carrying migration 0013. Both merged
-to main 2026-09-25 (PR #2, merge `67283c1`) and **released as v0.11.0**.
+to main 2026-09-25 (PR #2, merge `67283c1`). **v0.11.0 is prepared but NOT released** — see
+*The v0.11.0 release, and the P0 defect it exposed* below. Nothing is on GHCR for it and the tag
+is not pushed; the version in `package.json` is the only thing that says 0.11.0.
 **Status:** P0–P16 code complete and **integration-unverified**; P17 code complete and
 **scored against the real engine v2.0.4** — 13 of 13 comparable lines agree (see below); P18
 code complete and **driven end to end in a browser against that engine and a real database**.
@@ -92,12 +94,53 @@ had been broken or missing since P0 were closed, and each found a real defect on
   living in a note nobody opens. **Form 1099-DA is deliberately not registered**: it stays an
   unregistered form type, which blocks the bundle until a human reads the page, rather than
   being extracted against a box map nobody has checked. QUESTIONS.md **Q25** lists what needs
-  reading. A TY2026 *draft return* still fails at the engine — OpenTax 2.0.4 computes TY2025
-  only, measured — and that was left alone rather than building a message for an engine that
-  does not exist yet.
+  reading. There is still no TY2026 *draft return* — OpenTax 2.0.4 computes TY2025 only,
+  measured — and that was left alone rather than building for an engine that does not exist yet.
+  **But the refusal was in the wrong place and the wrong shape, which a review caught.** This
+  entry first said a TY2026 draft "fails at the engine"; it does not. There is no
+  `data/opentax-nodes/2026.json`, so `loadNodeMap` refuses *before* the engine is called — and it
+  threw a bare `Error` outside the draft route's catch chain, so the request came back **500**,
+  while the panel offered a live Compute button because the filing-status vocabulary substitutes
+  a season deliberately. Fixed in the same pass: `NodeMapMissingError` → `409 no_node_map` naming
+  the installed years, handled in the global error handler because six routes reach a node map
+  and only one had a catch chain; `filingStatusSubstituted` served so a client can tell a
+  borrowed vocabulary from a usable one; the panel names the season that has no map. Believing
+  the wrong sentence is what hid it — nobody looks for a missing refusal in a path they think
+  already refuses.
 
-**Totals after this pass:** 414 tests across 31 files in the server package and 15 in the UI,
-none skipped, against a real Postgres at 0013. `npm run lint` clean. `npm run draft -- --truth` still 13 agreed, 0 disagreed.
+**Totals after this pass:** 436 tests across 32 files in the server package (`test/sso.test.ts`
+skips locally — the auth package is stubbed here, so CI is the only place its 28 run) and 16 in
+the UI, against a real Postgres at 0013. `npm run lint` clean in both packages.
+`npm run draft -- --truth` still 13 agreed, 0 disagreed.
+
+### The v0.11.0 release, and the P0 defect it exposed
+
+**v0.11.0 is not released.** Recorded here because the line above once said it was, and a version
+nobody can pull is worse than an unreleased one.
+
+Three things stand between the merge and the release, and the first is the reason the other two
+were found:
+
+1. **The appliance image has never once been built from the tested dependency tree.** The release
+   workflow's `publish` job failed at the first image build with
+   `src/lib/vibeAuthUsers.ts(285,9): error TS2322` — `AuditEventType` not assignable to
+   `AuditAction`, on a union member (`vibe.auth.stepup.success`) that does not exist in the
+   version installed here. `Dockerfile` copied `package.json` but **not `package-lock.json`**, so
+   every image build resolved `@kisaesdevlab/vibe-auth` `^1.0.4` to whatever the latest 1.x was
+   that day. That has been true since P0: v0.10.0 and every image before it shipped a dependency
+   tree no test ever ran against, and it only surfaced now because the upstream package finally
+   moved. Both install stages now copy the lockfile. **This is the most serious thing in this
+   pass** — the type error is a symptom; the floating tree is the defect.
+2. **`APP_VERSION` had drifted.** `src/router/client.ts` stamps every task-class registration and
+   every review export, and it still read `0.10.0` on a 0.11.0 build. It is a literal because
+   `rootDir` is `src` and importing the manifest would put it in `dist/`; `test/router.test.ts`
+   now reads `package.json` and asserts the two agree, which is the cheap half of that bargain.
+   `package-lock.json` had the same drift, plus a `BUSL-1.1` licence field four days after the
+   AGPL relicense.
+3. **The tag push and the GHCR visibility flip need a human.** `git push origin v0.11.0` returns
+   **403** from this session — annotated and lightweight both, with the proxy reporting zero
+   GitHub failures, so it is an org policy denial and not a network fault. The `vibe-1040-opentax`
+   package also needs its visibility set the first time it is published. Neither is worked around.
 `npm run check:providers` clean. No fixture-manifest drift.
 
 **Still not verified, and none of it is small.** The extraction accuracy run still needs the
@@ -1547,6 +1590,7 @@ and remains deferred.
 | Relicensing to AGPL forecloses a proprietary licence for the combined work | P17, §13 | Q22. The engine is a separate process and a severable optional service; with the flag unset no OpenTax code is present at all. Do not move it in-process or vendor its source |
 | **An engine field renamed between releases disappears silently** | P17 | Verified on 2.0.4 by probe: a renamed *required* field is refused loudly, but a renamed **optional** one is accepted and ignored, so the amount never arrives and the line reads as absent — with nothing in `rejected`, the diagnostics or the omissions saying so. `src/draft/catalog.ts` compares the map's field names against the engine's own catalogue before sending, and a blocking mismatch withholds draft returns (the worksheet is unaffected). A **name** check only: `npm run draft -- --truth` measures behaviour, and `docs/opentax-draft-return.md` §7 requires both on every upgrade |
 | **A stand-in binary that shares a wrong assumption tests nothing** | P17 | Learned the hard way: the stub encoded a nested `lines` shape the engine does not use, so all 328 tests agreed with the mistake. `test/helpers/fake-opentax.mjs` now mirrors the engine's real shapes — flat keys, array-valued lines, absent source lines, present zero totals — and its comments say where each came from. Re-derive it against the binary whenever the pin moves | It must also know about **every** node type the map declares, not a representative few: carrying three made the catalogue check report the other eleven as absent and refuse every draft. `test/helpers/fake-opentax-catalog.json` is derived from the real binary for that reason |
+| **The released image resolves dependencies no test has ever run against** | P0 | Found on 2026-09-25 when it finally bit: `Dockerfile` copied `package.json` without `package-lock.json`, so every image since P0 — v0.10.0 included — floated `@kisaesdevlab/vibe-auth` and everything else to whatever the latest matching version was at build time. The v0.11.0 build failed to compile on a widened union in a newer 1.x. Both install stages now copy the lockfile, so the image and the test run agree by construction. **The type error was the symptom; shipping an untested tree was the defect, and it was silent for nine releases** |
 | Powered-off GPU droplets still bill if the Router ever provisions one | Router-side | Not this repo's concern, but flag to Router work |
 
 ---

@@ -46,10 +46,24 @@ whether it maps to Schedule D or lands wholly in Judgment Required the way K-1s 
 holding period on digital assets are §9 determinations.
 
 **Also not blocking anything yet, but true:** OpenTax 2.0.4 computes **TY2025 only** — measured,
-not assumed. So even with this mapping, a TY2026 *draft return* will fail at the engine until
-upstream ships a TY2026 release. Decided 2026-09-25 to leave that alone rather than build a
-message for an engine that does not exist; the worksheet is unaffected, and the draft return is
-an optional aid that is off by default.
+not assumed. So even with this mapping there is no TY2026 *draft return* until upstream ships a
+TY2026 release. Decided 2026-09-25 to leave that alone rather than build a message for an engine
+that does not exist; the worksheet is unaffected, and the draft return is an optional aid that is
+off by default.
+
+**Corrected 2026-09-25**, and it was not a wording quibble. "Fails at the engine" is what this
+entry and STATE.md both said, and it is wrong: there is no
+`data/opentax-nodes/2026.json`, so a TY2026 draft is refused by `loadNodeMap` **before anything
+reaches the engine**. Getting that wrong hid a real defect for exactly as long as it was believed
+— nobody looks for a missing refusal in a path they think already refuses. What it actually did:
+`loadNodeMap` threw a bare `Error` that was not in the draft route's catch chain, so the request
+came back **500**, and because the filing-status vocabulary deliberately substitutes a season
+(the codes belong to the engine release, not the tax year) the panel rendered a live **Compute
+draft return** button on a TY2026 bundle. Now a typed `NodeMapMissingError` → `409 no_node_map`
+naming the years installed, `filingStatusSubstituted` is served so a client can tell the two
+apart, and the panel says which season has no map instead of offering the button. The decision
+above stands — nothing was built for an engine that does not exist — but the refusal is now the
+one it was claimed to be.
 
 **A:**
 

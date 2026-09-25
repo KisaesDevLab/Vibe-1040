@@ -33,6 +33,7 @@ import {
 import { registry } from './schemas/registry.ts';
 import { ZodError } from 'zod';
 import { DraftEngineError } from './draft/client.ts';
+import { NodeMapMissingError } from './draft/nodes.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -105,6 +106,27 @@ export async function buildServer() {
      * a 409; an unreachable engine is a 503, because an optional checking aid being down is a
      * degraded state and not a failure (§3); anything else it says is a 502.
      */
+    /**
+     * A season with no node map is a refusal, not a failure — and it is every season's
+     * opening state.
+     *
+     * Handled here rather than per route because six routes reach a node map (compute, the
+     * engine-input export, and the four preparer-input mutations that validate a code against
+     * the engine's vocabulary), and the one that had a catch chain was the only one not to
+     * return a 500. Found by a review of the TY2026 line mappings: those made a TY2026 bundle
+     * produce a worksheet, which made the draft control reachable — and the vocabulary
+     * substitutes a season while the loader, correctly, does not. It fails *before* the engine
+     * is called, so the remedy is a data file rather than an engine upgrade.
+     */
+    if (error instanceof NodeMapMissingError) {
+      req.log.info({ taxYear: error.taxYear, available: error.available }, 'no node map for that season');
+      return reply.code(409).send({
+        error: 'no_node_map',
+        message: error.message,
+        taxYear: error.taxYear,
+        availableTaxYears: error.available,
+      });
+    }
     if (error instanceof DraftEngineError) {
       req.log.warn({ code: error.code, detail: error.detail }, 'the draft engine refused');
       const status = error.code === 'invalid_input' ? 409 : error.isUnavailable ? 503 : 502;

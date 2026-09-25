@@ -51,6 +51,7 @@ export function DraftReturnPanel({
     engine: { ok: boolean; version: string | null; reason?: string } | null;
     filingStatuses: { code: string; label: string }[];
     filingStatusYear: number | null;
+    filingStatusSubstituted: boolean;
   } | null>(null);
   const [draft, setDraft] = useState<DraftReturn | null>(null);
   const [busy, setBusy] = useState(false);
@@ -62,7 +63,13 @@ export function DraftReturnPanel({
       .draftReturnStatus(taxYear)
       .then(setStatus)
       .catch(() =>
-        setStatus({ enabled: false, engine: null, filingStatuses: [], filingStatusYear: null }),
+        setStatus({
+          enabled: false,
+          engine: null,
+          filingStatuses: [],
+          filingStatusYear: null,
+          filingStatusSubstituted: false,
+        }),
       );
   }, [taxYear]);
 
@@ -92,6 +99,18 @@ export function DraftReturnPanel({
     (l) => l.verdict !== 'both_blank',
   );
 
+  /**
+   * No node map for *this bundle's season*, so nothing can be computed for it.
+   *
+   * Two ways to get here and both must suppress the control. No vocabulary at all means no map
+   * on disk; a *substituted* vocabulary means there are maps but not this year's — the codes are
+   * a property of the engine release so borrowing them is correct, while the translation is a
+   * property of the tax year so borrowing that would be the §14 rule-6 mistake, and the loader
+   * refuses. Before this, a TY2026 bundle rendered a live Compute button that could only ever
+   * come back refused.
+   */
+  const noMapForYear = status.filingStatuses.length === 0 || status.filingStatusSubstituted;
+
   return (
     <section className="draft-pane">
       <h3>Draft return</h3>
@@ -107,10 +126,18 @@ export function DraftReturnPanel({
         with no options above a button that can never be pressed — a control that cannot work
         must explain itself, and this one's cause is a missing data file that names its own fix.
       */}
-      {!draft && status.filingStatuses.length === 0 && (
+      {!draft && noMapForYear && (
         <p className="draft-unavailable">
-          No OpenTax node map is installed, so there is nothing to compute against. Adding a tax
-          year is a data change: <code>data/opentax-nodes/&lt;year&gt;.json</code>.
+          {status.filingStatuses.length === 0 ? (
+            <>No OpenTax node map is installed, so there is nothing to compute against.</>
+          ) : (
+            <>
+              No OpenTax node map for tax year {taxYear}
+              {status.filingStatusYear === null ? null : <> — the newest installed is {status.filingStatusYear}</>}.
+              The worksheet is unaffected; only the draft return needs one.
+            </>
+          )}{' '}
+          Adding a tax year is a data change: <code>data/opentax-nodes/&lt;year&gt;.json</code>.
         </p>
       )}
 
@@ -120,7 +147,7 @@ export function DraftReturnPanel({
         money form does not fit in it — the lesson from the first browser render of the
         comparison table, which broke every label one word per line.
       */}
-      {status.filingStatuses.length > 0 && (
+      {!noMapForYear && (
         <div className="draft-start">
           <div className="draft-inputs-summary">
             <div>

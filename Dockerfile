@@ -11,11 +11,18 @@
 # token with read:packages even to read. `.npmrc` maps the scope and holds no credential. The
 # token arrives as a BuildKit secret, is written to a throwaway user npmrc, and is deleted in
 # the same RUN — it is never an ARG or ENV, so it lands in no layer and no image history.
+#
+# **`package-lock.json` is copied on purpose.** Without it `npm install` resolves every caret
+# range afresh inside the image, so the published artifact was never the dependency tree the
+# tests ran against. That was latent from P0 and bit at v0.11.0: CI built `@kisaesdevlab/vibe-
+# auth@1.0.4` from the lockfile and passed, the image floated to a newer 1.x that had added an
+# audit event type, and `type satisfies AuditAction` in src/lib/vibeAuthUsers.ts failed the
+# build — after CI was green, in the release. A released image must contain what was tested.
 
 FROM node:24-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache git
-COPY package.json .npmrc ./
+COPY package.json package-lock.json .npmrc ./
 COPY scripts ./scripts
 COPY vendor ./vendor
 RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
@@ -25,7 +32,7 @@ RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
 
 FROM node:24-alpine AS build
 WORKDIR /app
-COPY package.json .npmrc ./
+COPY package.json package-lock.json .npmrc ./
 COPY scripts ./scripts
 COPY vendor ./vendor
 RUN --mount=type=secret,id=NODE_AUTH_TOKEN,required=true \
