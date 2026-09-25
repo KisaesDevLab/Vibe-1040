@@ -25,7 +25,8 @@
     "retention": "node --experimental-strip-types src/retention/run.ts",
     "accuracy": "node scripts/accuracy-run.mjs",
     "check:providers": "node scripts/check-provider-leakage.mjs",
-    "draft": "node --experimental-strip-types scripts/draft-check.mjs"
+    "draft": "node --experimental-strip-types scripts/draft-check.mjs",
+    "draft:conflicts": "node scripts/probe-conflicts.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

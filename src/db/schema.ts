@@ -14,6 +14,7 @@
 import {
   bigint,
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -797,3 +798,155 @@ export const notificationLog = pgTable(
   },
   (t) => [index('notification_log_at_idx').on(t.at)],
 );
+
+// ── preparer-supplied draft inputs (P18, migration 0013) ─────────────────────
+
+/**
+ * What the preparer supplies because no source document carries it (§14).
+ *
+ * §14 rule 5 already routes filing status and the age/blindness flags through the reviewer,
+ * "which is the preparer making the determination, and that is the right place for it". These
+ * tables extend the same arrangement to dependents, itemised deductions and business/farm/rental
+ * activity. Nothing here is ever inferred, and nothing is ever defaulted — "not stated" and
+ * "stated as no" are different answers, and a draft that guessed would be deciding.
+ *
+ * Persisted rather than passed per request, which is the change from P17: filing status used to
+ * ride along on each call, and a preparer would have had to retype a Schedule C on every
+ * recompute. `draftReturns.filingStatus` remains the record of what one particular run used.
+ */
+export const draftInputs = pgTable(
+  'draft_inputs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bundleId: uuid('bundle_id')
+      .notNull()
+      .references(() => bundles.id, { onDelete: 'cascade' }),
+    /**
+     * `single | mfs | mfj | hoh | qss`. Text, not a pg enum: the vocabulary is the engine's and
+     * changes per release, so it is checked against the node map at the boundary rather than
+     * frozen into the database. Null until a preparer states one.
+     */
+    filingStatus: text('filing_status'),
+    taxpayerAge65OrOlder: boolean('taxpayer_age_65_or_older'),
+    spouseAge65OrOlder: boolean('spouse_age_65_or_older'),
+    taxpayerBlind: boolean('taxpayer_blind'),
+    spouseBlind: boolean('spouse_blind'),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('draft_inputs_bundle_uq').on(t.bundleId)],
+);
+
+/**
+ * A dependent, as the preparer states them.
+ *
+ * **There is deliberately no SSN column**, and none may be added. The engine marks
+ * `ssn`/`itin`/`atin` optional on its dependents node, so a draft computes without one, and §7's
+ * rule is that a taxpayer identification number is never written here in plaintext and never
+ * forwarded. A dependent's TIN is a TIN.
+ */
+export const draftInputDependents = pgTable(
+  'draft_input_dependents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bundleId: uuid('bundle_id')
+      .notNull()
+      .references(() => bundles.id, { onDelete: 'cascade' }),
+    /** The preparer's ordering, kept so the list does not reshuffle between edits. */
+    ordinal: integer('ordinal').notNull().default(0),
+    firstName: text('first_name').notNull(),
+    lastName: text('last_name').notNull(),
+    middleInitial: text('middle_initial'),
+    dob: date('dob').notNull(),
+    /**
+     * `son | daughter | stepchild | foster | sibling | stepsibling | halfsibling | grandchild |
+     * parent | stepparent | other` — verified by probe against engine 2.0.4, because the CLI
+     * listing truncates the enum. `niece`, `nephew`, `aunt`, `uncle` and `grandparent` are
+     * **refused** by the engine although each can be a qualifying relative in law; they land on
+     * `other`, and the app says so rather than mapping them silently.
+     */
+    relationship: text('relationship').notNull(),
+    monthsInHome: integer('months_in_home').notNull(),
+    /** Determinations the engine accepts and never makes. Nullable, never defaulted (§9). */
+    qualifyingChildForCtc: boolean('qualifying_child_for_ctc'),
+    disabled: boolean('disabled'),
+    fullTimeStudent: boolean('full_time_student'),
+    taxpayerProvidedOverHalfSupport: boolean('taxpayer_provided_over_half_support'),
+    dependentOnAnotherReturn: boolean('dependent_on_another_return'),
+    grossIncomeCents: bigint('gross_income_cents', { mode: 'number' }),
+    ...timestamps,
+  },
+  (t) => [index('draft_input_dependents_bundle_idx').on(t.bundleId)],
+);
+
+/** Itemised deductions, as stated. Every figure nullable: a blank is not a zero (§5). */
+export const draftInputScheduleA = pgTable(
+  'draft_input_schedule_a',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bundleId: uuid('bundle_id')
+      .notNull()
+      .references(() => bundles.id, { onDelete: 'cascade' }),
+    medicalCents: bigint('medical_cents', { mode: 'number' }),
+    stateIncomeTaxCents: bigint('state_income_tax_cents', { mode: 'number' }),
+    salesTaxCents: bigint('sales_tax_cents', { mode: 'number' }),
+    realEstateTaxCents: bigint('real_estate_tax_cents', { mode: 'number' }),
+    personalPropertyTaxCents: bigint('personal_property_tax_cents', { mode: 'number' }),
+    otherTaxesCents: bigint('other_taxes_cents', { mode: 'number' }),
+    mortgageInterest1098Cents: bigint('mortgage_interest_1098_cents', { mode: 'number' }),
+    mortgageInterestNo1098Cents: bigint('mortgage_interest_no_1098_cents', { mode: 'number' }),
+    pointsNo1098Cents: bigint('points_no_1098_cents', { mode: 'number' }),
+    investmentInterestCents: bigint('investment_interest_cents', { mode: 'number' }),
+    cashContributionsCents: bigint('cash_contributions_cents', { mode: 'number' }),
+    noncashContributionsCents: bigint('noncash_contributions_cents', { mode: 'number' }),
+    contributionCarryoverCents: bigint('contribution_carryover_cents', { mode: 'number' }),
+    casualtyTheftLossCents: bigint('casualty_theft_loss_cents', { mode: 'number' }),
+    otherDeductionsCents: bigint('other_deductions_cents', { mode: 'number' }),
+    /** Forcing a method is a determination, so it is asked. Null = let the engine take the larger. */
+    forceItemized: boolean('force_itemized'),
+    forceStandard: boolean('force_standard'),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('draft_input_schedule_a_bundle_uq').on(t.bundleId)],
+);
+
+/**
+ * One business, rental property or farm, entered as a **summary** (decided 2026-09-25).
+ *
+ * The engine requires only the identifying fields and a gross figure; every expense line is
+ * optional, and it accepts an expense as a description and an amount. So a preparer who already
+ * has the net from their own software types two numbers rather than eighty, and that is a legal
+ * payload rather than a workaround. Full per-line entry is a separate question if it is wanted.
+ */
+export const draftInputActivities = pgTable(
+  'draft_input_activities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bundleId: uuid('bundle_id')
+      .notNull()
+      .references(() => bundles.id, { onDelete: 'cascade' }),
+    ordinal: integer('ordinal').notNull().default(0),
+    /** `schedule_c | schedule_e | schedule_f` — the engine node this activity becomes. */
+    kind: text('kind').notNull(),
+    description: text('description').notNull(),
+    /** A business code (C) or agricultural activity code (F); E wants neither. */
+    activityCode: text('activity_code'),
+    /** `cash | accrual | other`. Required by C and F, unused by E. */
+    accountingMethod: text('accounting_method'),
+    /** A determination with real passive-loss consequences. Never inferred. */
+    materialParticipation: boolean('material_participation'),
+    /** Schedule E only: the day counts that decide personal-use treatment. */
+    propertyType: text('property_type'),
+    fairRentalDays: integer('fair_rental_days'),
+    personalUseDays: integer('personal_use_days'),
+    /** Gross receipts (C), rents received (E) or sales (F). Nullable — part-way is not zero. */
+    grossCents: bigint('gross_cents', { mode: 'number' }),
+    expensesCents: bigint('expenses_cents', { mode: 'number' }),
+    expensesDescription: text('expenses_description'),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    ...timestamps,
+  },
+  (t) => [index('draft_input_activities_bundle_idx').on(t.bundleId)],
+);
+

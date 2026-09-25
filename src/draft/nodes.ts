@@ -185,6 +185,87 @@ const lineMapSection = z
  */
 const filingStatus = z.object({ code: z.string().min(1), label: z.string().min(1) }).strict();
 
+/**
+ * What the preparer supplies, because no source document carries it (P18, §14).
+ *
+ * `supersedes` is the load-bearing part and the reason this is data rather than code. Some
+ * engine fields can be fed from two directions — a document this app read, or a figure the
+ * preparer typed — and engine 2.0.4 **silently discards the preparer's** where both arrive. So
+ * the app sends one and records the other as an omission, and `scripts/probe-conflicts.mjs`
+ * re-measures that behaviour on every engine upgrade rather than trusting it.
+ */
+const supersedes = z
+  .object({
+    /** The form a reviewer would recognise — `1098`, not `f1098`. */
+    formType: z.string(),
+    nodeType: z.string(),
+    nodeField: z.string(),
+    /** This app's own field key, so an omission can name the box on the page. */
+    fieldKey: z.string(),
+  })
+  .strict();
+
+const preparerField = z
+  .object({
+    /** The column on the draft-input table this comes from. */
+    column: z.string(),
+    nodeField: z.string(),
+    engineRequired: z.boolean().default(false),
+    /** Stored as integer cents here, sent as dollars at the boundary. */
+    money: z.boolean().default(false),
+    supersedes: z.array(supersedes).default([]),
+  })
+  .strict();
+
+const labelledCode = z.object({ code: z.string(), label: z.string(), note: z.string().optional() }).strict();
+
+const activityMap = z
+  .object({
+    /** `schedule_c` | `schedule_e` — matches `draft_input_activities.kind`. */
+    kind: z.string(),
+    nodeType: z.string(),
+    label: z.string(),
+    $comment: z.array(z.string()).default([]),
+    fields: z.array(preparerField).min(1),
+    /** Where a lump expense goes when the node takes an array of {description, amount}. */
+    expenseArray: z.string().optional(),
+    constants: z.record(z.union([z.boolean(), z.string(), z.number()])).default({}),
+    accountingMethods: z.array(labelledCode).default([]),
+    propertyTypes: z.array(labelledCode).default([]),
+  })
+  .strict();
+
+const preparerInputs = z
+  .object({
+    $comment: z.array(z.string()).default([]),
+    dependents: z
+      .object({
+        nodeType: z.string(),
+        nodeField: z.string(),
+        $comment: z.array(z.string()).default([]),
+        fields: z.array(preparerField).min(1),
+        relationships: z.array(labelledCode).min(1),
+      })
+      .strict(),
+    scheduleA: z
+      .object({
+        nodeType: z.string(),
+        $comment: z.array(z.string()).default([]),
+        fields: z.array(preparerField).min(1),
+        flags: z.array(preparerField).default([]),
+      })
+      .strict(),
+    activities: z.array(activityMap).default([]),
+    /**
+     * An activity the engine will not take. Listed rather than omitted from the file, so the
+     * app can tell a preparer why instead of offering a control that produces a refused node.
+     */
+    unsupportedActivities: z
+      .array(z.object({ kind: z.string(), label: z.string(), reason: z.string(), detail: z.string().min(1) }).strict())
+      .default([]),
+  })
+  .strict();
+
 const nodeMapFile = z
   .object({
     taxYear: z.number().int(),
@@ -197,6 +278,8 @@ const nodeMapFile = z
     unmappable: z.array(unmappableForm).default([]),
     lines: lineMapSection.default({ comparable: [], notCompared: [], computedOnly: [] }),
     filingStatuses: z.array(filingStatus).min(1),
+    /** Optional so a season's map can be written before the inputs are mapped for it. */
+    preparerInputs: preparerInputs.optional(),
   })
   .strict();
 
@@ -208,6 +291,11 @@ export type ComparableLine = z.infer<typeof comparableLine>;
 export type ComputedOnlyLine = z.infer<typeof computedOnlyLine>;
 export type NotComparedReason = z.infer<typeof notComparedReason>;
 export type FilingStatusOption = z.infer<typeof filingStatus>;
+export type PreparerInputs = z.infer<typeof preparerInputs>;
+export type PreparerField = z.infer<typeof preparerField>;
+export type ActivityMap = z.infer<typeof activityMap>;
+export type SupersededField = z.infer<typeof supersedes>;
+export type LabelledCode = z.infer<typeof labelledCode>;
 export type UnmappableReason = z.infer<typeof unmappableReason>;
 
 const cache = new Map<number, NodeMapFile>();

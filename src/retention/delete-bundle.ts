@@ -14,7 +14,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.ts';
-import { bundles, draftReturns, pages, purgeLog, sourceFiles, worksheets } from '../db/schema.ts';
+import { bundles, draftInputs, draftReturns, pages, purgeLog, sourceFiles, worksheets } from '../db/schema.ts';
 import { blobs } from '../storage/index.ts';
 
 export interface DeleteSummary {
@@ -91,6 +91,22 @@ export async function deleteBundle(bundleId: string): Promise<DeleteSummary> {
       kind: 'draft_return',
       entityType: 'draft_return',
       entityId: draft.id,
+      bundleId,
+      policyDays: 0,
+      ageDays: 0,
+      storageKey: null,
+      dryRun: false,
+    });
+  }
+
+  // Preparer-supplied inputs (P18) hold a dependent's name and date of birth. They cascade with
+  // the bundle like everything else, but an ad-hoc delete must leave the same evidence a policy
+  // purge does, so the row is logged before it goes.
+  for (const row of await db.select({ id: draftInputs.id }).from(draftInputs).where(eq(draftInputs.bundleId, bundleId))) {
+    await db.insert(purgeLog).values({
+      kind: 'draft_input',
+      entityType: 'draft_input',
+      entityId: row.id,
       bundleId,
       policyDays: 0,
       ageDays: 0,

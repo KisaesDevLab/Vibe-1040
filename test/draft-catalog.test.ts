@@ -53,8 +53,29 @@ function catalogFor(file: NodeMapFile): EngineCatalog {
         { type: f === 'filing_status' ? 'enum' : 'boolean', required: f === 'filing_status' },
       ]),
     ),
-    otherFields: [],
+    // The dependents array and its item fields (P18). They sit at a deeper indent in the
+    // engine's own listing, which the wrapper reports under `otherFields`.
+    otherFields: [
+      file.preparerInputs?.dependents.nodeField ?? 'dependents',
+      ...(file.preparerInputs?.dependents.fields ?? []).map((f) => f.nodeField),
+    ],
   };
+
+  // The preparer-input nodes. Same treatment as a form's: a catalogue that knows less than the
+  // map makes every field look renamed.
+  const inputs = file.preparerInputs;
+  if (inputs) {
+    const node = (fields: { nodeField: string }[]) => ({
+      implemented: true,
+      collection: null,
+      fields: Object.fromEntries(fields.map((f) => [f.nodeField, { type: 'number', required: false }])),
+      otherFields: [],
+    });
+    nodes[inputs.scheduleA.nodeType] = node([...inputs.scheduleA.fields, ...inputs.scheduleA.flags]);
+    for (const activity of inputs.activities) {
+      nodes[activity.nodeType] = node(activity.fields);
+    }
+  }
   return { engineVersion: '2.0.4', nodes };
 }
 

@@ -1638,5 +1638,366 @@
       "code": "qss",
       "label": "Qualifying surviving spouse"
     }
-  ]
+  ],
+  "preparerInputs": {
+    "$comment": [
+      "What the preparer supplies because no source document carries it (P18, CLAUDE.md §14).",
+      "Data, not code, for the same reason as everything else here: the engine's field names are not derivable by convention and change per release.",
+      "Every pair below was MEASURED against engine 2.0.4, not read off documentation. `npm run draft:conflicts` re-verifies the supersedes pairs and is part of the upgrade procedure."
+    ],
+    "dependents": {
+      "nodeType": "general",
+      "nodeField": "dependents",
+      "$comment": [
+        "An optional array on the `general` node. The engine marks ssn/itin/atin optional, which is the only reason this is buildable at all: §7 forbids forwarding a taxpayer identification number, and a dependent's is no different."
+      ],
+      "fields": [
+        {
+          "column": "firstName",
+          "nodeField": "first_name",
+          "engineRequired": true
+        },
+        {
+          "column": "lastName",
+          "nodeField": "last_name",
+          "engineRequired": true
+        },
+        {
+          "column": "middleInitial",
+          "nodeField": "middle_initial"
+        },
+        {
+          "column": "dob",
+          "nodeField": "dob",
+          "engineRequired": true
+        },
+        {
+          "column": "relationship",
+          "nodeField": "relationship",
+          "engineRequired": true
+        },
+        {
+          "column": "monthsInHome",
+          "nodeField": "months_in_home",
+          "engineRequired": true
+        },
+        {
+          "column": "qualifyingChildForCtc",
+          "nodeField": "qualifying_child_for_ctc"
+        },
+        {
+          "column": "disabled",
+          "nodeField": "disabled"
+        },
+        {
+          "column": "fullTimeStudent",
+          "nodeField": "full_time_student"
+        },
+        {
+          "column": "taxpayerProvidedOverHalfSupport",
+          "nodeField": "taxpayer_provided_over_half_support"
+        },
+        {
+          "column": "dependentOnAnotherReturn",
+          "nodeField": "dependent_on_another_return"
+        },
+        {
+          "column": "grossIncomeCents",
+          "nodeField": "gross_income",
+          "money": true
+        }
+      ],
+      "relationships": [
+        {
+          "code": "son",
+          "label": "Son"
+        },
+        {
+          "code": "daughter",
+          "label": "Daughter"
+        },
+        {
+          "code": "stepchild",
+          "label": "Stepchild"
+        },
+        {
+          "code": "foster",
+          "label": "Foster child"
+        },
+        {
+          "code": "sibling",
+          "label": "Brother or sister"
+        },
+        {
+          "code": "stepsibling",
+          "label": "Stepbrother or stepsister"
+        },
+        {
+          "code": "halfsibling",
+          "label": "Half-brother or half-sister"
+        },
+        {
+          "code": "grandchild",
+          "label": "Grandchild"
+        },
+        {
+          "code": "parent",
+          "label": "Parent"
+        },
+        {
+          "code": "stepparent",
+          "label": "Stepparent"
+        },
+        {
+          "code": "other",
+          "label": "Other qualifying person",
+          "note": "Engine 2.0.4 refuses niece, nephew, aunt, uncle and grandparent, though each can be a qualifying relative under §152. They are entered here, and the draft says so rather than mapping them silently. Verified by probe; the CLI listing truncates this enum with an ellipsis."
+        }
+      ]
+    },
+    "scheduleA": {
+      "nodeType": "schedule_a",
+      "$comment": [
+        "Nineteen flat optional money fields. `supersedes` names a document field that feeds the same engine line: where one is present, engine 2.0.4 uses the DOCUMENT and silently discards the preparer's figure, so the app sends only one and records the other as an omission.",
+        "Measured, not assumed. f1098 box 5, box 6 and box 10 do NOT reach Schedule A, and neither does state withholding on W-2G, 1099-OID, 1099-R, 1099-G or 1099-K — so none of those are conflicts and the preparer's figure is free."
+      ],
+      "fields": [
+        {
+          "column": "medicalCents",
+          "nodeField": "line_1_medical"
+        },
+        {
+          "column": "stateIncomeTaxCents",
+          "nodeField": "line_5a_state_income_tax",
+          "supersedes": [
+            {
+              "formType": "W-2",
+              "nodeType": "w2",
+              "nodeField": "box17_state_withheld",
+              "fieldKey": "box_17"
+            },
+            {
+              "formType": "W-2",
+              "nodeType": "w2",
+              "nodeField": "box19_local_withheld",
+              "fieldKey": "box_19"
+            }
+          ]
+        },
+        {
+          "column": "salesTaxCents",
+          "nodeField": "line_5a_sales_tax"
+        },
+        {
+          "column": "realEstateTaxCents",
+          "nodeField": "line_5b_real_estate_tax"
+        },
+        {
+          "column": "personalPropertyTaxCents",
+          "nodeField": "line_5c_personal_property_tax"
+        },
+        {
+          "column": "otherTaxesCents",
+          "nodeField": "line_6_other_taxes"
+        },
+        {
+          "column": "mortgageInterest1098Cents",
+          "nodeField": "line_8a_mortgage_interest_1098",
+          "supersedes": [
+            {
+              "formType": "1098",
+              "nodeType": "f1098",
+              "nodeField": "box1_mortgage_interest",
+              "fieldKey": "box_1"
+            }
+          ]
+        },
+        {
+          "column": "mortgageInterestNo1098Cents",
+          "nodeField": "line_8b_mortgage_interest_no_1098"
+        },
+        {
+          "column": "pointsNo1098Cents",
+          "nodeField": "line_8c_points_no_1098"
+        },
+        {
+          "column": "investmentInterestCents",
+          "nodeField": "line_9_investment_interest"
+        },
+        {
+          "column": "cashContributionsCents",
+          "nodeField": "line_11_cash_contributions"
+        },
+        {
+          "column": "noncashContributionsCents",
+          "nodeField": "line_12_noncash_contributions"
+        },
+        {
+          "column": "contributionCarryoverCents",
+          "nodeField": "line_13_contribution_carryover"
+        },
+        {
+          "column": "casualtyTheftLossCents",
+          "nodeField": "line_15_casualty_theft_loss"
+        },
+        {
+          "column": "otherDeductionsCents",
+          "nodeField": "line_16_other_deductions"
+        }
+      ],
+      "flags": [
+        {
+          "column": "forceItemized",
+          "nodeField": "force_itemized"
+        },
+        {
+          "column": "forceStandard",
+          "nodeField": "force_standard"
+        }
+      ]
+    },
+    "activities": [
+      {
+        "kind": "schedule_c",
+        "nodeType": "schedule_c",
+        "label": "Business (Schedule C)",
+        "$comment": [
+          "Verified: gross 120,000 with 45,000 in line_27b_other_expenses nets 75,000 onto total income."
+        ],
+        "fields": [
+          {
+            "column": "description",
+            "nodeField": "line_a_principal_business",
+            "engineRequired": true
+          },
+          {
+            "column": "activityCode",
+            "nodeField": "line_b_business_code",
+            "engineRequired": true
+          },
+          {
+            "column": "accountingMethod",
+            "nodeField": "line_f_accounting_method",
+            "engineRequired": true
+          },
+          {
+            "column": "materialParticipation",
+            "nodeField": "line_g_material_participation",
+            "engineRequired": true
+          },
+          {
+            "column": "grossCents",
+            "nodeField": "line_1_gross_receipts",
+            "engineRequired": true,
+            "money": true
+          },
+          {
+            "column": "expensesCents",
+            "nodeField": "line_27b_other_expenses",
+            "money": true
+          }
+        ],
+        "accountingMethods": [
+          {
+            "code": "cash",
+            "label": "Cash"
+          },
+          {
+            "code": "accrual",
+            "label": "Accrual"
+          },
+          {
+            "code": "other",
+            "label": "Other"
+          }
+        ]
+      },
+      {
+        "kind": "schedule_e",
+        "nodeType": "schedule_e",
+        "label": "Rental property (Schedule E)",
+        "$comment": [
+          "Verified: rent 36,000 less 14,000 in expense_other_lines nets 22,000.",
+          "property_type is a NUMBER 1-8, not a string, and activity_type is an enum A-D. Both were wrong on the first attempt and the engine refused the whole node, which is the loud failure — unlike a wrong optional field name, which it accepts and ignores.",
+          "A 1098 does NOT reach Schedule E's rental income, so there is no conflict here; expense_mortgage_interest is the preparer's to state."
+        ],
+        "expenseArray": "expense_other_lines",
+        "fields": [
+          {
+            "column": "description",
+            "nodeField": "property_description",
+            "engineRequired": true
+          },
+          {
+            "column": "propertyType",
+            "nodeField": "property_type",
+            "engineRequired": true
+          },
+          {
+            "column": "fairRentalDays",
+            "nodeField": "fair_rental_days",
+            "engineRequired": true
+          },
+          {
+            "column": "personalUseDays",
+            "nodeField": "personal_use_days",
+            "engineRequired": true
+          },
+          {
+            "column": "grossCents",
+            "nodeField": "rent_income",
+            "engineRequired": true,
+            "money": true
+          }
+        ],
+        "constants": {
+          "tsj": "T",
+          "activity_type": "A",
+          "form_1099_payments_made": false
+        },
+        "propertyTypes": [
+          {
+            "code": "1",
+            "label": "Single family residence"
+          },
+          {
+            "code": "2",
+            "label": "Multi-family residence"
+          },
+          {
+            "code": "3",
+            "label": "Vacation or short-term rental"
+          },
+          {
+            "code": "4",
+            "label": "Commercial"
+          },
+          {
+            "code": "5",
+            "label": "Land"
+          },
+          {
+            "code": "6",
+            "label": "Royalties"
+          },
+          {
+            "code": "7",
+            "label": "Self-rental"
+          },
+          {
+            "code": "8",
+            "label": "Other"
+          }
+        ]
+      }
+    ],
+    "unsupportedActivities": [
+      {
+        "kind": "schedule_f",
+        "label": "Farm (Schedule F)",
+        "reason": "engine_refuses_node",
+        "detail": "Engine 2.0.4 refuses a schedule_f node with `Node type schedule_f is not a valid input for f1040/2025`, although the node exists in its catalogue and is marked implemented. Measured across tax years: 2025 is the only year the engine computes at all, and it will not take a farm. Farm income cannot be included in a draft return until the engine accepts it, so it is listed as an omission rather than entered and silently dropped."
+      }
+    ]
+  }
 }

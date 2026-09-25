@@ -76,7 +76,17 @@ export interface CatalogCheck {
  * computation, which is how the long filing-status names were caught.
  */
 export function mappedNodeTypes(file: NodeMapFile): string[] {
-  return [...new Set([...file.forms.map((f) => f.nodeType), 'general'])].sort();
+  const inputs = file.preparerInputs;
+  return [
+    ...new Set([
+      ...file.forms.map((f) => f.nodeType),
+      'general',
+      // The preparer-input nodes (P18). Without these the check would cover documents only, and
+      // a renamed Schedule A field would drop a preparer's typed figure exactly the way a
+      // renamed document field drops a read one.
+      ...(inputs ? [inputs.scheduleA.nodeType, ...inputs.activities.map((a) => a.nodeType)] : []),
+    ]),
+  ].sort();
 }
 
 /**
@@ -221,6 +231,112 @@ export function checkAgainstCatalog(file: NodeMapFile, catalog: EngineCatalog): 
             'deduction for an elderly or blind taxpayer silently disappears from every draft. ' +
             'Find what it was renamed to and update `GENERAL_NODE_FIELDS`.',
       });
+    }
+  }
+
+  // ── preparer inputs (P18) ──────────────────────────────────────────────────
+  //
+  // Same treatment as any other mapped field, and for the same reason: an engine field renamed
+  // between releases is accepted and ignored when it is optional, so a preparer's typed figure
+  // would vanish as silently as a document's.
+  const inputs = file.preparerInputs;
+  if (inputs) {
+    const checkNode = (nodeType: string, label: string, fields: { nodeField: string; column: string }[]): void => {
+      const node = catalog.nodes[nodeType];
+      if (!node || node.implemented === false) {
+        findings.push({
+          severity: 'blocking',
+          kind: 'node_type_absent',
+          formType: label,
+          nodeType,
+          detail:
+            `The engine has no \`${nodeType}\` node${node?.reason ? ` (${node.reason})` : ''}, so nothing a ` +
+            'preparer enters here could be computed. Either it was renamed, or this map targets a node ' +
+            'this engine release does not offer.',
+        });
+        return;
+      }
+      const known = new Set([...Object.keys(node.fields ?? {}), ...(node.otherFields ?? [])]);
+      for (const f of fields) {
+        if (known.has(f.nodeField)) continue;
+        findings.push({
+          severity: 'blocking',
+          kind: 'field_unknown',
+          formType: label,
+          nodeType,
+          engineField: f.nodeField,
+          detail:
+            `\`${nodeType}.${f.nodeField}\` (this app's \`${f.column}\`) is not a field on the engine ` +
+            'node. If it is optional there, the engine accepts the payload and ignores it — so a figure ' +
+            'the preparer typed disappears from the draft with no error anywhere.',
+        });
+      }
+    };
+
+    checkNode(inputs.scheduleA.nodeType, '(itemised deductions)', [...inputs.scheduleA.fields, ...inputs.scheduleA.flags]);
+    for (const activity of inputs.activities) checkNode(activity.nodeType, `(${activity.label})`, activity.fields);
+
+    // Dependents live on `general`, whose own top-level fields are checked below. Here: the
+    // array itself, **and the fields inside each item**.
+    //
+    // Checking only the array was a hole, found by mutation: renaming `months_in_home` sailed
+    // through, and that field is required, so every dependent would have been refused. The
+    // engine's listing puts an item field at a deeper indent, which the wrapper reports under
+    // `otherFields` — so both live in the same known-name set.
+    const generalNode = catalog.nodes[inputs.dependents.nodeType];
+    if (generalNode && generalNode.implemented !== false) {
+      const known = new Set([...Object.keys(generalNode.fields ?? {}), ...(generalNode.otherFields ?? [])]);
+      if (!known.has(inputs.dependents.nodeField)) {
+        findings.push({
+          severity: 'blocking',
+          kind: 'field_unknown',
+          formType: '(dependents)',
+          nodeType: inputs.dependents.nodeType,
+          engineField: inputs.dependents.nodeField,
+          detail:
+            `\`${inputs.dependents.nodeType}.${inputs.dependents.nodeField}\` is not a field on the engine ` +
+            'node, so no dependent a preparer entered would reach the return — and with it the child tax ' +
+            'credit and the dependent-related parts of the standard deduction.',
+        });
+      } else {
+        for (const f of inputs.dependents.fields) {
+          if (known.has(f.nodeField)) continue;
+          findings.push({
+            severity: 'blocking',
+            kind: 'field_unknown',
+            formType: '(dependents)',
+            nodeType: inputs.dependents.nodeType,
+            engineField: f.nodeField,
+            detail:
+              `\`${inputs.dependents.nodeField}[].${f.nodeField}\` (this app's \`${f.column}\`) is not a ` +
+              'field on the engine node. A required one refuses every dependent outright; an optional one ' +
+              'is accepted and ignored, so what the preparer entered quietly does not count.',
+          });
+        }
+      }
+    }
+
+    // And the other half of every `supersedes` pair: the document field it displaces must still
+    // exist, or the app would withhold a field the engine no longer has and leave the preparer's
+    // figure to be discarded by whatever replaced it.
+    for (const field of inputs.scheduleA.fields) {
+      for (const sup of field.supersedes) {
+        const node = catalog.nodes[sup.nodeType];
+        if (!node || node.implemented === false) continue; // already reported above
+        const known = new Set([...Object.keys(node.fields ?? {}), ...(node.otherFields ?? [])]);
+        if (known.has(sup.nodeField)) continue;
+        findings.push({
+          severity: 'advisory',
+          kind: 'field_unknown',
+          formType: sup.formType,
+          nodeType: sup.nodeType,
+          engineField: sup.nodeField,
+          detail:
+            `\`${sup.nodeType}.${sup.nodeField}\` is declared as superseded by the preparer's ` +
+            `\`${field.nodeField}\`, but the engine no longer has it. The override is withholding a field ` +
+            'that does not exist; re-run `npm run draft:conflicts` and re-check which side the engine uses.',
+        });
+      }
     }
   }
 
