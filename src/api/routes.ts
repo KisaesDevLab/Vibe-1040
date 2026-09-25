@@ -700,7 +700,12 @@ export function registerRoutes(app: FastifyInstance): void {
     const query = z
       .object({
         filingStatus: z.string().optional(),
-        download: z.coerce.boolean().optional(),
+        // Not z.coerce.boolean(): that reads the *string* 'false' as true, so
+        // ?download=false would download. Same shape as the env parser's bool.
+        download: z
+          .enum(['true', 'false', '1', '0'])
+          .transform((v) => v === 'true' || v === '1')
+          .optional(),
       })
       .parse(req.query);
 

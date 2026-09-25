@@ -29,12 +29,14 @@ at all. See External dependencies below and QUESTIONS.md Q11.
 
 - `npx vitest run`: **328 pass across 27 files, none skipped**, with a real Postgres.
   **85 are new**, across seven new files. Nothing regressed.
-  **One file is excluded and it matters:** `test/sso.test.ts` cannot load
+  **One file was excluded locally:** `test/sso.test.ts` cannot load
   `@kisaesdevlab/vibe-auth`, which needs a `read:packages` token that was not available in
-  this environment. Its 47 tests did not run, and `npm run build` and `npm run typecheck`
-  both still fail on implicit-`any` errors in `src/lib/vibeAuth*.ts` from that package's
-  absent types. **Everything about P16 is therefore unverified by this change set.**
-  Outside those two files, `tsc --noEmit` is clean and `dist/draft/` emits.
+  the development environment, and that absence also made `npm run build` and
+  `npm run typecheck` fail on implicit-`any` errors in `src/lib/vibeAuth*.ts`. Outside those
+  two files `tsc --noEmit` was clean and `dist/draft/` emitted.
+  **CI closed that gap** (run 47, all four jobs green): it has the token, so there it
+  type-checked, migrated up/down/up, ran the **whole** suite including `sso.test.ts`'s 47
+  tests, built, built the UI, and passed the fixture drift check. P16 is not disturbed.
 - **Two guarantees were checked by mutation**, not argued:
   1. **A blank never becomes a zero at the engine boundary** (§5, §14 rule 1). Switch the
      guard to zero-fill and exactly three tests fail: the optional blank box, the
@@ -94,7 +96,10 @@ at all. See External dependencies below and QUESTIONS.md Q11.
   reasoned, not observed.
 - The `draft-input`, `draft-return` and `draft-return/status` routes have not been exercised
   over HTTP. They type-check and their gate wiring is covered at the service layer, not the
-  route layer.
+  route layer. Two small route-level defects were found by reading rather than running, and
+  fixed: `?download=false` parsed as true (`z.coerce.boolean()` reads the *string* `'false'`
+  as true), and the node map's `engine.pinnedVersion` was declared and then read by nothing,
+  so a map written against one engine release could sit under another without a word.
 - **The UI panel has been compiled, not looked at.** No browser has rendered it.
 - The `Draft Return` workbook sheet is asserted against a parsed workbook, not opened in Excel.
 - **P17 has not exited, and neither of its gates has moved** — Q21 is unanswered and no real

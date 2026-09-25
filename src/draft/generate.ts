@@ -74,14 +74,25 @@ export async function generateDraftReturn(
 
   const result = await computeReturn(taxYear, input.nodes);
 
-  if (result.engineVersion !== env.OPENTAX_VERSION && result.engineVersion !== 'unknown') {
-    // Not fatal, but never silent: a node map that drifts under the engine produces plausible
-    // wrong numbers, which is the one outcome worth shouting about.
-    console.warn(
-      `[draft] engine reports ${result.engineVersion} but OPENTAX_VERSION is ` +
-        `${env.OPENTAX_VERSION}; the ${file.version} node map was written against the latter. ` +
-        'Re-check the map before trusting these figures.',
-    );
+  // Two pins, and they answer different questions: the node map says which engine release it
+  // was *written against*, and OPENTAX_VERSION says what this deployment *intends* to run.
+  // Either disagreeing with what the engine actually reports means a mapping may have drifted
+  // under it, which produces plausible wrong numbers — the one outcome worth shouting about.
+  // Not fatal, because a version string is weaker evidence than the harness, but never silent.
+  if (result.engineVersion !== 'unknown') {
+    const disagrees: string[] = [];
+    if (result.engineVersion !== file.engine.pinnedVersion) {
+      disagrees.push(`the ${file.version} node map was written against ${file.engine.pinnedVersion}`);
+    }
+    if (result.engineVersion !== env.OPENTAX_VERSION) {
+      disagrees.push(`OPENTAX_VERSION pins ${env.OPENTAX_VERSION}`);
+    }
+    if (disagrees.length > 0) {
+      console.warn(
+        `[draft] the engine reports ${result.engineVersion}, but ${disagrees.join(' and ')}. ` +
+          'Re-check the node map and run `npm run draft -- --truth` before trusting these figures.',
+      );
+    }
   }
 
   // The firm's own rounding tolerance (§6), not a second one invented here.
