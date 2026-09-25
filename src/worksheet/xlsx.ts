@@ -26,6 +26,7 @@
 import ExcelJS from 'exceljs';
 import { centsToDollars, formatCents } from '../lib/money.ts';
 import type { WorksheetModel } from '../mapping/engine.ts';
+import type { DraftSheetModel } from './draft-sheet.ts';
 import type { WorksheetContext } from './model.ts';
 import { compareFormTypes } from './form-order.ts';
 import { documentTitle, pagesLabel, type ReviewCheck, type ReviewDocument, type ReviewField, type ReviewModel } from './review.ts';
@@ -41,6 +42,7 @@ const FILL_MISMATCH = fill('FFF8CBAD'); // value not in the spans it cites — a
 const FILL_CORRECTED = fill('FFE2EFDA'); // a reviewer changed it; note shows the model's read
 const FILL_JUDGMENT = fill('FFDDEBF7'); // Judgment Required (§9)
 const FILL_UNREAD = fill('FFEDEDED'); // the binder never returned this field
+const FILL_COMPUTED = fill('FFEAD1DC'); // computed by the OpenTax engine — advisory (§14)
 
 const REVIEW_LABEL: Record<string, string> = {
   no_span: 'No layout span supports this value (§4). Confirm against the page.',
@@ -541,9 +543,114 @@ function renderProvenance(wb: ExcelJS.Workbook, review: ReviewModel, ctx: Worksh
   sheet.addRow(['Bundle id', ctx.bundleId]);
 }
 
+// ── draft return (P17) ───────────────────────────────────────────────────────
+
+/**
+ * The engine's computed lines beside this app's reported totals (§14).
+ *
+ * Three things this sheet must not let a reader forget, because a spreadsheet full of tax
+ * figures reads as authoritative whatever the header says:
+ *
+ *  - Every computed figure is **advisory**, and the engine and its version are named.
+ *  - The draft is **incomplete**, and the omissions are on the same sheet rather than a
+ *    different one. A preparer who reads only this sheet must still see what is missing.
+ *  - A **zero the engine computed for a line it received no documents for is not a zero the
+ *    documents reported.** That is the whole reason the omissions list is load-bearing: the
+ *    two are indistinguishable in the figure alone.
+ */
+function renderDraftReturn(wb: ExcelJS.Workbook, draft: DraftSheetModel): void {
+  const sheet = wb.addWorksheet('Draft Return');
+  sheet.columns = [
+    { header: 'Line', key: 'line', width: 16 },
+    { header: 'Description', key: 'label', width: 54 },
+    { header: 'Documents report', key: 'reported', width: 18, style: { numFmt: MONEY } },
+    { header: 'Engine computes', key: 'computed', width: 18, style: { numFmt: MONEY } },
+    { header: 'Difference', key: 'delta', width: 14, style: { numFmt: MONEY } },
+    { header: 'Agreement', key: 'verdict', width: 20 },
+    { header: 'Note', key: 'note', width: 80 },
+  ];
+  headerRow(sheet);
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  sheet.autoFilter = { from: 'A1', to: 'G1' };
+
+  const VERDICT: Record<string, string> = {
+    agrees: 'agrees',
+    differs: 'DIFFERS — look',
+    engine_silent: 'engine has nothing',
+    worksheet_silent: 'worksheet has nothing',
+    both_blank: 'neither',
+    computed_only: 'computed only',
+  };
+
+  for (const line of draft.lines) {
+    const row = sheet.addRow({
+      line: line.lineRef ?? '',
+      label: line.label,
+      reported: line.reportedCents === null ? null : centsToDollars(line.reportedCents),
+      computed: line.computedCents === null ? null : centsToDollars(line.computedCents),
+      delta:
+        line.reportedCents === null || line.computedCents === null
+          ? null
+          : centsToDollars(line.computedCents - line.reportedCents),
+      verdict: VERDICT[line.verdict] ?? line.verdict,
+      note: line.note ?? '',
+    });
+    row.getCell('computed').fill = FILL_COMPUTED;
+    if (line.verdict === 'differs') {
+      row.getCell('verdict').font = { bold: true, color: { argb: 'FFC00000' } };
+    }
+  }
+
+  sheet.addRow([]);
+  const omissionHeader = sheet.addRow(['Not in this draft']);
+  omissionHeader.font = { bold: true, size: 12 };
+  const why = sheet.addRow([
+    'Everything below was left out of the computation, and the figures above are wrong by ' +
+      'whatever it would have contributed. A line the engine received no documents for ' +
+      'computes to zero, and that zero looks exactly like a zero the documents reported — ' +
+      'which is why this list is part of the answer rather than an appendix to it.',
+  ]);
+  why.font = { italic: true };
+  sheet.mergeCells(why.number, 1, why.number, 7);
+  why.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+  sheet.getRow(why.number).height = 46;
+
+  const cols = sheet.addRow(['Form', 'Field', 'Reason', 'Why', '', '', '']);
+  cols.font = { bold: true };
+
+  if (draft.omissions.length === 0) {
+    sheet.addRow(['—', '', '', 'Nothing was left out.']);
+  }
+  for (const o of draft.omissions) {
+    const row = sheet.addRow([
+      o.formType ?? '—',
+      o.fieldKey ?? '',
+      o.reason.replace(/_/g, ' '),
+      o.detail,
+    ]);
+    row.getCell(4).alignment = { wrapText: true, vertical: 'top' };
+  }
+
+  if (draft.validations.length > 0) {
+    sheet.addRow([]);
+    sheet.addRow(["Engine's own business-rule diagnostics"]).font = { bold: true, size: 12 };
+    const vcols = sheet.addRow(['Severity', 'Code', 'Message', '', '', '', '']);
+    vcols.font = { bold: true };
+    for (const v of draft.validations) {
+      const row = sheet.addRow([v.severity, v.code, v.message]);
+      if (v.severity === 'hard') row.getCell(1).font = { bold: true, color: { argb: 'FFC00000' } };
+    }
+  }
+}
+
 // ── the workbook ─────────────────────────────────────────────────────────────
 
-export async function buildXlsx(model: WorksheetModel, ctx: WorksheetContext, review?: ReviewModel): Promise<Buffer> {
+export async function buildXlsx(
+  model: WorksheetModel,
+  ctx: WorksheetContext,
+  review?: ReviewModel,
+  draft?: DraftSheetModel,
+): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Vibe 1040';
   wb.created = ctx.generatedAt;
@@ -718,6 +825,10 @@ export async function buildXlsx(model: WorksheetModel, ctx: WorksheetContext, re
     renderChecks(wb, review);
     renderProvenance(wb, review, ctx);
   }
+
+  // Last, and only when a draft return has actually been computed. A workbook without this
+  // sheet is the normal case (§14: off by default).
+  if (draft) renderDraftReturn(wb, draft);
 
   const out = await wb.xlsx.writeBuffer();
   return Buffer.from(out);

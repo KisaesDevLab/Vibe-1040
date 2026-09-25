@@ -61,12 +61,27 @@ if (group === 'return' && sub === 'get') {
     .split('\n')
     .filter(Boolean)
     .map((l) => JSON.parse(l));
-  const wages = entries
-    .filter((e) => e.nodeType === 'w2')
-    .reduce((n, e) => n + Number(e.payload.box1_wages ?? 0), 0);
-  const withheld = entries
-    .filter((e) => e.nodeType === 'w2')
-    .reduce((n, e) => n + Number(e.payload.box2_fed_withheld ?? 0), 0);
+  const sum = (nodeType, field) =>
+    entries
+      .filter((e) => e.nodeType === nodeType)
+      .reduce((n, e) => n + Number(e.payload[field] ?? 0), 0);
+
+  const wages = sum('w2', 'box1_wages');
+  const withheld = sum('w2', 'box2_fed_withheld');
+  // Enough arithmetic for the harness to be scored against something. Still not the engine:
+  // these are plain sums, with no ordering, phase-out or characterization anywhere.
+  const interest = sum('f1099int', 'box1') + sum('f1099oid', 'box2_other_interest');
+  const ordinaryDividends = sum('f1099div', 'box1a');
+  const qualifiedDividends = sum('f1099div', 'box1b');
+  const mortgageInterest = sum('f1098', 'box1_mortgage_interest');
+  // Routed on box 7's IRA/SEP/SIMPLE indicator, as the real form is: IRA distributions to
+  // line 4a, everything else to 5a. Enough to make a §9 withholding regression visible.
+  const iraGross = entries
+    .filter((e) => e.nodeType === 'f1099r' && e.payload.box7_ira_simple_indicator === true)
+    .reduce((n, e) => n + Number(e.payload.box1_gross_distribution ?? 0), 0);
+  const pensionGross = entries
+    .filter((e) => e.nodeType === 'f1099r' && e.payload.box7_ira_simple_indicator !== true)
+    .reduce((n, e) => n + Number(e.payload.box1_gross_distribution ?? 0), 0);
 
   process.stdout.write(
     `${JSON.stringify({
@@ -78,10 +93,17 @@ if (group === 'return' && sub === 'get') {
         f1040: {
           line1a_wages: wages,
           line1z_total_wages: wages,
+          line2b_taxable_interest: interest,
+          line3a_qualified_dividends: qualifiedDividends,
+          line3b_ordinary_dividends: ordinaryDividends,
+          line4a_ira_gross: iraGross,
+          line5a_pension_gross: pensionGross,
           line25a_w2_withheld: withheld,
-          line11_agi: wages,
-          line15_taxable_income: wages - 15_750,
+          line9_total_income: wages + interest + ordinaryDividends,
+          line11_agi: wages + interest + ordinaryDividends,
+          line15_taxable_income: wages + interest + ordinaryDividends - 15_750,
         },
+        schedule_a: { line8a_mortgage_interest: mortgageInterest },
       },
       warnings: entries.length === 0 ? ['no forms were added'] : [],
     })}\n`,

@@ -88,6 +88,19 @@ off, exactly three tests fail. **Do not weaken it to make a draft look more comp
 draft is too sparse to be useful, the answer is better extraction or more reviewer-stated inputs,
 never a default of zero.
 
+### The reason this list is load-bearing
+
+An engine computes a line it received no documents for as **zero**. That zero is
+indistinguishable from a zero the documents actually reported — the figure alone cannot tell a
+preparer which it is. Found while building the harness, and it is the whole argument for the
+omissions contract: without the list, a withheld SSA-1099 shows as `0.00` on line 6a and reads
+as a taxpayer with no social security income.
+
+So the omissions go **above** the figures in the UI panel, on the **same sheet** as the figures
+in the workbook, and in `draft_return_omissions` beside `draft_return_lines` in the database.
+Every surface says in words that the figures are wrong by whatever was left out. Moving them to
+a second screen, a second sheet or a footnote would undo the feature's only real safeguard.
+
 ## 4. The node map
 
 `data/opentax-nodes/<year>.json`, loaded by `src/draft/nodes.ts`. Data, not code, for the same
@@ -152,11 +165,42 @@ Each of these is a real limit, recorded so nobody re-litigates it from scratch:
 3. Change what moved. The loader will refuse the file if a registered form type is undeclared or
    a box is neither mapped nor ignored, so the failure mode is a startup error, not a wrong number.
 4. `npx vitest run test/draft-nodes.test.ts`.
-5. Run the harness (`npm run draft`) before believing any of it.
+5. Run the harness before believing any of it:
+
+```bash
+npm run draft -- --truth            # node map + engine, extraction not involved
+npm run draft -- --truth --bundle irs-official-forms-2025
+npm run draft -- <bundleId>         # extraction + node map + engine, together
+```
+
+`--truth` builds engine input straight from the fixture manifest's ground-truth values, so it
+needs no database and no pipeline run. The difference between the two modes is the point: a line
+that is right under `--truth` and wrong for a real bundle is an **extraction** defect; wrong in
+both is the **node map or the engine**. That separation is the thing STATE.md has been unable to
+measure since the build began.
+
+Expected 1040 line values live in `expectedDraftReturn` in `test/fixtures/manifest.json`, derived
+by addition from the printed boxes — never by running this repo's code, or the harness would be
+scoring the mapping against itself. `engineVisible` is what the engine should see after §14
+withholding; where it differs from `worksheetReported`, `withheldBecause` names the rule.
 
 ## 6. Operator notes
 
-Not yet applicable — stage 2 is not built. When it is:
+**The engine is off unless you turn it on.** `DRAFT_RETURN_ENABLED=false` is the default, and
+the compose service is behind a profile so nothing pulls it:
+
+```bash
+# build the engine image against a pinned release
+docker compose --profile draft-return build \
+  --build-arg OPENTAX_VERSION=v0.1.0 \
+  --build-arg OPENTAX_SHA256=<sha256 of opentax-linux-x64> opentax
+docker compose --profile draft-return up -d opentax
+# then set DRAFT_RETURN_ENABLED=true and OPENTAX_VERSION=v0.1.0 in .env and restart the api
+```
+
+`OPENTAX_VERSION` is compared against what the sidecar reports, and a mismatch is logged loudly
+on every draft — a node map must not drift under the engine. Check `/health`: it carries a
+`draftReturn` block saying `off`, or the engine's reachability and version.
 
 - The engine will be a **separate `opentax` compose service** on a glibc base. The app's runtime
   image is `node:24-alpine` and a `deno compile` binary will not run there. The queue-style

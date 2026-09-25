@@ -2,6 +2,8 @@ import type {
   AuditRow,
   Bundle,
   CheckRow,
+  DraftReturn,
+  StoredDraftReturn,
   DocumentRow,
   EnvSetting,
   FactorState,
@@ -281,6 +283,35 @@ Proceed and discard them?`)) return { ok: false };
       bundles: { bundleId: string; label: string }[];
       rejected: { filename: string; reason: string }[];
     }>;
+  },
+
+  // ── draft return (P17, §14) ───────────────────────────────────────────────
+
+  /** Whether this deployment offers a draft return at all, and whether the engine is up. */
+  draftReturnStatus: () =>
+    request<{
+      enabled: boolean;
+      engine: { ok: boolean; version: string | null; reason?: string } | null;
+      expectedVersion: string;
+    }>('/api/draft-return/status'),
+
+  /**
+   * Compute a draft return. `filingStatus` is stated by the reviewer because no source
+   * document carries it — that is the preparer making a determination, not the app inferring
+   * one from a pile of forms (§11).
+   */
+  computeDraftReturn: (bundleId: string, filingStatus: string) =>
+    request<DraftReturn>(`/api/bundles/${bundleId}/draft-return`, {
+      method: 'POST',
+      body: JSON.stringify({ filingStatus }),
+    }),
+
+  /** The most recent stored draft return, or null when none has been computed. */
+  draftReturn: async (bundleId: string): Promise<StoredDraftReturn | null> => {
+    const res = await fetch(`/api/bundles/${bundleId}/draft-return`, { credentials: 'same-origin' });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`draft return failed: ${res.status}`);
+    return res.json() as Promise<StoredDraftReturn>;
   },
 
   renameBundle: (id: string, label: string) =>

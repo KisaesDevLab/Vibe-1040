@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { LoginPanel } from '@kisaesdevlab/vibe-auth/react';
 import { api, formatCents } from './api';
+import { DraftReturnPanel } from './components/DraftReturnPanel.tsx';
 import { FieldEditor } from './components/FieldEditor';
 import { PageOverlay } from './components/PageOverlay';
 import { Admin } from './components/Admin';
@@ -1008,6 +1009,8 @@ function Review({ onBack, onError }: { onBack: () => void; onError: (m: string) 
                 )}
               </div>
             ))}
+
+          <DraftReturnPanel bundleId={bundleId} onError={onError} />
         </aside>
       </div>
     </div>

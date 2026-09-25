@@ -52,11 +52,12 @@ async function doc(
   formType: string,
   fields: Record<string, DraftFieldValue>,
   documentId = 'doc-1',
+  taxYear = 2025,
 ): Promise<DraftDocument> {
   const reg = await registry();
   const schema = reg.get(formType, 2025);
   if (!schema) throw new Error(`no 2025 schema for ${formType}`);
-  return { documentId, formType, schema, fields: new Map(Object.entries(fields)) };
+  return { documentId, formType, taxYear, schema, fields: new Map(Object.entries(fields)) };
 }
 
 /** A W-2 that satisfies the engine's required fields. */
@@ -234,6 +235,42 @@ describe('judgment stays with the preparer (§9, §11)', () => {
     expect(input.nodes).toHaveLength(0);
     const omission = input.omissions.find((o) => o.reason === 'form_type_unmappable');
     expect(omission?.detail).toContain('per-lot');
+  });
+});
+
+describe('a document from another season stays out of the arithmetic', () => {
+  it('withholds a prior-year 1098 and says which year it is', async () => {
+    const prior = await doc(
+      '1098',
+      { recipient_name: text('BIG BANK'), box_1: money(1_341_900) },
+      'doc-prior',
+      2024,
+    );
+    const input = buildDraftInput(await nodeMap(), [prior]);
+    expect(input.nodes.some((n) => n.nodeType === 'f1098')).toBe(false);
+    const omission = input.omissions.find((o) => o.reason === 'off_year_document');
+    expect(omission?.detail).toContain('is for 2024 and the bundle is 2025');
+  });
+
+  it('lets the current-year 1098 through beside it', async () => {
+    const current = await doc(
+      '1098',
+      { recipient_name: text('BIG BANK'), box_1: money(1_284_400) },
+      'doc-current',
+      2025,
+    );
+    const prior = await doc(
+      '1098',
+      { recipient_name: text('BIG BANK'), box_1: money(1_341_900) },
+      'doc-prior',
+      2024,
+    );
+    const input = buildDraftInput(await nodeMap(), [current, prior]);
+    const nodes = input.nodes.filter((n) => n.nodeType === 'f1098');
+    // Exactly one, and it is this season's number — not the sum of both.
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]!.payload['box1_mortgage_interest']).toBe(12_844);
+    expect(input.documentsWithheld).toBe(1);
   });
 });
 

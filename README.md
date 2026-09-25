@@ -167,6 +167,7 @@ Three data files, no code:
 npm run db:migrate      # forward
 npm run db:rollback     # back one migration
 npm run retention       # purge per the retention schedule; RETENTION_DRY_RUN=true to preview
+npm run draft -- --truth   # score the draft return against the fixture ground truth (P17)
 ```
 
 Retention runs on the operator's schedule — there are no auto-update timers. Rasterized

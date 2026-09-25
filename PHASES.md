@@ -362,7 +362,9 @@ appears in no layer. The appliance LAN-box check waits on Q19.
 **Depends on:** P6 (form schemas), P8 (bound field values), P9 (the gate it reuses), P10 and
 P12 (the reported totals a computed line is compared against), and P11 (the surface it renders
 on). **Severable**, like P15 and P16: with `DRAFT_RETURN_ENABLED` unset nothing in this phase
-runs and the app behaves exactly as v0.10.0 did. **No Router work required** — the engine is
+runs, no OpenTax code is present, and the app behaves exactly as v0.10.0 did.
+**All three stages implemented 2026-09-25** (migration 0012); the phase has not exited — see
+STATE.md and the exit criteria below. **No Router work required** — the engine is
 deterministic, local, and involves no inference and no egress.
 
 Hands the amounts this app read to [OpenTax](https://opentax.filed.com/), a deterministic

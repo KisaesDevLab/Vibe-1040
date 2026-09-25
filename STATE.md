@@ -11,8 +11,9 @@ do not infer progress from the commit log.
 **Phase:** P0–P15 — **all phases implemented 2026-08-26**; **P16 (single sign-on) implemented
 2026-09-19**, merged to main 2026-09-22 (PR #1, merge `84c3918`) and **released as v0.10.0**
 the same day so the appliance can register against a real image. **P17 (draft return via
-OpenTax) — stage 1 implemented 2026-09-25**; stages 2 and 3 not started.
-**Status:** P0–P16 code complete and **integration-unverified** (see below); P17 part-built.
+OpenTax) — implemented 2026-09-25**, all three stages, carrying migration 0012.
+**Status:** P0–P16 code complete and **integration-unverified**; P17 code complete and
+**engine-unverified** — no real OpenTax binary has ever run (see below).
 **Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
 lands (QUESTIONS.md Q11). P16 cannot *exit* until it has been signed into from a real browser
 against a real Vibe Auth (below). P17 cannot *exit* until Q21 is answered and the fixture
@@ -24,38 +25,80 @@ at all. See External dependencies below and QUESTIONS.md Q11.
 
 ### What "code complete" means here, precisely
 
-**Verified by execution on 2026-09-25** (P17 stage 1: the translator. No migration; no engine):
+**Verified by execution on 2026-09-25** (P17, all three stages; carries **migration 0012**):
 
-- `npx vitest run`: **270 pass across 21 files, 55 skipped across 2**, of which **35 passing
-  are new** — `test/draft-nodes.test.ts` (14) and `test/draft-translate.test.ts` (21). Nothing
-  regressed. The 55 skips are the database-backed files and are read as a gap, not a pass;
-  see "Not verified" below.
-- **The blank-is-not-zero guard was checked by mutation.** With the guard switched off to
-  zero-fill instead of withholding, exactly three tests fail: the optional blank box, the
-  engine-required blank box, and the partially-read 1095-A year. Restored, all 21 pass. This is
-  the one place in the build where §5 could be destroyed silently, so it is pinned that way
-  rather than argued.
-- The shipped node map is complete and self-consistent, demonstrated rather than asserted: all
-  **28** registered form types declared (15 mapped, 13 unmappable-with-a-reason), every field of
-  every mapped form accounted for exactly once, no engine field targeted twice, and every
-  `sensitive: 'tin'` field `ignored` with reason `tin_withheld`. Six separate load-time refusals
-  are tested by mutating a loaded map: a dropped field, an unknown field key, a dropped form
-  type, a form both mapped and unmappable, two boxes aimed at one engine field, and a missing
-  year.
-- `tsc --noEmit` reports **no errors in `src/draft/`, `src/api/routes.ts` or
-  `src/worksheet/generate.ts`**; `npm run check:providers` is clean.
-- `loadMappedDocuments` was extracted from `buildModelForBundle` so the worksheet and the draft
-  return resolve a bundle's documents through one path and cannot disagree about which documents
-  it holds. P12's tests still pass unchanged.
-- **Not verified, and none of it is small:** no OpenTax binary has been run, so **no draft
-  return has ever been computed** — stage 1 deliberately stops at the engine's door. The
-  `draft-input` route has not been exercised over HTTP; it type-checks and its gate wiring is
-  read, not run. **`npm test` could not be run in full**: `@kisaesdevlab/vibe-auth` needs a
-  `read:packages` token that was not available, so 55 tests skipped (every `pipeline.test.ts` and
-  `sso.test.ts` case) for want of the compose Postgres, and `tsc` still reports implicit-`any`
-  errors in `src/lib/vibeAuth*.ts` from the absent package's missing types. A green run with
-  skips has not tested those paths. **P17 has not exited and neither of its gates has moved.**
+- `npx vitest run`: **328 pass across 27 files, none skipped**, with a real Postgres.
+  **85 are new**, across seven new files. Nothing regressed.
+  **One file is excluded and it matters:** `test/sso.test.ts` cannot load
+  `@kisaesdevlab/vibe-auth`, which needs a `read:packages` token that was not available in
+  this environment. Its 47 tests did not run, and `npm run build` and `npm run typecheck`
+  both still fail on implicit-`any` errors in `src/lib/vibeAuth*.ts` from that package's
+  absent types. **Everything about P16 is therefore unverified by this change set.**
+  Outside those two files, `tsc --noEmit` is clean and `dist/draft/` emits.
+- **Two guarantees were checked by mutation**, not argued:
+  1. **A blank never becomes a zero at the engine boundary** (§5, §14 rule 1). Switch the
+     guard to zero-fill and exactly three tests fail: the optional blank box, the
+     engine-required blank box, and the partially-read 1095-A year.
+  2. **No taxpayer amount survives a draft-return request.** Remove the wrapper's state
+     cleanup and the test fails on a sentinel amount found on disk.
+- **Migration 0012 ran forward, back, and forward again** against a real Postgres: four
+  tables and their indexes appear, disappear with no residue (no leftover index rows), and
+  reappear. `schema_migrations` returns to 0011 and back to 0012.
+- **The wrapper and the client were driven over real HTTP against a real child process**
+  (`test/helpers/fake-opentax.mjs` standing in for the binary): the `create → add × n → get →
+  validate` sequence, a refused node reported without losing the rest of the draft,
+  diagnostics split with an unclassified one treated as hard, per-request state isolation
+  proven by two concurrent drafts not summing together, and the absent-engine path reporting
+  `engine_unreachable` rather than throwing something a route turns into a 500.
+- **The whole draft-return path ran end to end** (`test/draft-return.test.ts`, real database):
+  the gate refuses a blocked bundle and an unconfirmed identity and the refusals come from
+  `assertWorksheetAllowed`; the withheld SSA-1099 survives as a durable omission naming box 3;
+  computed-only figures store with no line ref; disposal is logged to `purge_log`.
+- **`npm run draft -- --truth` ran and scored**: 13 lines agreed, 0 disagreed, 2 not compared,
+  exit 0, across all five fixture bundles. Seeded with defects it caught each and exited 1 —
+  a misrouted node field (`1040:1a` expected 255,000.00, got 0.00) and the §9 judgment rule
+  removed (`1040:5a` expected 0.00, got 25,000.00). A third seeded defect was caught at
+  *load* instead, by the node map's own consistency check, before the harness ran.
+- The UI builds with the new panel (35 modules) and `ui/` type-checks — both with
+  `@kisaesdevlab/vibe-auth` externalised, because it cannot be installed here.
+- `npm run check:providers` clean. Enabling the draft return adds **no inference and no
+  egress**: the engine is deterministic and runs on the appliance.
 
+**Five things were found by running it, not by reading it:**
+
+1. **The wrapper's version regex truncated a prerelease** — `0.1.0-rc.1` reported as `0.1.0`,
+   which would have passed the `OPENTAX_VERSION` check that exists to catch exactly that.
+2. **A null `taxYear` coerced to 0** through `Number()`, so a draft could have been labelled
+   year 0 rather than refused.
+3. **Nothing stopped an off-year document feeding the engine.** The `1098_prior_year.pdf`
+   fixture would have added last season's mortgage interest to this season's computation. §6
+   flags the year mismatch as a soft failure precisely because it is a real preparer error, so
+   a new `off_year_document` rule now withholds it. The worksheet still reports it, annotated.
+4. **A hand-derived expectation was wrong**, and reading the line mapping caught it: the
+   fixture 1099-R has box 7's IRA/SEP/SIMPLE box unchecked, so its gross distribution is a
+   pension on line 5a, not an IRA distribution on 4a.
+5. **A withheld line's expected value is a computed zero, not nothing.** An engine computes a
+   line it received no documents for as `0`, and that zero is indistinguishable from a zero the
+   documents reported. This is the sharpest argument for the omissions contract being part of
+   the answer rather than an appendix to it, and it is now said that way in §14, in the
+   workbook sheet, and in the UI panel.
+
+**Not verified, and none of it is small:**
+
+- **No real OpenTax binary has ever run, so no draft return has been computed by the actual
+  engine.** Every figure in every test came from a stand-in that does plain sums with no
+  ordering, phase-out or characterization anywhere. `npm run draft` proves the *harness*
+  works; it says nothing yet about the engine's arithmetic.
+- **`opentax/Dockerfile` has never been built.** It needs a published release and its SHA-256,
+  and neither exists here. Whether `deno compile` output runs on `node:24-bookworm-slim` is
+  reasoned, not observed.
+- The `draft-input`, `draft-return` and `draft-return/status` routes have not been exercised
+  over HTTP. They type-check and their gate wiring is covered at the service layer, not the
+  route layer.
+- **The UI panel has been compiled, not looked at.** No browser has rendered it.
+- The `Draft Return` workbook sheet is asserted against a parsed workbook, not opened in Excel.
+- **P17 has not exited, and neither of its gates has moved** — Q21 is unanswered and no real
+  engine has been scored.
 
 **Verified by execution on 2026-09-20** (P16 follow-up: break-glass guard, reset refusal and
 readiness check; no migration; same branch, merged 2026-09-22):
@@ -458,7 +501,7 @@ what a model returns.
 | P14 | Compliance hardening and packaging | implemented | **cannot exit** — gated on Router region pinning (Q11) |
 | P15 | K-1 support | implemented | K-1 1065/1120-S/1041, boxes as printed, all Judgment Required |
 | P16 | Single sign-on (Vibe Auth) | implemented, released v0.10.0 (2026-09-22) | **cannot exit** until signed into from a real browser against a real Vibe Auth — see Current position. OIDC via `@kisaesdevlab/vibe-auth`; SSO sessions satisfied only on `amr` proof (Q18); appliance registration outside this repo (Q19) |
-| P17 | Draft return (OpenTax) | **stage 1 implemented 2026-09-25** | translator + node map + `draft-input` export. Stages 2 (engine) and 3 (surfaces, harness) not started. **Cannot exit** until Q21 is answered and the fixture harness has actually scored — see Current position |
+| P17 | Draft return (OpenTax) | **implemented 2026-09-25** (all three stages); carries migration 0012 | translator, node map, sidecar, comparison, workbook sheet, UI panel, harness. **Cannot exit**: Q21 unanswered, and no real engine binary has ever run — every figure so far came from a stand-in. See Current position |
 
 ---
 

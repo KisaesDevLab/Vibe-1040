@@ -219,3 +219,44 @@ a.button.sso-button:hover { filter: brightness(1.08); background: var(--accent);
 a.button.sso-button[aria-disabled='true'] { opacity: 0.6; }
 .sso-divider { text-align: center; font-size: 0.85rem; }
 .sso-note { font-size: 0.85rem; margin: 0; }
+
+/* ── draft return (P17, §14) ───────────────────────────────────────────────── */
+/* Deliberately quieter than the worksheet it sits under: these figures are advisory, and
+   should not read as the more authoritative half of the screen. */
+.draft-pane { border-top: 2px solid #e6e9ef; margin-top: 18px; padding-top: 12px; }
+.draft-caveat { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0 0 10px; }
+.draft-meta { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+
+.draft-start { background: #f7f9fc; border: 1px solid #e6e9ef; border-radius: 6px; padding: 10px; }
+.draft-start label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; }
+.draft-start select { max-width: 320px; }
+.draft-hint { font-size: 11px; color: var(--muted); line-height: 1.45; margin: 6px 0 8px; }
+
+/* Omissions sit above the figures and open by default, because the figures are wrong by
+   whatever is in here. Same reasoning as Judgment Required in the worksheet preview. */
+.draft-omissions { background: #fff4ed; border: 1px solid #f3d9c6; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+.draft-omissions > summary { font-weight: 600; font-size: 12px; cursor: pointer; }
+.draft-omission { border-top: 1px solid #f3d9c6; padding: 6px 0; }
+.draft-omission-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 600; }
+.draft-reason { font-family: ui-monospace, monospace; font-size: 10px; color: #7a4b00; text-transform: uppercase; }
+.draft-omission-why { font-size: 11px; color: #7a4b00; line-height: 1.45; margin-top: 2px; }
+
+.draft-differs { font-size: 12px; font-weight: 600; color: #b42318; margin-bottom: 8px; }
+
+.draft-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.draft-table th { text-align: left; font-size: 10px; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid #e6e9ef; padding: 4px 6px; }
+.draft-table td { border-bottom: 1px solid #f0f2f5; padding: 5px 6px; vertical-align: top; }
+.draft-row-differs { background: #fef3f2; }
+.draft-ref { display: block; font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted); }
+.draft-label { display: block; }
+/* An expected disagreement says so, or the panel cries wolf and gets ignored wholesale. */
+.draft-note { display: block; font-size: 10px; color: #7a4b00; line-height: 1.4; margin-top: 2px; }
+.draft-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.draft-computed { background: #fbf3f6; font-weight: 600; }
+.draft-verdict { font-size: 10px; color: var(--muted); white-space: nowrap; }
+
+.draft-validation { margin-top: 10px; font-size: 12px; }
+.draft-validation > summary { cursor: pointer; color: var(--muted); }
+.draft-diag { font-size: 11px; padding: 3px 0; border-bottom: 1px solid #f0f2f5; }
+.draft-diag code { font-size: 10px; color: var(--muted); margin-right: 6px; }
+.draft-again { margin-top: 10px; }

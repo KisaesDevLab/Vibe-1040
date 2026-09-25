@@ -179,7 +179,15 @@ export async function generateWorksheet(
   // The Excel workbook carries the per-form recap, document index, review items, checks and
   // provenance alongside the 1040 lines; the PDF stays the line worksheet (P12).
   const review = await loadReviewModel(bundleId, model.taxYear);
-  const [xlsx, pdf] = await Promise.all([buildXlsx(model, fullCtx, review), buildPdf(model, fullCtx)]);
+  // A computed draft return rides along as its own sheet when one exists (P17, §14). Imported
+  // lazily so this module has no static dependency on the engine client, which keeps a
+  // workbook buildable on a deployment where the draft return is switched off.
+  const { draftSheetForBundle } = await import('../draft/sheet.ts');
+  const draft = await draftSheetForBundle(bundleId);
+  const [xlsx, pdf] = await Promise.all([
+    buildXlsx(model, fullCtx, review, draft ?? undefined),
+    buildPdf(model, fullCtx),
+  ]);
   const xlsxKey = keys.worksheetXlsx(bundleId, worksheetId);
   const pdfKey = keys.worksheetPdf(bundleId, worksheetId);
   await blobs.put(xlsxKey, xlsx);

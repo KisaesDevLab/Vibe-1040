@@ -203,3 +203,92 @@ export interface FactorState {
   /** The firm permits authenticators, so an undeliverable factor has a way out. */
   totpAvailable: boolean;
 }
+
+// ── draft return (P17, §14) ──────────────────────────────────────────────────
+
+export type DraftVerdict =
+  | 'agrees'
+  | 'differs'
+  | 'engine_silent'
+  | 'worksheet_silent'
+  | 'both_blank'
+  | 'computed_only';
+
+export interface DraftComparedLine {
+  lineRef: string;
+  label: string;
+  sortOrder: number;
+  engineForm: string;
+  engineLine: string;
+  reportedCents: number | null;
+  computedCents: number | null;
+  deltaCents: number | null;
+  verdict: DraftVerdict;
+  /** Why a disagreement on this line may be expected rather than a defect. */
+  note?: string;
+}
+
+export interface DraftComputedOnly {
+  engineForm: string;
+  engineLine: string;
+  label: string;
+  computedCents: number | null;
+}
+
+export interface DraftOmission {
+  documentId: string | null;
+  formType: string | null;
+  fieldKey: string | null;
+  reason: string;
+  detail: string;
+}
+
+/** What `POST /api/bundles/:id/draft-return` returns. */
+export interface DraftReturn {
+  draftReturnId: string;
+  taxYear: number;
+  engineVersion: string;
+  nodeMapVersion: string;
+  complete: boolean;
+  documentsIncluded: number;
+  documentsWithheld: number;
+  comparison: {
+    toleranceCents: number;
+    lines: DraftComparedLine[];
+    computedOnly: DraftComputedOnly[];
+    counts: Record<DraftVerdict, number>;
+    differing: DraftComparedLine[];
+  };
+  omissions: DraftOmission[];
+  validation: { hard: { code: string; message: string }[]; soft: { code: string; message: string }[] };
+  engineSummary: Record<string, number>;
+}
+
+/** What `GET /api/bundles/:id/draft-return` returns — the stored rows, as stored. */
+export interface StoredDraftReturn {
+  draftReturn: {
+    id: string;
+    taxYear: number;
+    engineVersion: string;
+    nodeMapVersion: string;
+    mappingVersion: string;
+    filingStatus: string | null;
+    complete: boolean;
+    documentsIncluded: number;
+    documentsWithheld: number;
+    createdAt: string;
+  };
+  lines: {
+    lineRef: string | null;
+    lineLabel: string;
+    sortOrder: number;
+    engineForm: string;
+    engineLine: string;
+    reportedCents: number | null;
+    computedCents: number | null;
+    verdict: string;
+    note: string | null;
+  }[];
+  omissions: { formType: string | null; fieldKey: string | null; reason: string; detail: string }[];
+  validations: { severity: string; code: string; message: string }[];
+}

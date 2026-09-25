@@ -35,6 +35,8 @@ export type DraftFieldValue = FieldValue & { needsReview?: boolean };
 export interface DraftDocument {
   documentId: string;
   formType: string;
+  /** The document's own detected year, which is not always the bundle's (§7). */
+  taxYear: number;
   schema: FormSchema;
   fields: ReadonlyMap<string, DraftFieldValue>;
 }
@@ -55,7 +57,14 @@ export type DraftOmissionReason =
   /** Negative where the engine's catalogue declares the field non-negative. */
   | 'negative_amount'
   /** Something a source-document bundle cannot know. */
-  | 'not_in_bundle';
+  | 'not_in_bundle'
+  /**
+   * The document's own tax year is not the bundle's. §6 flags this as a soft failure because
+   * a prior-year 1098 or an off-year 5498 in the pile is a real preparer error — and feeding
+   * one to a calculation engine would silently add last season's mortgage interest to this
+   * season's return.
+   */
+  | 'off_year_document';
 
 export interface DraftOmission {
   documentId: string | null;
@@ -170,6 +179,24 @@ export function buildDraftInput(
       withheldCount += 1;
       omissions.push(
         withhold(doc, null, 'form_type_unmappable', `${unmappable.reason}: ${unmappable.detail}`),
+      );
+      continue;
+    }
+
+    // Before reading a single box: a document from another season does not belong in this
+    // return's arithmetic. The worksheet still reports it and annotates the mismatch (§6);
+    // the engine must not quietly add it in.
+    if (doc.taxYear !== file.taxYear) {
+      withheldCount += 1;
+      omissions.push(
+        withhold(
+          doc,
+          null,
+          'off_year_document',
+          `This ${doc.formType} is for ${doc.taxYear} and the bundle is ${file.taxYear}. ` +
+            'It is reported on the worksheet and annotated there, but it is not added to a ' +
+            `${file.taxYear} computation.`,
+        ),
       );
       continue;
     }

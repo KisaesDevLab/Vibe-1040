@@ -554,9 +554,21 @@ them may be softened to make a draft look more complete:
    deductions, estimated payments, basis, carryovers, prior-year AGI. Filing status and the
    age/blindness flags come from the **reviewer**, never from inference over a pile of forms.
    That is the preparer making the determination, which is the right place for it.
-6. **One door.** A draft return goes through `assertWorksheetAllowed` (`src/reconcile/gate.ts`),
+6. **A document from another season stays out.** A document whose own tax year is not the
+   bundle's is withheld. §6 flags the mismatch as a soft failure precisely because a prior-year
+   1098 or an off-year 5498 in the pile is a real preparer error — and feeding one to a
+   calculation engine would quietly add last season's mortgage interest to this season's return.
+   The worksheet still reports it, annotated.
+7. **One door.** A draft return goes through `assertWorksheetAllowed` (`src/reconcile/gate.ts`),
    the same gate as the worksheet, so a bundle with an undispositioned hard failure gets no
    draft return either. Do not add a `force` flag; the gate deliberately has none.
+
+**Why the omissions list is part of the answer, not an appendix to it.** An engine computes a
+line it received no documents for as **zero**, and that zero is indistinguishable from a zero
+the documents reported. The figure alone cannot tell a preparer which it is. So the omissions
+are rendered above the figures in the UI, on the same sheet in the workbook, and stored beside
+the lines in the database — and each surface says in words that the figures are wrong by
+whatever was left out. Do not move them to a second screen, a second sheet, or a footnote.
 
 ### The node map is data
 
