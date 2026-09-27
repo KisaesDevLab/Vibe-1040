@@ -78,6 +78,19 @@ import { buildModelForBundle, generateWorksheet } from '../worksheet/generate.ts
 import { assertWorksheetAllowed, ExtractionIncompleteError, IdentityNotConfirmedError, WorksheetBlockedError } from '../reconcile/gate.ts';
 import { auditAccess, requireRole, requireUser } from './middleware.ts';
 
+/**
+ * `YYYY-MM-DD` names a day that exists. `2025-13-45` matches the regex and is not a date;
+ * `Date.UTC` would silently roll it into 2026, so the parts are checked by round-tripping.
+ */
+export function isRealCalendarDate(value: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return false;
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (year < 1900) return false;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
 /** Queue every source file of a freshly ingested bundle for rasterisation. */
 async function queueRasterisation(result: IngestResult, userId: string): Promise<void> {
   const fileRows = await db.select().from(sourceFiles).where(eq(sourceFiles.bundleId, result.bundleId));
@@ -109,10 +122,19 @@ export function registerRoutes(app: FastifyInstance): void {
     service: 'vibe-1040',
     // Degraded but serving: existing bundles remain readable when the router is down (§3).
     router: isRouterReachable() ? 'reachable' : 'unreachable',
-    // Same posture for the draft-return engine (P17): 'off' when the deployment has not
-    // enabled it, and a reachability report when it has. Never a reason for `ok: false` —
-    // an optional checking aid does not make the appliance unhealthy.
-    draftReturn: await draftReturnStatus(),
+    /**
+     * Same posture for the draft-return engine (P17): 'off' when the deployment has not
+     * enabled it, and a reachability report when it has. Never a reason for `ok: false` — an
+     * optional checking aid does not make the appliance unhealthy.
+     *
+     * **`liveness: true` is what makes that sentence true.** It was here before and it was a
+     * lie: this awaited a live probe of the sidecar with a five-second budget, and the
+     * container's healthcheck allows five seconds, so an unreachable engine meant the
+     * healthcheck could never pass and the appliance failed to come up at all (2026-09-27).
+     * The body said healthy; the latency said otherwise. The engine's reachability now comes
+     * from a background probe and this route waits for nothing.
+     */
+    draftReturn: await draftReturnStatus(undefined, { liveness: true }),
   }));
 
   // ── auth ───────────────────────────────────────────────────────────────────
@@ -735,11 +757,43 @@ export function registerRoutes(app: FastifyInstance): void {
     return draftInputsForBundle(id);
   });
 
+  /**
+   * A preparer-typed money figure, in cents.
+   *
+   * Bounded on both sides, and the bounds are not cosmetic. Found by the 2026-09-27 QA pass:
+   * `z.number().int()` accepted 9,999,999,999,999,900 — past `Number.MAX_SAFE_INTEGER` — and
+   * Postgres stored it as a bigint without complaint. `src/db/client.ts` then refused to read it
+   * back, so every later `GET /draft-inputs` and every draft return for that bundle was a 500
+   * until someone edited the row by hand. A figure that can be written but never read again is a
+   * poison row, and the boundary that let it in is this one. Negative is refused too: the engine
+   * declares every one of these fields non-negative and refuses the **whole node** otherwise —
+   * a `-500` in medical took every other Schedule A line with it.
+   */
+  const preparerCents = z
+    .number()
+    .int()
+    .safe()
+    .nonnegative('a preparer-entered amount cannot be negative; the engine refuses the whole schedule')
+    .nullable()
+    .optional();
+
+  /**
+   * A dependent's date of birth as a real calendar date, not just eight digits with dashes.
+   *
+   * Engine 2.0.4 accepted `2025-13-45` and `2030-01-01` silently and computed nothing for them,
+   * so the credit simply did not appear and nothing said why. A date must exist, and a dependent
+   * born after the tax year being drafted cannot be on that return.
+   */
+  const dobSchema = z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'dob must be YYYY-MM-DD')
+    .refine(isRealCalendarDate, 'dob is not a calendar date');
+
   const dependentBody = z.object({
     firstName: z.string().min(1),
     lastName: z.string().min(1),
     middleInitial: z.string().max(1).nullable().optional(),
-    dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dob must be YYYY-MM-DD'),
+    dob: dobSchema,
     relationship: z.string().min(1),
     monthsInHome: z.number().int().min(0).max(12),
     // Determinations. Nullable and never defaulted: "not stated" and "stated as no" are
@@ -749,8 +803,12 @@ export function registerRoutes(app: FastifyInstance): void {
     fullTimeStudent: z.boolean().nullable().optional(),
     taxpayerProvidedOverHalfSupport: z.boolean().nullable().optional(),
     dependentOnAnotherReturn: z.boolean().nullable().optional(),
-    grossIncomeCents: z.number().int().nullable().optional(),
+    grossIncomeCents: preparerCents,
   });
+
+  /** A birth date after the end of the tax year cannot belong to a dependent on that return. */
+  const dobAfterTaxYear = (dob: string, taxYear: number | null): boolean =>
+    taxYear !== null && dob > `${taxYear}-12-31`;
 
   app.post('/api/bundles/:id/draft-inputs/dependents', async (req, reply) => {
     const user = await requireUser(req, reply);
@@ -762,6 +820,9 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!bundle) return reply.code(404).send({ error: 'not found' });
     if (bundle.taxYear !== null && !(await isKnownRelationship(bundle.taxYear, body.relationship))) {
       return reply.code(400).send({ error: 'unknown_relationship', message: `"${body.relationship}" is not a relationship this engine accepts.` });
+    }
+    if (dobAfterTaxYear(body.dob, bundle.taxYear)) {
+      return reply.code(400).send({ error: 'dob_after_tax_year', message: `A dependent born after ${bundle.taxYear} cannot be on a ${bundle.taxYear} return.` });
     }
 
     const { id: dependentId } = await addDependent(id, body);
@@ -788,6 +849,9 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!bundle) return reply.code(404).send({ error: 'not found' });
     if (body.relationship && bundle.taxYear !== null && !(await isKnownRelationship(bundle.taxYear, body.relationship))) {
       return reply.code(400).send({ error: 'unknown_relationship', message: `"${body.relationship}" is not a relationship this engine accepts.` });
+    }
+    if (body.dob !== undefined && dobAfterTaxYear(body.dob, bundle.taxYear)) {
+      return reply.code(400).send({ error: 'dob_after_tax_year', message: `A dependent born after ${bundle.taxYear} cannot be on a ${bundle.taxYear} return.` });
     }
 
     if (!(await updateDependent(id, dependentId, body))) return reply.code(404).send({ error: 'not found' });
@@ -823,7 +887,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const user = await requireUser(req, reply);
     if (!user) return;
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
-    const cents = z.number().int().nullable().optional();
+    const cents = preparerCents;
     const body = z
       .object({
         medicalCents: cents, stateIncomeTaxCents: cents, salesTaxCents: cents,
@@ -835,6 +899,24 @@ export function registerRoutes(app: FastifyInstance): void {
         forceStandard: z.boolean().nullable().optional(),
       })
       .parse(req.body ?? {});
+
+    // Line 5a is an election, not two lines: state and local **income** taxes or general
+    // **sales** taxes, never both (IRC §164(b)(5)). Engine 2.0.4 enforces it by refusing the
+    // whole `schedule_a` node, which would silently drop every other itemised line with it — so
+    // it is refused here, at the point of typing, and the message names the choice. Recording
+    // which one the preparer elected is data entry; making the election for them is not, so
+    // neither side is cleared automatically.
+    if (
+      body.stateIncomeTaxCents !== null && body.stateIncomeTaxCents !== undefined &&
+      body.salesTaxCents !== null && body.salesTaxCents !== undefined
+    ) {
+      return reply.code(400).send({
+        error: 'income_or_sales_tax',
+        message:
+          'Line 5a is one election: state and local income taxes or general sales taxes, not ' +
+          'both. Clear one of the two before saving.',
+      });
+    }
 
     const [bundle] = await db.select().from(bundles).where(eq(bundles.id, id)).limit(1);
     if (!bundle) return reply.code(404).send({ error: 'not found' });
@@ -858,8 +940,8 @@ export function registerRoutes(app: FastifyInstance): void {
     propertyType: z.string().nullable().optional(),
     fairRentalDays: z.number().int().min(0).max(365).nullable().optional(),
     personalUseDays: z.number().int().min(0).max(365).nullable().optional(),
-    grossCents: z.number().int().nullable().optional(),
-    expensesCents: z.number().int().nullable().optional(),
+    grossCents: preparerCents,
+    expensesCents: preparerCents,
     expensesDescription: z.string().nullable().optional(),
   });
 
@@ -1379,7 +1461,9 @@ export function registerRoutes(app: FastifyInstance): void {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = z
       .object({
-        cents: z.number().int().nullable().optional(),
+        // A corrected figure may be negative — a form can print one — but never past what a
+        // bigint round-trips as a safe integer, or the row can be written and never read again.
+        cents: z.number().int().safe().nullable().optional(),
         text: z.string().nullable().optional(),
         bool: z.boolean().nullable().optional(),
         setToNull: z.boolean().optional(),

@@ -231,6 +231,10 @@ a.button.sso-button[aria-disabled='true'] { opacity: 0.6; }
 .draft-start label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; }
 .draft-start select { max-width: 320px; }
 .draft-hint { font-size: 11px; color: var(--muted); line-height: 1.45; margin: 6px 0 8px; }
+/* A draft the engine computed from no document at all. Louder than a hint, because the zeros
+   below it read as figures. */
+.draft-nothing-computed { color: var(--hard); font-size: 12px; background: #fee4e2; padding: 8px 10px; border-radius: 4px; }
+.pi-error { margin: 0; border-bottom: 1px solid #fdd; font-size: 12px; }
 
 /* Shown instead of the filing-status control when no node map is installed. A dead select
    above an unpressable button says nothing; this says what is missing. */

@@ -699,6 +699,20 @@ function renderHandCheck(wb: ExcelJS.Workbook, check: HandCheckModel): void {
   caption.getCell(1).alignment = { wrapText: true, vertical: 'top' };
   sheet.getRow(caption.number).height = 32;
 
+  // With nothing from the bundle the engine still returns a confident all-zero return, and on
+  // a sheet a zero is a figure. Said in words, where the count alone was the only trace.
+  if (check.documentsIncluded === 0) {
+    const nothing = sheet.addRow([
+      'NO SOURCE DOCUMENT REACHED THE ENGINE. Every computed figure on this sheet comes from ' +
+        'the preparer inputs alone, or from nothing at all: a zero below is the engine having been ' +
+        'sent nothing, not a finding about the return.',
+    ]);
+    nothing.font = { bold: true, color: { argb: 'FFB42318' } };
+    sheet.mergeCells(nothing.number, 1, nothing.number, 8);
+    nothing.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+    sheet.getRow(nothing.number).height = 32;
+  }
+
   // ── what is missing, before anything is reconciled ──────────────────────────
   sheet.addRow([]);
   sheet.addRow(['Check this first — what is NOT in the figures below']).font = { bold: true, size: 12 };

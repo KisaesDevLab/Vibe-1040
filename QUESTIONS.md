@@ -11,6 +11,42 @@ to the Resolved section.
 
 ## Blocking
 
+### Q27 — Does the appliance mean to run the draft-return engine, or not?
+**Gates:** nothing in this repo — **the app-side defect is fixed.** This is a Vibe-Appliance
+question. **Raised:** 2026-09-27, from a real deployment.
+
+An appliance bootstrap on 2026-09-27 brought `vibe-1040` up with the draft return **enabled**
+and the engine **not running**, then failed the whole app: *"App vibe-1040 did not become
+healthy within 180s."*
+
+**The app's part was a genuine defect and is fixed.** `GET /health` awaited a live probe of the
+sidecar with a 5000 ms budget, and the container healthcheck's timeout is 5 s — the same number,
+so an unreachable engine meant the healthcheck could never pass. The route's comment claimed an
+unreachable engine was "never a reason for `ok: false`", which was true of the JSON and false of
+the latency. `/health` now reads a background probe and waits for nothing; `test/health.test.ts`
+holds it, and mutation-checks against a stub that takes the real 5000 ms.
+
+**What is left is the appliance's, and it is a straight question: did it mean to?** The compose
+service is behind the `draft-return` profile, and the bootstrap's pull list shows only
+`vibe-1040`, `vibe-1040-sidecar`, `redis` and `paradedb` — the engine image was never fetched,
+so the profile was not in the compose invocation. Meanwhile something set the feature on. Those
+two facts disagree with each other, and only the appliance knows which one was intended:
+
+- **If the draft return is meant to run**, the manifest needs the `draft-return` profile (and
+  the engine image, and the staging volume if Q23's staging is wanted). Note this would put a
+  draft-return engine next to live client data, which **Q21 says must not happen yet** — so the
+  honest answer today is probably the other one.
+- **If it is not meant to run**, nothing should be switching the feature on. `DRAFT_RETURN_ENABLED`
+  now only *seeds* a deployment that has never set it (Q26), so the appliance's env template is
+  the likely source. Leaving it off is also what Q21 requires until the WISP question is answered.
+
+The startup log now names both the profile command and the settings toggle, so the next operator
+to read it does not have to work this out. **No app change is waiting on the answer** — this is
+recorded so the appliance's env template and manifest get looked at together rather than one of
+them being changed to match a mistake in the other.
+
+---
+
 ### Q26 — Which controls may be a click, and which may not?
 **Gates:** nothing — **answered on the day it was raised.** **Raised and answered:** 2026-09-25.
 
@@ -405,6 +441,79 @@ that conversation is independent of this question and worth starting separately.
 ---
 
 ## Non-blocking, working assumption recorded
+
+### Q28 — Five comparable 1040 lines can never be compared, and one of them hides every NEC
+**Gates:** nothing. **Raised:** 2026-09-27, by the OpenTax QA pass.
+
+`data/opentax-nodes/2025.json` declares `1040:1b`, `1040:7`, `1040:8`, `1040:13b` and `1040:25c`
+as `comparable`, and `data/line-mappings/2025.json` gives none of them a contributor or a
+`computed` rollup. The worksheet side is therefore always blank, so the verdict on each is
+`worksheet_silent` or `both_blank` forever. For four of them that is honest: nothing this app
+reads feeds household wages, capital gains (1099-B is unmappable, and the line carries a note),
+Schedule 1-A or "other withholding".
+
+**`1040:8` is different.** It is Schedule 1 line 10, the sum of lines the worksheet *does* report —
+`SCH1:3` (1099-NEC) and `SCH1:7` (1099-G unemployment) — and engine 2.0.4 surfaces only Form 1040
+lines, so line 8 is the **only** place a NEC or an unemployment figure can ever be compared. Today
+it never is: a bundle with a 1099-NEC gets `worksheet_silent` on line 8 and no check at all on the
+amount, while the harness counts the line as compared.
+
+**Working assumption:** leave the map as it is and record the gap, because the fix is a line-mapping
+change — `"computed": ["SCH1:3", "SCH1:7", …]` on `1040:8`, the way `1040:1z` already rolls up
+`1a` and `1b` — and the line mappings are a versioned, person-reviewed table (Q25), not something a
+QA pass rewrites. Two things to decide when it is taken up: which `SCH1` lines belong in the rollup
+(the worksheet reports NEC *gross*, so line 8 would be gross too, which matches how `SCH1:3` already
+reads), and whether `assertConsistent` should refuse a `comparable` line with neither a contributor
+nor a rollup, which would force the other four to be declared `notCompared` with their reasons.
+
+---
+
+### Q29 — Which 1099-R distribution codes are a judgment call, and should the worksheet agree?
+**Gates:** nothing. **Raised:** 2026-09-27, by the OpenTax QA pass.
+
+§9 names "1099-R with taxable amount not determined, or code G rollovers". The first was always
+enforced (`box_2b_not_determined` is `judgmentRequired`); the second could not be, because a
+`code` box is populated on every 1099-R and `judgmentRequired` fires on population, not value.
+Measured on engine 2.0.4: a code-G 1099-R with box 2a blank was computed as fully nontaxable (5b =
+0, 5a dropped), which is the engine characterising the rollover on its own.
+
+**Done in this change set:** the schema gained `judgmentCodes`, box 7 carries `["G", "H"]`, and a
+1099-R printing either withholds from the engine with the code named in the omission.
+
+**Two things not decided here, deliberately:**
+
+1. **The early-distribution codes.** On code `1` the engine adds the 10% additional tax
+   (`line17_additional_taxes`, now declared and noted) with no way to state a §72(t) exception;
+   codes `2`, `3` and `4` each carry a characterisation of their own. Whether those belong in
+   `judgmentCodes` too is a §9 scope question — the CLAUDE.md list names only rollovers — so the
+   figure is reported with a note rather than the document withheld.
+2. **The worksheet.** `src/mapping/engine.ts` routes a *field* marked `judgmentRequired` to the
+   Judgment Required section, per field. A code-G 1099-R still reports its box 1 on line 5a and its
+   box 2a on line 5b there, so today the worksheet and the draft disagree on purpose: the worksheet
+   reports as printed, the draft withholds. Honouring `judgmentCodes` on the worksheet means a
+   per-*document* rule (the whole 1099-R's amounts to Judgment Required), which changes worksheet
+   output for every code-G packet and the fixture ground truth with it. Raised rather than done.
+
+**Working assumption:** rollovers only, engine side only, until answered.
+
+---
+
+### Q30 — A document whose year could not be read is treated as the bundle's year
+**Gates:** nothing. **Raised:** 2026-09-27, by the OpenTax QA pass.
+
+`src/worksheet/generate.ts` resolves a document's tax year as `doc.taxYear ?? bundle.taxYear`, and
+the draft translator's rule 6 — "a document from another season stays out" — then sees a year that
+matches. A 1098 whose printed year the classifier could not read is therefore fed to the engine as
+the current season's, which is the exact case rule 6 exists for, and the worksheet's soft
+year-mismatch check cannot fire on it either.
+
+**Working assumption:** unchanged behaviour, recorded. The strict reading of rule 6 would withhold
+any document with no detected year under a new `year_unknown` omission, and that is the right
+posture for the draft. It is not done here because the rate of undetected years on real packets
+has never been measured, and a rule that withholds half a bundle on the first live run would be
+worse than the hole. Measure it on the first season's data, then decide.
+
+---
 
 ### Q24 — A preparer's figure displacing a document's: is the override safe as built?
 **Raised:** 2026-09-25 (P18). **Answered:** 2026-09-25.

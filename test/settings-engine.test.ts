@@ -205,6 +205,18 @@ describe.skipIf(!dbAvailable)('the engine and pipeline settings', () => {
     expect(detail.acknowledged, 'the point of the acknowledgement is that the log records it').toBe(true);
   });
 
+  it('refuses a release feed that is not https, and any non-URL', async () => {
+    // The appliance fetches whatever an admin types here, so the scheme is the boundary:
+    // an http:// answer about a binary is not one to trust, and a file: or internal address is
+    // a request the page has no business making (2026-09-27 QA pass).
+    for (const value of ['http://api.github.com/x', 'file:///etc/passwd', 'ftp://x/y', 'not a url']) {
+      const res = await patch([{ key: 'engine.release_feed_url', value }]);
+      expect(res.statusCode, value).toBe(400);
+    }
+    const ok = await patch([{ key: 'engine.release_feed_url', value: 'https://example.test/releases/latest' }]);
+    expect(ok.statusCode).toBe(200);
+  });
+
   it('lets the draft return be switched back off with no ceremony', async () => {
     // Friction on the safe direction is how a dangerous state gets left in place.
     const res = await patch([{ key: 'draft.return_enabled', value: false }]);

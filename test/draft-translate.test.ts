@@ -219,6 +219,39 @@ describe('judgment stays with the preparer (§9, §11)', () => {
     expect(input.omissions.find((o) => o.reason === 'judgment_required')?.fieldKey).toBe('box_3');
   });
 
+  /**
+   * §9 names "code G rollovers" and the schema could not say so until the 2026-09-27 QA pass:
+   * `judgmentRequired` flags a box whenever it is populated, and box 7 is always populated.
+   * Measured on engine 2.0.4: a code-G 1099-R with box 2a blank was computed as fully
+   * nontaxable — 5b = 0 and 5a dropped altogether — which is the engine characterising the
+   * distribution on its own.
+   */
+  const r1099 = async (code: string, extra: Record<string, DraftFieldValue> = {}) =>
+    doc('1099-R', {
+      payer_name: text('PENSION TRUST'),
+      payer_tin: text('12-3456789'),
+      box_1: money(1_000_000),
+      box_7_code: text(code),
+      ...extra,
+    });
+
+  it('withholds a 1099-R whose distribution code is a rollover, by the printed code', async () => {
+    for (const code of ['G', 'H', '4G', 'g']) {
+      const input = buildDraftInput(await nodeMap(), [await r1099(code)]);
+      expect(input.nodes.some((n) => n.nodeType === 'f1099r'), `code ${code}`).toBe(false);
+      const omission = input.omissions.find((o) => o.reason === 'judgment_required');
+      expect(omission?.fieldKey).toBe('box_7_code');
+      expect(omission?.detail).toMatch(/reads [GH] and needs a preparer's judgment/);
+    }
+  });
+
+  it('lets an ordinary 1099-R through on the same field', async () => {
+    const input = buildDraftInput(await nodeMap(), [await r1099('7', { box_2a: money(1_000_000) })]);
+    const node = input.nodes.find((n) => n.nodeType === 'f1099r');
+    expect(node?.payload['box7_distribution_code']).toBe('7');
+    expect(input.omissions.filter((o) => o.reason === 'judgment_required')).toEqual([]);
+  });
+
   it('withholds every K-1 as boxes-as-printed, never dispersing it onto lines', async () => {
     const k1 = await doc('K-1-1065', {});
     const input = buildDraftInput(await nodeMap(), [k1]);
@@ -336,7 +369,7 @@ describe('RRB-1099 binds to the social security node with the railroad flag', ()
 describe('provenance', () => {
   it('stamps the node map version and the engine it was written against', async () => {
     const input = buildDraftInput(await nodeMap(), []);
-    expect(input.nodeMapVersion).toBe('2025.1');
+    expect(input.nodeMapVersion).toBe('2025.2');
     expect(input.engine.name).toBe('opentax');
     expect(input.taxYear).toBe(2025);
   });
@@ -452,6 +485,40 @@ describe('preparer-supplied inputs', () => {
     expect(input.nodes.find((n) => n.nodeType === 'f1098')).toBeDefined();
     expect(input.nodes.find((n) => n.nodeType === 'w2')!.payload['box17_state_withheld']).toBe(5_000);
     expect(input.omissions.filter((o) => o.reason === 'superseded_by_preparer')).toEqual([]);
+  });
+
+  /**
+   * Measured 2026-09-27 on engine 2.0.4: a 1099-NEC beside a Schedule C summary makes the engine
+   * use the NEC's box 1 and discard the summary — gross and expenses both. Before this pair was
+   * declared, a preparer who summarised the business got the NEC figure back with no diagnostic.
+   */
+  const nec = async () =>
+    doc('1099-NEC', { payer_name: text('CLIENT CO'), payer_tin: text('98-7654321'), box_1: money(888_800), box_4: money(50_000) }, 'doc-nec');
+  const business = { kind: 'schedule_c', description: 'Consulting', activityCode: '541600', accountingMethod: 'cash', materialParticipation: true, grossCents: 1_200_000, expensesCents: 300_000 };
+
+  it('withholds a 1099-NEC box 1 once the preparer has summarised the business on a Schedule C', async () => {
+    const input = buildDraftInput(await nodeMap(), [await w2(), await nec()], { filingStatus: 'mfj', activities: [business] });
+    const node = input.nodes.find((n) => n.nodeType === 'f1099nec');
+    // The NEC still flows for its federal withholding; only box 1 is left off.
+    expect(node).toBeDefined();
+    expect('box1_nec' in node!.payload).toBe(false);
+    expect(node!.payload['box4_federal_withheld']).toBe(500);
+    expect(input.nodes.find((n) => n.nodeType === 'schedule_c')?.payload['line_1_gross_receipts']).toBe(12_000);
+    const omission = input.omissions.find((o) => o.reason === 'superseded_by_preparer');
+    expect(omission?.formType).toBe('1099-NEC');
+    expect(omission?.fieldKey).toBe('box_1');
+    expect(omission?.detail).toMatch(/as a Business \(Schedule C\) summary/);
+  });
+
+  it('does not let a Schedule C that will not be sent displace the NEC', async () => {
+    // Gross receipts are required on the engine; without them the activity is left out — and
+    // then the NEC must flow whole, or both figures would be missing.
+    const incomplete = { ...business, grossCents: null };
+    const input = buildDraftInput(await nodeMap(), [await w2(), await nec()], { filingStatus: 'mfj', activities: [incomplete] });
+    expect(input.nodes.find((n) => n.nodeType === 'schedule_c')).toBeUndefined();
+    expect(input.nodes.find((n) => n.nodeType === 'f1099nec')?.payload['box1_nec']).toBe(8_888);
+    expect(input.omissions.filter((o) => o.reason === 'superseded_by_preparer')).toEqual([]);
+    expect(input.omissions.find((o) => o.reason === 'engine_required_field_blank')?.fieldKey).toBe('grossCents');
   });
 
   it('sends dependents with no TIN of any kind (§7)', async () => {

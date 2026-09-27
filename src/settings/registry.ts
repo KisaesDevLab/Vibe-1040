@@ -475,7 +475,15 @@ export const SETTINGS = [
     help:
       'Where the check above looks. Read-only metadata, never a download — the binary itself ' +
       'is only ever fetched by the staging flow, against a version and digest a person typed.',
-    schema: z.string().url().max(512),
+    // `https://` only. The check runs from inside the appliance with whatever outbound access
+    // it has, so a URL an admin can set is a URL the appliance will fetch: `http://` would
+    // leak nothing but would trust a plaintext answer about a binary, and any other scheme or
+    // an internal address is a request this page has no business making.
+    schema: z
+      .string()
+      .url()
+      .max(512)
+      .refine((u) => u.startsWith('https://'), 'the release feed must be an https:// URL'),
     default: () => 'https://api.github.com/repos/filedcom/opentax/releases/latest',
     input: 'text',
   }),

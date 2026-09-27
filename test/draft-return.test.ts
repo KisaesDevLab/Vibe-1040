@@ -159,7 +159,7 @@ describe.skipIf(!dbAvailable)('draft return, end to end', () => {
     const result = await generateDraftReturn(bundleId, userId, { filingStatus: 'single' });
 
     expect(result.engineVersion).toBe('9.9.9-fake');
-    expect(result.nodeMapVersion).toBe('2025.1');
+    expect(result.nodeMapVersion).toBe('2025.2');
     // One W-2 in, one SSA-1099 withheld.
     expect(result.documentsIncluded).toBe(1);
     expect(result.documentsWithheld).toBe(1);

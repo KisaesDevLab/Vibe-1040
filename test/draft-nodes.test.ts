@@ -146,6 +146,36 @@ describe('load-time refusals', () => {
     await expect(assertConsistent(file, reg)).rejects.toThrow(/W-2 is registered as a form type but is absent/);
   });
 
+  /**
+   * §7. Found by the 2026-09-27 QA pass: this exact mutation loaded without a word. The engine's
+   * `w2` node has an optional `employee_ssn`, so a map that routed the TIN there would have been
+   * accepted by both sides — and only `persist.ts` dropping the value stood in the way.
+   */
+  it('refuses a map that forwards a TIN to the engine, however it is done', async () => {
+    const reg = await registry();
+
+    // Mapped to an engine field.
+    const forwarded = await base();
+    const w2 = forwarded.forms.find((f) => f.formType === 'W-2')!;
+    w2.ignored = w2.ignored.filter((i) => i.fieldKey !== 'employee_tin');
+    w2.fields.push({ fieldKey: 'employee_tin', nodeField: 'employee_ssn', engineRequired: false, falseWhenBlank: false });
+    await expect(assertConsistent(forwarded, reg)).rejects.toThrow(/employee_tin is a taxpayer identification number/);
+
+    // Ignored, but under a reason that does not say what it is. Every box is accounted for, so
+    // the older checks are satisfied; only the TIN rule catches it.
+    const relabelled = await base();
+    const r = relabelled.forms.find((f) => f.formType === '1099-R')!;
+    r.ignored = r.ignored.map((i) => (i.fieldKey === 'recipient_tin' ? { ...i, reason: 'identity_or_metadata' as const } : i));
+    await expect(assertConsistent(relabelled, reg)).rejects.toThrow(/recipient_tin is a taxpayer identification number/);
+
+    // A dependent's, through the preparer inputs.
+    const dependent = await base();
+    dependent.preparerInputs!.dependents.fields.push({
+      column: 'ssn', nodeField: 'ssn', label: 'SSN', engineRequired: false, money: false, numeric: false, supersedes: [],
+    });
+    await expect(assertConsistent(dependent, reg)).rejects.toThrow(/dependents: ssn is an identification number/);
+  });
+
   it('refuses a form type that is both mapped and unmappable', async () => {
     const file = await base();
     const reg = await registry();

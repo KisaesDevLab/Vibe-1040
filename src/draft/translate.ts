@@ -28,7 +28,7 @@
  */
 import type { FieldValue } from '../reconcile/checks.ts';
 import type { FormSchema } from '../schemas/registry.ts';
-import { formMapFor, type NodeMapFile, unmappableFor } from './nodes.ts';
+import { type ActivityMap, formMapFor, type NodeMapFile, unmappableFor } from './nodes.ts';
 
 export type DraftFieldValue = FieldValue & { needsReview?: boolean };
 
@@ -74,7 +74,13 @@ export type DraftOmissionReason =
    * enumerated. Without this the override would be the one thing in the whole design that
    * changes a draft's arithmetic without saying so.
    */
-  | 'superseded_by_preparer';
+  | 'superseded_by_preparer'
+  /**
+   * The engine refused a node this app sent. Recorded by `generate.ts` from the engine's own
+   * rejection, not produced here, but it is an omission like any other: the node's figures are
+   * not in the draft and the reason has to be on every surface the rest of them reach.
+   */
+  | 'engine_rejected';
 
 export interface DraftOmission {
   documentId: string | null;
@@ -194,24 +200,79 @@ const NOT_IN_BUNDLE: readonly { key: string; detail: string }[] = [
  * the app sends one side, and `scripts/probe-conflicts.mjs` re-measures that on every engine
  * upgrade rather than assuming it still holds.
  */
+interface Supersession {
+  scheduleField: string;
+  formType: string;
+  fieldKey: string;
+  /** Where the preparer's figure was entered, for the omission: `under itemised deductions`. */
+  source: string;
+}
+
+const isBlankInput = (v: unknown): boolean => v === null || v === undefined || v === '';
+
+/**
+ * Whether an activity summary will actually reach the engine — every field the node requires
+ * is filled. An activity that is going to be left out (see the loop below) must not displace a
+ * document's figure, or both would be missing and the omission would blame the wrong one.
+ */
+function activityComplete(map: ActivityMap, activity: PreparerActivity): boolean {
+  const values = activity as unknown as Record<string, unknown>;
+  return map.fields.every((f) => !f.engineRequired || !isBlankInput(values[f.column]));
+}
+
 function supersededByPreparer(
   file: NodeMapFile,
   scheduleA: PreparerScheduleA | null | undefined,
-): Map<string, { scheduleField: string; formType: string; fieldKey: string }> {
-  const out = new Map<string, { scheduleField: string; formType: string; fieldKey: string }>();
-  if (!scheduleA || !file.preparerInputs) return out;
-  for (const field of file.preparerInputs.scheduleA.fields) {
-    const supplied = scheduleA[field.column];
-    if (supplied === null || supplied === undefined) continue;
-    for (const sup of field.supersedes) {
-      out.set(`${sup.nodeType}.${sup.nodeField}`, {
-        scheduleField: field.nodeField,
-        formType: sup.formType,
-        fieldKey: sup.fieldKey,
-      });
+  activities: readonly PreparerActivity[] | undefined,
+): Map<string, Supersession> {
+  const out = new Map<string, Supersession>();
+  if (!file.preparerInputs) return out;
+  if (scheduleA) {
+    for (const field of file.preparerInputs.scheduleA.fields) {
+      const supplied = scheduleA[field.column];
+      if (supplied === null || supplied === undefined) continue;
+      for (const sup of field.supersedes) {
+        out.set(`${sup.nodeType}.${sup.nodeField}`, {
+          scheduleField: field.nodeField,
+          formType: sup.formType,
+          fieldKey: sup.fieldKey,
+          source: 'under itemised deductions',
+        });
+      }
+    }
+  }
+  // A business or rental summary can displace a document too. Measured 2026-09-27 on engine
+  // 2.0.4: a 1099-NEC beside a Schedule C summary makes the engine use the NEC's box 1 and drop
+  // the Schedule C — gross and expenses both — so a preparer who has summarised the business
+  // would have their figure discarded exactly as a typed Schedule A line would.
+  for (const activity of activities ?? []) {
+    const map = file.preparerInputs.activities.find((a) => a.kind === activity.kind);
+    if (!map || !activityComplete(map, activity)) continue;
+    const values = activity as unknown as Record<string, unknown>;
+    for (const field of map.fields) {
+      if (isBlankInput(values[field.column])) continue;
+      for (const sup of field.supersedes) {
+        out.set(`${sup.nodeType}.${sup.nodeField}`, {
+          scheduleField: field.nodeField,
+          formType: sup.formType,
+          fieldKey: sup.fieldKey,
+          source: `as a ${map.label} summary`,
+        });
+      }
     }
   }
   return out;
+}
+
+/**
+ * A `code` box whose printed value is one the schema routes to judgment (§9) — `G` in a
+ * 1099-R box 7. Returns the code that matched, or null. A box may print two codes (`4G`), so
+ * the match is on any character of the normalised value.
+ */
+function judgmentCodeMatch(field: FormSchema['fields'][number], value: DraftFieldValue | undefined): string | null {
+  if (!field.judgmentCodes || !value?.present || value.text === null) return null;
+  const printed = value.text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return field.judgmentCodes.find((code) => printed.includes(code.toUpperCase())) ?? null;
 }
 
 function isMoney(schema: FormSchema, fieldKey: string): boolean {
@@ -291,7 +352,7 @@ export function buildDraftInput(
   let withheldCount = 0;
 
   // Which document fields the preparer's own figures displace, if any (P18).
-  const superseded = supersededByPreparer(file, params.scheduleA);
+  const superseded = supersededByPreparer(file, params.scheduleA, params.activities);
 
   for (const doc of documents) {
     const unmappable = unmappableFor(file, doc.formType);
@@ -353,10 +414,12 @@ export function buildDraftInput(
 
     // Any populated judgment field withholds the document, whether or not it is mapped:
     // the preparer has to characterise it before any of this document's numbers are computed.
-    const judgment = doc.schema.fields.find(
-      (f) => f.judgmentRequired && (doc.fields.get(f.key)?.present ?? false),
-    );
+    const judgment = doc.schema.fields.find((f) => {
+      const value = doc.fields.get(f.key);
+      return (f.judgmentRequired && (value?.present ?? false)) || judgmentCodeMatch(f, value) !== null;
+    });
     if (judgment) {
+      const code = judgmentCodeMatch(judgment, doc.fields.get(judgment.key));
       withheldCount += 1;
       omissions.push(
         withhold(
@@ -366,7 +429,7 @@ export function buildDraftInput(
           // The schema's own reason is a sentence and usually ends in a full stop of its
           // own, so only add one when it does not — `(§9)..` reads as a typo in the panel.
           sentence(
-            `${fieldLabel(doc.schema, judgment.key)} needs a preparer's judgment` +
+            `${fieldLabel(doc.schema, judgment.key)}${code ? ` reads ${code} and` : ''} needs a preparer's judgment` +
               `${judgment.judgmentReason ? `: ${judgment.judgmentReason}` : ''}`,
           ),
         ),
@@ -451,7 +514,7 @@ export function buildDraftInput(
             doc,
             map.fieldKey,
             'superseded_by_preparer',
-            `You supplied a figure for ${label} under itemised deductions, and the draft uses ` +
+            `You supplied a figure for ${label} ${supersedes.source}, and the draft uses ` +
               `yours. The engine requires ${label} on a ${doc.formType}, so this ` +
               `document is left out of the computation entirely rather than sent without it — ` +
               `anything else it reports is not in the draft either. It reports ${reports}, and ` +
@@ -466,8 +529,8 @@ export function buildDraftInput(
           fieldKey: map.fieldKey,
           reason: 'superseded_by_preparer',
           detail:
-            `${label} was not sent to the engine: you supplied a figure for it under itemised ` +
-            `deductions, and that is what the draft uses. This ${doc.formType} reports ${reports}. ` +
+            `${label} was not sent to the engine: you supplied a figure for it ` +
+            `${supersedes.source}, and that is what the draft uses. This ${doc.formType} reports ${reports}. ` +
             'The rest of the document is still computed, and the worksheet reports it unchanged.',
         });
         continue;

@@ -56,7 +56,37 @@ const REQUIRED = {
 
 const flat = (v) => (Array.isArray(v) ? v[0] : v);
 
-async function deduction(nodes, scheduleA = {}) {
+/**
+ * Sample values for the fields an activity node requires besides the one under test, so a
+ * Schedule C or E summary is a payload the engine will accept. Taken from the node map's own
+ * vocabularies where it has them.
+ */
+function activitySample(map) {
+  const payload = { ...(map.constants ?? {}) };
+  for (const f of map.fields) {
+    if (!f.engineRequired) continue;
+    let v;
+    switch (f.column) {
+      case 'description': v = 'Probe'; break;
+      case 'activityCode': v = '541600'; break;
+      case 'accountingMethod': v = map.accountingMethods?.[0]?.code ?? 'cash'; break;
+      case 'materialParticipation': v = true; break;
+      case 'propertyType': v = map.propertyTypes?.[0]?.code ?? '1'; break;
+      case 'fairRentalDays': v = 365; break;
+      case 'personalUseDays': v = 0; break;
+      case 'grossCents': v = 0; break;
+      default: v = 'Probe';
+    }
+    payload[f.nodeField] = f.numeric ? Number(v) : v;
+  }
+  return payload;
+}
+
+/**
+ * One return, measured on one engine line. `scheduleA` merges into the base Schedule A node;
+ * `extraNodes` are sent as they are — a document node, an activity summary, or both.
+ */
+async function compute(extraNodes, scheduleA, measureLine) {
   const res = await fetch(URL_, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -66,13 +96,13 @@ async function deduction(nodes, scheduleA = {}) {
         { nodeType: 'general', documentId: null, payload: { filing_status: 'mfj' } },
         { nodeType: 'w2', documentId: 'anchor', payload: { employer_name: 'Anchor', box1_wages: 400_000, box2_fed_withheld: 50_000 } },
         { nodeType: 'schedule_a', documentId: null, payload: { line_11_cash_contributions: CHARITY, ...scheduleA } },
-        ...nodes,
+        ...extraNodes,
       ],
     }),
   });
   if (!res.ok) throw new Error(`engine returned ${res.status}`);
   const body = await res.json();
-  return { cents: flat((body.lines ?? {}).line12c_deduction_total), rejected: (body.rejected ?? []).length };
+  return { cents: flat((body.lines ?? {})[measureLine]) ?? 0, rejected: (body.rejected ?? []).length };
 }
 
 /** `document_wins` is what the node map's `supersedes` entries assume. */
@@ -86,10 +116,35 @@ function classify(dDoc, dPreparer, dBoth) {
 
 const root = process.cwd();
 const file = JSON.parse(await readFile(join(root, 'data', 'opentax-nodes', `${TAX_YEAR}.json`), 'utf8'));
+/**
+ * Every pair the map declares, each with how its preparer side is sent and which engine line
+ * shows the result. A Schedule A pair moves the itemised total; an activity pair (a Schedule C
+ * summary against a 1099-NEC, say) moves line 8, additional income.
+ */
 const pairs = [];
 for (const field of file.preparerInputs?.scheduleA?.fields ?? []) {
   for (const sup of field.supersedes ?? []) {
-    pairs.push({ scheduleField: field.nodeField, ...sup });
+    pairs.push({
+      ...sup,
+      target: `schedule_a.${field.nodeField}`,
+      measure: 'line12c_deduction_total',
+      preparer: (amount) => ({ scheduleA: { [field.nodeField]: amount }, nodes: [] }),
+    });
+  }
+}
+for (const activity of file.preparerInputs?.activities ?? []) {
+  for (const field of activity.fields) {
+    for (const sup of field.supersedes ?? []) {
+      pairs.push({
+        ...sup,
+        target: `${activity.nodeType}.${field.nodeField}`,
+        measure: 'line8_additional_income',
+        preparer: (amount) => ({
+          scheduleA: {},
+          nodes: [{ nodeType: activity.nodeType, documentId: null, payload: { ...activitySample(activity), [field.nodeField]: amount } }],
+        }),
+      });
+    }
   }
 }
 
@@ -98,27 +153,39 @@ if (pairs.length === 0) {
   process.exit(0);
 }
 
-const base = (await deduction([])).cents;
 console.log(`engine at ${URL_}, tax year ${TAX_YEAR}`);
-console.log(`baseline itemised deduction (charity only) = ${base}\n`);
+const baselines = new Map();
+for (const measure of new Set(pairs.map((p) => p.measure))) {
+  const base = (await compute([], {}, measure)).cents;
+  baselines.set(measure, base);
+  console.log(`baseline ${measure} (W-2 and charity only) = ${base}`);
+}
+console.log();
 
 let failures = 0;
 for (const pair of pairs) {
+  const base = baselines.get(pair.measure);
   const docNodes = [{ nodeType: pair.nodeType, documentId: 'probe', payload: { ...(REQUIRED[pair.nodeType] ?? {}), [pair.nodeField]: DOC_AMOUNT } }];
-  const docOnly = await deduction(docNodes);
+  const docOnly = await compute(docNodes, {}, pair.measure);
   if (docOnly.rejected > 0) {
     console.log(`  ✗ ${pair.nodeType}.${pair.nodeField}: probe payload refused — cannot verify`);
     failures += 1;
     continue;
   }
-  const preparerOnly = await deduction([], { [pair.scheduleField]: PREPARER_AMOUNT });
-  const both = await deduction(docNodes, { [pair.scheduleField]: PREPARER_AMOUNT });
+  const side = pair.preparer(PREPARER_AMOUNT);
+  const preparerOnly = await compute(side.nodes, side.scheduleA, pair.measure);
+  if (preparerOnly.rejected > 0) {
+    console.log(`  ✗ ${pair.target}: preparer payload refused — cannot verify`);
+    failures += 1;
+    continue;
+  }
+  const both = await compute([...docNodes, ...side.nodes], side.scheduleA, pair.measure);
 
   const verdict = classify(docOnly.cents - base, preparerOnly.cents - base, both.cents - base);
   const ok = verdict === 'document_wins';
   if (!ok) failures += 1;
   console.log(
-    `  ${ok ? '✓' : '✗'} ${pair.nodeType}.${pair.nodeField} → schedule_a.${pair.scheduleField}: ${verdict}` +
+    `  ${ok ? '✓' : '✗'} ${pair.nodeType}.${pair.nodeField} → ${pair.target} (${pair.measure}): ${verdict}` +
       (ok ? '' : `  (doc ${docOnly.cents - base}, preparer ${preparerOnly.cents - base}, both ${both.cents - base})`),
   );
 }
