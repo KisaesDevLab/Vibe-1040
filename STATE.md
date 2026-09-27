@@ -30,6 +30,11 @@ most serious finding of the pass.
 **Status:** P0–P16 code complete and **integration-unverified**; P17 code complete and
 **scored against the real engine v2.0.4** — 13 of 13 comparable lines agree (see below); P18
 code complete and **driven end to end in a browser against that engine and a real database**.
+**Both were put through an execution-based QA review on 2026-09-27** (*QA review — 2026-09-27*
+below): fifteen defects fixed with tests, four high — a poison row that made a bundle's inputs
+unreadable, a NEC silently discarding a preparer's Schedule C, code-G rollovers computed as
+nontaxable by the engine alone, and four refundable-credit lines computed and shown nowhere —
+and three questions raised (Q28–Q30). The node map is at `2025.2`.
 **Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
 lands (QUESTIONS.md Q11). P16 cannot *exit* until it has been signed into from a real browser
 against a real Vibe Auth (below). P17 cannot *exit* until Q21 is answered and the fixture
@@ -1695,6 +1700,64 @@ the old reason, and the stub is what fixed it.
 compose profile absent. QUESTIONS.md **Q27** puts that to whoever owns the manifest — and notes
 that Q21 says a draft-return engine should not be running next to live client data yet anyway.
 
+## QA review — 2026-09-27, the OpenTax integration end to end
+
+Asked for as "an exhaustive QA review of the implementation of OpenTax". Everything below was
+**reproduced by execution** against the real engine v2.0.4 (binary checksum re-verified against
+the pin), a real Postgres at migration 0013, the wrapper, the API and the built UI in a real
+browser — not read off the code. The auth package was stubbed locally, as before, so the SSO tests
+were not run here; they run in CI.
+
+**What was verified and found sound:** the binary's digest matches `opentax/pinned.json`; migration
+0013 rolls forward and back cleanly (tables 8 → 0 → 8, second forward a no-op); `/tmp` is tmpfs and
+the engine container is `read_only`; a rejection carries zod paths and constraints and never
+values; audit rows carry counts, never figures; both `deleteBundle` and `runRetention` write the
+draft rows to `purge_log`; `npm run draft -- --truth` scores 13 of 13; the three Schedule A
+`supersedes` pairs still measure `document_wins`; the W-2G, 1099-OID and 1099-DIV renumbered
+mappings read correctly against the engine's own field descriptions; every §9 item that could be
+checked (1099-K box 1a, 1099-G box 2, SSA/RRB boxes 3–4, 1099-R "not determined", every K-1 and
+the SSA-1042S) withholds; a NEC beside a Schedule C is never double-counted; and 4a/4b versus
+5a/5b resolve correctly on the IRA/SEP/SIMPLE flag.
+
+**Fixed in this change set, each with a test that fails without the fix:**
+
+| # | Severity | Found | Fixed |
+|---|---|---|---|
+| 1 | **High** | A Schedule A figure past `Number.MAX_SAFE_INTEGER` was accepted, stored as a bigint, and then refused by the bigint parser on every read: **every `GET /draft-inputs` and every draft return for that bundle was a 500** until the row was edited by hand. A poison row, typed into the real sheet | Preparer cents are `int().safe().nonnegative()`; the field-correction route is `.safe()` too |
+| 2 | **High** | A 1099-NEC beside a preparer's Schedule C summary makes the engine **use the NEC and discard the summary, gross and expenses both** — 8,888 + (12,000 − 3,000) computed as 8,888, no diagnostic | `supersedes` pair on the Schedule C gross-receipts field; the translator applies activity pairs, only for an activity that will actually be sent; `npm run draft:conflicts` measures activity pairs (4 of 4 `document_wins`) |
+| 3 | **High** | Code G/H 1099-R computed as fully nontaxable by the engine on its own — §9 names code G and the schema could not express it | `judgmentCodes` on the schema; box 7 carries `["G","H"]`; withheld with the code named. Q29 for the rest |
+| 4 | **High** | `line27_eitc`, `line28_actc`, `line31_additional_payments`, `line17_additional_taxes` returned by the engine and declared nowhere — EITC of 875 computed from wages alone, netted into the refund, shown nowhere but a `console.warn` | Declared `computedOnly` with notes saying eligibility is unknowable from a bundle |
+| 5 | Medium | A negative preparer figure made the engine refuse the **whole** Schedule A node; a future or impossible dependent birth date (`2030-01-01`, `2025-13-45`) was accepted and silently computed nothing | Refused at the route: negative, non-calendar dates, a birth date after the tax year |
+| 6 | Medium | Income tax and sales tax on line 5a together made the engine refuse the whole Schedule A node | Refused at save time as one election, naming the choice |
+| 7 | Medium | A refused input showed nothing inside the sheet: the app banner it went to sits under the dialog | Error rendered in the sheet, with the zod path and rule |
+| 8 | Medium | Zero documents reaching the engine produced a confident all-zero return whose only trace was the `0` in a count | Panel and workbook sheet say in words that no source document reached the engine |
+| 9 | Medium | `draft_returns`, lines, omissions and validations inserted in four statements with no transaction: a half-written draft would have said less was withheld than was | One transaction |
+| 10 | Medium | Wrapper `/draft` had no concurrency limit: twelve requests put fifteen engine children on a two-core sidecar | `OPENTAX_DRAFT_CONCURRENCY` (default 2), queued not refused; measured peak 4 children under the same load |
+| 11 | Medium | Activation only read the staged binary's version string: bytes swapped into the writable staging volume after staging would have gone live unverified | Staging writes a verification record; activation re-hashes, refuses and discards on mismatch |
+| 12 | Medium | A node map forwarding W-2 `employee_tin → employee_ssn` loaded without a word — only `persist.ts` dropping the value stood between it and the engine | Load-time rule: every `sensitive: 'tin'` field must be `ignored` as `tin_withheld`; no dependent field may be an identification number |
+| 13 | Medium | `computeReturn` cast the wrapper's body; a wrong-shaped `validation` or `rejected` surfaced as a TypeError 500 | Shape-checked; wrong shapes are `invalid_response` |
+| 14 | Low | `engine_rejected` was cast into the omission-reason union rather than a member | A member |
+| 15 | Low | `engine.release_feed_url` accepted any scheme or host | `https://` only |
+
+**Raised rather than decided** (each a QUESTIONS.md entry with a working assumption): the five
+comparable lines nothing maps to, of which `1040:8` hides every NEC comparison (**Q28**); the
+early-distribution codes and whether the worksheet should honour `judgmentCodes` too (**Q29**); a
+document with no detected year being fed as the bundle's (**Q30**).
+
+**Observed and recorded, not changed:** a workbook shows the *current* preparer figures beside a
+possibly older stored draft with no staleness marker (risk row below); `draft_inputs` purge is keyed
+on its own `createdAt`, harmless because the bundle cascade removes them anyway; `toCents` takes
+the first of a two-element engine array without checking the two agree (both measured equal on
+2.0.4); a blank W-2 box 2 withholds the whole W-2 because the engine requires it, which is the
+contract working as written and worth knowing before the first real packet; the 1099-K map entry
+can never fire because box 1a is always judgment; the app's 120 s client timeout versus the
+wrapper's up-to-five 60 s children is now bounded by the concurrency cap.
+
+**Verified after the fixes:** 452 tests across 34 files (SSO excluded here for the stubbed
+package), root and UI lint clean, typecheck clean outside the stubbed package, provider grep clean,
+no fixture-manifest drift, `--truth` still 13 of 13, and the browser shows the zero-document notice
+above the omissions and each of the three new refusals explained inside the sheet.
+
 ## Known risks
 
 | Risk | Phase | Mitigation |
@@ -1722,6 +1785,9 @@ that Q21 says a draft-return engine should not be running next to live client da
 | **A stand-in binary that shares a wrong assumption tests nothing** | P17 | Learned the hard way: the stub encoded a nested `lines` shape the engine does not use, so all 328 tests agreed with the mistake. `test/helpers/fake-opentax.mjs` now mirrors the engine's real shapes — flat keys, array-valued lines, absent source lines, present zero totals — and its comments say where each came from. Re-derive it against the binary whenever the pin moves | It must also know about **every** node type the map declares, not a representative few: carrying three made the catalogue check report the other eleven as absent and refuse every draft. `test/helpers/fake-opentax-catalog.json` is derived from the real binary for that reason |
 | **The released image resolves dependencies no test has ever run against** | P0 | Found on 2026-09-25 when it finally bit: `Dockerfile` copied `package.json` without `package-lock.json`, so every image since P0 — v0.10.0 included — floated `@kisaesdevlab/vibe-auth` and everything else to whatever the latest matching version was at build time. The v0.11.0 build failed to compile on a widened union in a newer 1.x. Both install stages now copy the lockfile, so the image and the test run agree by construction. **The type error was the symptom; shipping an untested tree was the defect, and it was silent for nine releases** |
 | **An optional dependency on the liveness path can take the whole appliance down** | P17 | Hit for real on 2026-09-27: `/health` awaited a 5000 ms engine probe against a 5 s healthcheck timeout, so an unreachable sidecar meant the container never went healthy. Fixed by never calling it from a liveness path — `/health` reads a background probe. `test/health.test.ts` asserts the budget against the Dockerfile's own number. **Apply the same rule to anything optional added to `/health` later**: a shorter timeout is not a fix |
+| **A workbook shows today's preparer figures beside a stored draft that may predate them** | P18 | Found 2026-09-27: the `Hand check` and `Draft Return` sheets read the current `draft_inputs` and the latest stored draft independently, with no marker when the inputs changed after the draft was computed. The panel offers *Recompute with these inputs* for exactly this reason; the workbook does not say it. Open — a `generatedAt` versus `draft_inputs.updatedAt` comparison on the sheet is the obvious fix and is not done yet |
+| **A NEC or unemployment figure is never actually compared against the engine** | P17 | Found 2026-09-27: engine 2.0.4 surfaces only Form 1040 lines, `1040:8` is the only place they can meet, and nothing maps to `1040:8` on the worksheet side, so the verdict is always `worksheet_silent` while the harness counts the line as compared. QUESTIONS.md Q28 — a line-mapping rollup decision, not a QA fix |
+| **An engine field the map declares can be fed from two directions, and only measured pairs are declared** | P18 | Four pairs measured and declared as of 2026-09-27 (three Schedule A, one Schedule C ↔ 1099-NEC). Any future preparer input that shares an engine line with a document field must be probed with `npm run draft:conflicts` before the pair is written down; the NEC one was missed for two days because nobody probed it |
 | Powered-off GPU droplets still bill if the Router ever provisions one | Router-side | Not this repo's concern, but flag to Router work |
 
 ---

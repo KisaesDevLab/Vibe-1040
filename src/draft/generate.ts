@@ -176,91 +176,99 @@ export async function generateDraftReturn(
   // should not have to read two places to learn what is missing.
   const omissions: DraftOmission[] = [
     ...input.omissions,
-    ...result.rejected.map((r) => ({
+    ...result.rejected.map((r): DraftOmission => ({
       documentId: r.documentId,
       formType: null,
       fieldKey: null,
-      reason: 'engine_rejected' as DraftOmission['reason'],
+      reason: 'engine_rejected',
       detail: `The engine refused the ${r.nodeType} node: ${r.message}`,
     })),
   ];
   const complete = omissions.length === 0;
 
-  const [row] = await db
-    .insert(draftReturns)
-    .values({
-      bundleId,
-      taxYear,
-      engineVersion: result.engineVersion,
-      nodeMapVersion: file.version,
-      mappingVersion: worksheet.mappingVersion,
-      // The status the run actually used, which is the stored one unless this call overrode
-      // it. Recording the per-request value here would leave a draft built from stored inputs
-      // claiming no filing status at all.
-      filingStatus: effective.filingStatus ?? null,
-      complete,
-      documentsIncluded: input.documentsIncluded,
-      documentsWithheld: input.documentsWithheld,
-      engineSummary: result.summary,
-      generatedBy: userId,
-    })
-    .returning({ id: draftReturns.id });
-  if (!row) throw new Error('failed to insert the draft return row');
-  const draftReturnId = row.id;
+  // One transaction for the draft row and everything hanging off it. The omissions are part of
+  // the answer, not an appendix (§14): a draft row whose omissions insert failed halfway would
+  // be a stored draft that says less was left out than was — the one thing this feature must
+  // never do — and `latestDraftReturn` would serve it as the newest. Found by the 2026-09-27
+  // QA pass, where the four inserts ran one after another with no transaction.
+  const draftReturnId = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(draftReturns)
+      .values({
+        bundleId,
+        taxYear,
+        engineVersion: result.engineVersion,
+        nodeMapVersion: file.version,
+        mappingVersion: worksheet.mappingVersion,
+        // The status the run actually used, which is the stored one unless this call overrode
+        // it. Recording the per-request value here would leave a draft built from stored inputs
+        // claiming no filing status at all.
+        filingStatus: effective.filingStatus ?? null,
+        complete,
+        documentsIncluded: input.documentsIncluded,
+        documentsWithheld: input.documentsWithheld,
+        engineSummary: result.summary,
+        generatedBy: userId,
+      })
+      .returning({ id: draftReturns.id });
+    if (!row) throw new Error('failed to insert the draft return row');
+    const id = row.id;
 
-  const lineRows = [
-    ...comparison.lines.map((l) => ({
-      draftReturnId,
-      lineRef: l.lineRef,
-      lineLabel: l.label,
-      sortOrder: l.sortOrder,
-      engineForm: l.engineForm,
-      engineLine: l.engineLine,
-      reportedCents: l.reportedCents,
-      computedCents: l.computedCents,
-      verdict: l.verdict,
-      note: l.note ?? null,
-    })),
-    ...comparison.computedOnly.map((c, i) => ({
-      draftReturnId,
-      lineRef: null,
-      lineLabel: c.label,
-      // After every compared line, in the order the map declares them.
-      sortOrder: 100_000 + i,
-      engineForm: c.engineForm,
-      engineLine: c.engineLine,
-      reportedCents: null,
-      computedCents: c.computedCents,
-      verdict: 'computed_only',
-      // Carried, so the caveat is stored beside the figure and reaches the workbook too —
-      // §14 requires the omissions and the caveats on the same sheet as the numbers.
-      note: c.note ?? null,
-    })),
-  ];
-  if (lineRows.length > 0) await db.insert(draftReturnLines).values(lineRows);
-
-  if (omissions.length > 0) {
-    await db.insert(draftReturnOmissions).values(
-      omissions.map((o) => ({
-        draftReturnId,
-        documentId: o.documentId,
-        formType: o.formType,
-        fieldKey: o.fieldKey,
-        reason: o.reason,
-        detail: o.detail,
+    const lineRows = [
+      ...comparison.lines.map((l) => ({
+        draftReturnId: id,
+        lineRef: l.lineRef,
+        lineLabel: l.label,
+        sortOrder: l.sortOrder,
+        engineForm: l.engineForm,
+        engineLine: l.engineLine,
+        reportedCents: l.reportedCents,
+        computedCents: l.computedCents,
+        verdict: l.verdict,
+        note: l.note ?? null,
       })),
-    );
-  }
+      ...comparison.computedOnly.map((c, i) => ({
+        draftReturnId: id,
+        lineRef: null,
+        lineLabel: c.label,
+        // After every compared line, in the order the map declares them.
+        sortOrder: 100_000 + i,
+        engineForm: c.engineForm,
+        engineLine: c.engineLine,
+        reportedCents: null,
+        computedCents: c.computedCents,
+        verdict: 'computed_only',
+        // Carried, so the caveat is stored beside the figure and reaches the workbook too —
+        // §14 requires the omissions and the caveats on the same sheet as the numbers.
+        note: c.note ?? null,
+      })),
+    ];
+    if (lineRows.length > 0) await tx.insert(draftReturnLines).values(lineRows);
 
-  const diagnostics = [
-    ...result.validation.hard.map((d) => ({ severity: 'hard', ...d })),
-    ...result.validation.soft.map((d) => ({ severity: 'soft', ...d })),
-  ];
-  if (diagnostics.length > 0) {
-    await db
-      .insert(draftReturnValidations)
-      .values(diagnostics.map((d) => ({ draftReturnId, severity: d.severity, code: d.code, message: d.message })));
-  }
+    if (omissions.length > 0) {
+      await tx.insert(draftReturnOmissions).values(
+        omissions.map((o) => ({
+          draftReturnId: id,
+          documentId: o.documentId,
+          formType: o.formType,
+          fieldKey: o.fieldKey,
+          reason: o.reason,
+          detail: o.detail,
+        })),
+      );
+    }
+
+    const diagnostics = [
+      ...result.validation.hard.map((d) => ({ severity: 'hard', ...d })),
+      ...result.validation.soft.map((d) => ({ severity: 'soft', ...d })),
+    ];
+    if (diagnostics.length > 0) {
+      await tx
+        .insert(draftReturnValidations)
+        .values(diagnostics.map((d) => ({ draftReturnId: id, severity: d.severity, code: d.code, message: d.message })));
+    }
+    return id;
+  });
 
   await audit({
     userId,

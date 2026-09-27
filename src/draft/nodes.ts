@@ -505,6 +505,23 @@ export async function assertConsistent(file: NodeMapFile, reg: FormRegistry): Pr
     for (const key of seen.keys()) {
       if (!schemaKeys.has(key)) problems.push(`${form.formType}: field ${key} is not on the schema`);
     }
+
+    // §7: a TIN never reaches the engine. Every field the schema marks `sensitive: 'tin'` must be
+    // `ignored` with reason `tin_withheld` — never mapped, never under any other reason. Found
+    // missing by the 2026-09-27 QA pass: a map forwarding W-2 employee_tin → employee_ssn loaded
+    // without a word. `src/extract/persist.ts` drops the value before storage, so nothing would
+    // have left the appliance — but a rule that holds only because a different module happens
+    // to drop the value is not a rule, and the map is where §14 says the guarantee lives.
+    for (const field of schema.fields) {
+      if (field.sensitive !== 'tin') continue;
+      const ignored = form.ignored.find((i) => i.fieldKey === field.key);
+      if (!ignored || ignored.reason !== 'tin_withheld') {
+        problems.push(
+          `${form.formType}: ${field.key} is a taxpayer identification number and must be ignored ` +
+            'with reason tin_withheld. It is never forwarded to the engine (§7).',
+        );
+      }
+    }
     for (const key of schemaKeys) {
       if (!seen.has(key)) {
         problems.push(
@@ -527,6 +544,14 @@ export async function assertConsistent(file: NodeMapFile, reg: FormRegistry): Pr
 
   const codes = file.filingStatuses.map((f) => f.code);
   if (new Set(codes).size !== codes.length) problems.push('a filing-status code is listed twice');
+
+  // The same rule for a dependent: the engine offers `ssn`, `itin` and `atin` and this app
+  // asks for none of them, and the map must not be able to route a column into one (§7).
+  for (const field of file.preparerInputs?.dependents.fields ?? []) {
+    if (/(^|_)(ssn|itin|atin|tin)$/.test(field.nodeField)) {
+      problems.push(`dependents: ${field.nodeField} is an identification number and is never sent (§7)`);
+    }
+  }
 
   // Every worksheet line is declared too, for the same reason every box is: a line quietly
   // absent from the comparison is a computed figure nobody checked.

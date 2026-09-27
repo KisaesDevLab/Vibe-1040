@@ -41,8 +41,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: 'same-origin',
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-    throw new Error(body.message ?? body.error ?? `${res.status}`);
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      message?: string;
+      issues?: { path?: string; message?: string }[];
+    };
+    // A validation refusal names the field and the rule; without them the preparer is told
+    // only that "the body did not validate" and has to guess which of fifteen boxes it was.
+    const issues = (body.issues ?? [])
+      .map((i) => [i.path, i.message].filter(Boolean).join(': '))
+      .filter((s) => s.length > 0);
+    const message = body.message ?? body.error ?? `${res.status}`;
+    throw new Error(issues.length > 0 ? `${message} ${issues.join('; ')}` : message);
   }
   return res.json() as Promise<T>;
 }

@@ -281,6 +281,46 @@ against a 31,500 standard deduction, then the same bundle with all four age and 
 set, which lifted 12a to 37,900 and made the standard deduction win. That is reporting the
 engine's own output more completely, not correcting it.
 
+**Measured 2026-09-27, in the QA pass**, and each now surfaced or refused rather than silent:
+
+- **A 1099-NEC beside a Schedule C summary makes the engine use the NEC's box 1 and discard the
+  summary — gross and expenses both, whatever the node order.** NEC 8,888 + Schedule C 12,000 less
+  3,000 gave line 8 = 8,888, not 9,000. The node map now declares the pair (`supersedes` on the
+  Schedule C gross-receipts field), so a preparer who has summarised the business has the NEC's
+  box 1 withheld and recorded, and `npm run draft:conflicts` measures activity pairs as well as
+  Schedule A ones.
+- **A code-G 1099-R with box 2a blank is computed as fully nontaxable** — 5b = 0 and 5a dropped —
+  and a code-1 distribution gets the 10% additional tax added on line 17 with no way to state an
+  exception. Code G and H now withhold the document (`judgmentCodes` on the schema's box 7, §9);
+  the early-distribution codes are QUESTIONS.md Q29.
+- **Four lines the engine returns were declared nowhere** and so shown nowhere: `line27_eitc`,
+  `line28_actc`, `line31_additional_payments` and `line17_additional_taxes`. The earned income
+  credit and the additional child tax credit are computed from wages and dependents alone, on
+  eligibility the bundle cannot establish, and both are refundable — 45,000 of wages with one
+  dependent produced 875 of EITC that moved the refund with nothing on screen saying so. All four
+  are `computedOnly` now, with notes.
+- **Line 5a is an election.** State and local income taxes or general sales taxes, never both;
+  the engine enforces it by refusing the whole `schedule_a` node, which would drop every other
+  itemised line with it. The route refuses the pair at save time and names the choice.
+- **A negative preparer figure refuses the whole node too** (`line_1_medical` at −500 took the
+  rest of Schedule A with it), so the routes refuse negatives at the boundary.
+- **With no document sent at all the engine still returns a confident return** — a standard
+  deduction, taxable income 0, refund 0. The panel and the workbook sheet now say in words that no
+  source document reached the engine.
+
+### Wrapper knobs
+
+- `OPENTAX_DRAFT_CONCURRENCY` (default 2): how many drafts compute at once. Each draft is a
+  chain of engine processes, and with no ceiling twelve simultaneous requests put fifteen engine
+  children on a two-core sidecar. Beyond the cap a request waits its turn; the app's own client
+  timeout bounds the wait.
+- `OPENTAX_CHILD_TIMEOUT_MS` (default 60000): the per-process ceiling.
+- Activation re-verifies. Staging writes `<staged>.verified.json` beside the binary with the
+  digest and version it verified; activation hashes the file again and refuses — discarding the
+  candidate — if the bytes no longer match. Staging and activating are two clicks with an
+  arbitrary gap between them on a writable volume, and §14's "verified before it is ever run"
+  has to hold at the second click, not just the first.
+
 ### Looking at the panel
 
 The panel lives in the review aside, which is about 290 CSS pixels wide. That is narrow enough

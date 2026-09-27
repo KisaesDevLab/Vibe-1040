@@ -1,6 +1,6 @@
 {
   "taxYear": 2025,
-  "version": "2025.1",
+  "version": "2025.2",
   "engine": {
     "name": "opentax",
     "formType": "f1040",
@@ -1664,6 +1664,30 @@
         "engineForm": "f1040",
         "engineLine": "line37_amount_owed",
         "label": "Amount owed"
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line17_additional_taxes",
+        "label": "Additional taxes (Schedule 2, line 3)",
+        "note": "Where engine 2.0.4 puts the 10% additional tax on an early distribution — a 1099-R whose box 7 reads 1 — and any other Schedule 2 part I amount. Whether an exception to that tax applies is a determination this app does not make (§9), so read this figure as the engine's default, not a finding. Measured 2026-09-27: a code-1 distribution of 10,000 produced 1,000 here with nothing else on the return."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line27_eitc",
+        "label": "Earned income credit",
+        "note": "Computed by engine 2.0.4 from wages and the dependents entered, with no way to know the residency, investment-income and identification tests a real claim needs. A bundle cannot say whether the taxpayer is eligible, so this is the engine's arithmetic on an assumption, never a finding — and it is refundable, so it moves the refund. Measured 2026-09-27: 45,000 of wages with one dependent produced 875 here."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line28_actc",
+        "label": "Additional child tax credit",
+        "note": "The refundable part of the child tax credit, computed from the dependents entered. Same caveat as the earned income credit: the engine assumes eligibility this app cannot establish. Engine 2.0.4 returns it unrounded (422.95545…), and the app rounds to cents."
+      },
+      {
+        "engineForm": "f1040",
+        "engineLine": "line31_additional_payments",
+        "label": "Other refundable credits and payments (Schedule 3, line 15)",
+        "note": "Totals the refundable credits above into what the engine treats as payments. Nothing on it comes from a source document. Engine 2.0.4 returns it as a two-element array of the same figure."
       }
     ],
     "ignoredLines": [
@@ -2016,7 +2040,8 @@
         "nodeType": "schedule_c",
         "label": "Business (Schedule C)",
         "$comment": [
-          "Verified: gross 120,000 with 45,000 in line_27b_other_expenses nets 75,000 onto total income."
+          "Verified: gross 120,000 with 45,000 in line_27b_other_expenses nets 75,000 onto total income.",
+          "Measured 2026-09-27 (QA): a 1099-NEC and a Schedule C summary sent together make engine 2.0.4 use the NEC's box 1 and discard the Schedule C entirely — gross AND expenses, whatever the node order. NEC 8,888 + Schedule C 12,000 less 3,000 gave line 8 = 8,888, not 9,000. Hence the supersedes pair on gross receipts: a preparer who has summarised the business has already included the NEC income, so the NEC's box 1 is withheld and recorded. box1_nec is optional on f1099nec, so the NEC's federal withholding still flows."
         ],
         "fields": [
           {
@@ -2048,7 +2073,15 @@
             "nodeField": "line_1_gross_receipts",
             "label": "1. Gross receipts or sales",
             "engineRequired": true,
-            "money": true
+            "money": true,
+            "supersedes": [
+              {
+                "formType": "1099-NEC",
+                "nodeType": "f1099nec",
+                "nodeField": "box1_nec",
+                "fieldKey": "box_1"
+              }
+            ]
           },
           {
             "column": "expensesCents",

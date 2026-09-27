@@ -95,7 +95,9 @@
       "key": "box_7_code",
       "label": "Distribution code(s)",
       "type": "code",
-      "box": "7"
+      "box": "7",
+      "judgmentCodes": ["G", "H"],
+      "judgmentReason": "A rollover (code G or H) is a characterisation the preparer makes — whether any of it is taxable is not computed by this app (§9)."
     },
     {
       "key": "box_7_ira_sep_simple",

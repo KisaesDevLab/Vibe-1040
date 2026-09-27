@@ -214,6 +214,20 @@ export function DraftReturnPanel({
             {draft.complete ? 'complete' : <strong>incomplete</strong>}
           </div>
 
+          {/*
+            Not a count to be read past. With nothing from the bundle the engine still returns a
+            confident all-zero return — a standard deduction, a refund of 0 — and every line below
+            reads as a figure. 2026-09-27 QA pass: an SSA-1099-only bundle produced exactly that,
+            and the only trace was the `0` in the line above.
+          */}
+          {draft.documentsIncluded === 0 && (
+            <p className="draft-hint draft-nothing-computed" role="alert">
+              <strong>No source document reached the engine.</strong> Every figure below comes from
+              the preparer inputs alone, or from nothing at all; a zero here is the engine having
+              been sent nothing, not a finding about the return.
+            </p>
+          )}
+
           {/* Above the figures, open, because the figures are wrong by whatever is in here. */}
           <details className="draft-omissions" open>
             <summary>

@@ -135,6 +135,13 @@ export function PreparerInputs({
   const [scheduleA, setScheduleA] = useState<Record<string, string>>({});
   const [flags, setFlags] = useState<Record<string, boolean | null>>({});
   const [dirty, setDirty] = useState(false);
+  /**
+   * The last refusal, shown inside this sheet. `onError` still fires so the app banner has it
+   * too — but the sheet is a full-screen dialog over that banner, so a preparer who typed
+   * something the server refused saw nothing change and no reason why (2026-09-27 QA pass: a
+   * dependent with 13 months in the home was refused with a 400, and the sheet sat still).
+   */
+  const [error, setError] = useState<string | null>(null);
 
   const reload = () =>
     api
@@ -169,11 +176,13 @@ export function PreparerInputs({
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
+    setError(null);
     try {
       await fn();
       await reload();
       onSaved();
     } catch (e) {
+      setError((e as Error).message);
       onError((e as Error).message);
     } finally {
       setBusy(false);
@@ -211,6 +220,12 @@ export function PreparerInputs({
             Close
           </button>
         </div>
+
+        {error && (
+          <div className="banner error pi-error" role="alert" onClick={() => setError(null)}>
+            Not saved: {error}
+          </div>
+        )}
 
         <div className="pi-body">
           {/* ── the return itself ───────────────────────────────────────────── */}

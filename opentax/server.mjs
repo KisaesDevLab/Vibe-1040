@@ -35,6 +35,29 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const CHILD_TIMEOUT_MS = Number(process.env.OPENTAX_CHILD_TIMEOUT_MS ?? 60_000);
 
 /**
+ * How many drafts compute at once. Each one is a chain of engine processes — create, one add
+ * per node, get, validate — and there was no ceiling: the 2026-09-27 QA pass fired twelve
+ * requests and counted fifteen engine children running at once on a two-core sidecar. Beyond
+ * this many, a request waits its turn rather than being refused; the app's own client
+ * timeout bounds the wait.
+ */
+const DRAFT_CONCURRENCY = Math.max(1, Number(process.env.OPENTAX_DRAFT_CONCURRENCY ?? 2));
+let draftsInFlight = 0;
+const draftQueue = [];
+function acquireDraftSlot() {
+  if (draftsInFlight < DRAFT_CONCURRENCY) {
+    draftsInFlight += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => draftQueue.push(resolve));
+}
+function releaseDraftSlot() {
+  const next = draftQueue.shift();
+  if (next) next();
+  else draftsInFlight -= 1;
+}
+
+/**
  * Run the CLI once.
  *
  * Arguments are always a fixed literal list plus values from the request body, passed as argv
@@ -375,6 +398,8 @@ const INSTALL_ALLOWED = STAGING_DIR !== '';
  * activates should differ from what is running in one respect only: its contents.
  */
 const STAGED_PATH = INSTALL_ALLOWED ? join(STAGING_DIR, 'staged', basename(BIN)) : '';
+/** The digest and version verified at staging time, checked again before activation. */
+const STAGED_RECORD = INSTALL_ALLOWED ? `${STAGED_PATH}.verified.json` : '';
 const PREVIOUS_PATH = INSTALL_ALLOWED ? join(STAGING_DIR, 'previous', basename(BIN)) : '';
 /** A release binary is tens of megabytes; anything far larger is not one. */
 const MAX_BINARY_BYTES = 512 * 1024 * 1024;
@@ -461,6 +486,12 @@ async function stageBinary({ version, sha256, url, file }) {
     throw new Error(`the staged binary reports ${reported}, not the ${version} that was asked for`);
   }
 
+  // Record what was verified beside the file, so activation can check the bytes it is about
+  // to make live are the bytes that were verified — not whatever is in the staging directory
+  // by then. The directory is writable by the operator, and the gap between staging and
+  // activating is as long as a person leaves it.
+  await writeFile(STAGED_RECORD, JSON.stringify({ version: reported, sha256: digest, stagedAt: new Date().toISOString() }));
+
   return { version: reported, sha256: digest, from, path: STAGED_PATH };
 }
 
@@ -492,7 +523,34 @@ async function stagedState() {
 async function activateStaged() {
   if (!INSTALL_ALLOWED) throw new Error('staging is not configured on this deployment');
   if (!(await exists(STAGED_PATH))) throw new Error('nothing is staged');
+
+  // The bytes about to go live must be the bytes that were verified. Staging checked the
+  // digest, but staging and activating are two clicks with an arbitrary gap between them, and
+  // the staging directory is a plain writable volume. Without this, "verified by checksum
+  // before the binary is ever run" (§14) held at one instant and not at the one that matters.
+  // Found by the 2026-09-27 QA pass: activation only read the version string back.
+  let record;
+  try {
+    const { readFile } = await import('node:fs/promises');
+    record = JSON.parse(await readFile(STAGED_RECORD, 'utf8'));
+  } catch {
+    throw new Error('the staged binary has no verification record; stage it again');
+  }
+  const digest = await sha256Of(STAGED_PATH);
+  if (typeof record?.sha256 !== 'string' || digest !== record.sha256) {
+    await rm(STAGED_PATH, { force: true });
+    await rm(STAGED_RECORD, { force: true });
+    throw new Error(
+      `the staged binary no longer matches the digest verified at staging (expected ${record?.sha256}, ` +
+        `got ${digest}); it has been discarded — stage it again`,
+    );
+  }
   const version = await engineVersion(STAGED_PATH);
+  if (version !== record.version) {
+    await rm(STAGED_PATH, { force: true });
+    await rm(STAGED_RECORD, { force: true });
+    throw new Error(`the staged binary reports ${version}, not the ${record.version} verified at staging; discarded`);
+  }
   if (await exists(BIN)) {
     await mkdir(dirname(PREVIOUS_PATH), { recursive: true });
     await rm(PREVIOUS_PATH, { force: true });
@@ -512,6 +570,7 @@ async function activateStaged() {
   await chmod(incoming, 0o755);
   await rename(incoming, BIN);
   await rm(STAGED_PATH, { force: true });
+  await rm(STAGED_RECORD, { force: true });
   return { version, path: BIN, previousKept: PREVIOUS_PATH };
 }
 
@@ -608,7 +667,7 @@ const server = createServer((req, res) => {
       send(409, { error: 'staging is not configured on this deployment' });
       return;
     }
-    rm(STAGED_PATH, { force: true })
+    Promise.all([rm(STAGED_PATH, { force: true }), rm(STAGED_RECORD, { force: true })])
       .then(() => send(200, { discarded: true }))
       .catch((err) => send(500, { error: 'discard failed', detail: String(err?.message ?? err) }));
     return;
@@ -661,9 +720,11 @@ const server = createServer((req, res) => {
         .catch((err) => send(409, { error: 'not staged', detail: String(err?.message ?? err) }));
       return;
     }
-    draft(parsed)
+    acquireDraftSlot()
+      .then(() => draft(parsed))
       .then(({ status, body }) => send(status, body))
-      .catch((err) => send(500, { error: 'wrapper failure', detail: String(err?.message ?? err) }));
+      .catch((err) => send(500, { error: 'wrapper failure', detail: String(err?.message ?? err) }))
+      .finally(releaseDraftSlot);
   });
 });
 

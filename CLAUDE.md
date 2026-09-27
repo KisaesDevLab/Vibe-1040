@@ -596,6 +596,10 @@ them may be softened to make a draft look more complete:
    reaches the engine at all. Applied per document by content, this is §9 exactly: an SSA-1099
    always prints box 3, so it is always withheld, because the taxable portion of social
    security is not this app's to compute. Every K-1 and the SSA-1042S are withheld by §8.
+   A `code` box whose *value* decides carries `judgmentCodes` instead (added 2026-09-27): a
+   1099-R printing `G` or `H` in box 7 is withheld with the code named, because the engine would
+   otherwise treat the rollover as nontaxable on its own. Which other codes belong there is
+   QUESTIONS.md Q29, not a judgment to make in passing.
 4. **A negative amount is withheld**, because nearly every money field in the engine's
    catalogue is declared non-negative and the alternative is a silent absolute value.
 5. **What the bundle cannot know is listed every time** — filing status, dependents, itemised

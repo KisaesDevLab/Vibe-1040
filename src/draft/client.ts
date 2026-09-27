@@ -326,24 +326,61 @@ export async function computeReturn(
   nodes: readonly EngineRequestNode[],
 ): Promise<EngineResult> {
   const body = await post<Partial<EngineResult>>('/draft', { taxYear, nodes });
-  if (typeof body.returnId !== 'string' || typeof body.lines !== 'object' || body.lines === null) {
+  if (typeof body.returnId !== 'string' || typeof body.lines !== 'object' || body.lines === null || Array.isArray(body.lines)) {
     throw new DraftEngineError(
       'invalid_response',
       'the OpenTax engine returned a body with no returnId or no lines',
     );
   }
+  // Every collection is checked for shape rather than cast. A wrapper answering with the wrong
+  // shape — `validation.hard` as a string, `rejected` as an object — used to reach `.map` in
+  // `generate.ts` and surface as a 500 with a TypeError, which reads as an app bug rather than
+  // as the engine drift it is. Now it is `invalid_response`, the code that names it.
+  const diagnostics = (value: unknown, which: string): { code: string; message: string }[] => {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value)) {
+      throw new DraftEngineError('invalid_response', `the OpenTax engine returned validation.${which} that is not a list`);
+    }
+    return value.map((d: unknown) => ({
+      code: typeof (d as { code?: unknown })?.code === 'string' ? (d as { code: string }).code : 'unknown',
+      message: typeof (d as { message?: unknown })?.message === 'string' ? (d as { message: string }).message : String(d),
+    }));
+  };
+  const summary: Record<string, number> = {};
+  if (body.summary !== undefined && body.summary !== null) {
+    if (typeof body.summary !== 'object' || Array.isArray(body.summary)) {
+      throw new DraftEngineError('invalid_response', 'the OpenTax engine returned a summary that is not an object');
+    }
+    for (const [key, value] of Object.entries(body.summary)) {
+      if (typeof value === 'number') summary[key] = value;
+    }
+  }
+  const rejected: EngineNodeRejection[] = [];
+  if (body.rejected !== undefined && body.rejected !== null) {
+    if (!Array.isArray(body.rejected)) {
+      throw new DraftEngineError('invalid_response', 'the OpenTax engine returned rejected nodes that are not a list');
+    }
+    for (const r of body.rejected as unknown[]) {
+      const item = (r ?? {}) as { nodeType?: unknown; documentId?: unknown; message?: unknown };
+      rejected.push({
+        nodeType: typeof item.nodeType === 'string' ? item.nodeType : 'unknown',
+        documentId: typeof item.documentId === 'string' ? item.documentId : null,
+        message: typeof item.message === 'string' ? item.message : String(item.message ?? ''),
+      });
+    }
+  }
   return {
     returnId: body.returnId,
     year: typeof body.year === 'number' ? body.year : taxYear,
     engineVersion: typeof body.engineVersion === 'string' ? body.engineVersion : 'unknown',
-    summary: (body.summary ?? {}),
+    summary,
     lines: body.lines,
-    forms: Array.isArray(body.forms) ? body.forms : [],
-    warnings: Array.isArray(body.warnings) ? body.warnings : [],
+    forms: Array.isArray(body.forms) ? body.forms.filter((f): f is string => typeof f === 'string') : [],
+    warnings: Array.isArray(body.warnings) ? body.warnings.map((w) => String(w)) : [],
     validation: {
-      hard: body.validation?.hard ?? [],
-      soft: body.validation?.soft ?? [],
+      hard: diagnostics(body.validation?.hard, 'hard'),
+      soft: diagnostics(body.validation?.soft, 'soft'),
     },
-    rejected: Array.isArray(body.rejected) ? body.rejected : [],
+    rejected,
   };
 }

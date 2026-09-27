@@ -235,6 +235,28 @@ describe('the whole staged upgrade, end to end', () => {
     expect((await send('POST', '/staged/rollback')).status).toBe(409);
   });
 
+  /**
+   * §14: "verified by checksum before the binary is ever run". Staging verified it; activation
+   * used to read only the version string back, so bytes swapped into the staging directory
+   * between the two clicks would have gone live unverified (2026-09-27 QA pass).
+   */
+  it('refuses to activate a staged binary whose bytes changed after staging, and discards it', async () => {
+    const staged = await send('POST', '/staged', { version: '9.9.10-fake', sha256: candidateSha, file: 'opentax-next' });
+    expect(staged.status).toBe(200);
+    const stagedPath = (await get('/staged')).body.staged!.path;
+
+    // Same version string, different bytes: the version check alone would wave it through.
+    const tampered = (await readFile(stagedPath, 'utf8')) + '\n// not what was verified\n';
+    await writeFile(stagedPath, tampered);
+
+    const activated = await send('POST', '/staged/activate');
+    expect(activated.status).toBe(409);
+    expect(JSON.stringify(activated.body)).toMatch(/no longer matches the digest verified at staging/);
+    // Nothing went live, and the tampered file is not left there to be activated later.
+    expect((await get('/health')).body.version).toBe('9.9.9-fake');
+    expect((await get('/staged')).body.staged).toBeNull();
+  });
+
   it('discards a staged candidate without touching what is live', async () => {
     await send('POST', '/staged', { version: '9.9.10-fake', sha256: candidateSha, file: 'opentax-next' });
     expect((await get('/staged')).body.staged).not.toBeNull();

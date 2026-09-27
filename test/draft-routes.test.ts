@@ -289,6 +289,63 @@ describe.skipIf(!dbAvailable)('the draft routes, over HTTP', () => {
     });
   });
 
+  /**
+   * Found by the 2026-09-27 QA pass, each one by typing it into the real sheet. Every case here
+   * was accepted by the previous boundary and did damage after it.
+   */
+  describe('figures that could be written but must not be', () => {
+    const dependent = (extra: Record<string, unknown>) =>
+      send('POST', `/api/bundles/${bundleId}/draft-inputs/dependents`, {
+        firstName: 'X', lastName: 'Y', dob: '2014-01-01', relationship: 'daughter', monthsInHome: 12, ...extra,
+      });
+
+    it('refuses a figure past the safe-integer range, which was a poison row', async () => {
+      // Accepted before: stored as a bigint, then every read of this bundle's inputs — and every
+      // draft return — was a 500 from the bigint parser until the row was edited by hand.
+      const res = await send('PUT', `/api/bundles/${bundleId}/draft-inputs/schedule-a`, {
+        otherTaxesCents: 9_999_999_999_999_900,
+      });
+      expect(res.statusCode).toBe(400);
+      // And the bundle is still readable afterwards — the whole point.
+      expect((await get(`/api/bundles/${bundleId}/draft-inputs`)).statusCode).toBe(200);
+    });
+
+    it('refuses a negative preparer figure, which the engine answers by refusing the whole schedule', async () => {
+      const a = await send('PUT', `/api/bundles/${bundleId}/draft-inputs/schedule-a`, { medicalCents: -50_000 });
+      expect(a.statusCode).toBe(400);
+      const c = await send('POST', `/api/bundles/${bundleId}/draft-inputs/activities`, {
+        kind: 'schedule_c', description: 'X', grossCents: -1,
+      });
+      expect(c.statusCode).toBe(400);
+      expect((await dependent({ grossIncomeCents: -1 })).statusCode).toBe(400);
+    });
+
+    it('refuses the income-tax and sales-tax election both at once, naming the choice', async () => {
+      const res = await send('PUT', `/api/bundles/${bundleId}/draft-inputs/schedule-a`, {
+        stateIncomeTaxCents: 100_000, salesTaxCents: 50_000,
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json<ErrorBody>().error).toBe('income_or_sales_tax');
+      // Either one alone is fine: the app records the election, it does not make it.
+      expect((await send('PUT', `/api/bundles/${bundleId}/draft-inputs/schedule-a`, { salesTaxCents: 50_000 })).statusCode).toBe(200);
+      expect((await send('PUT', `/api/bundles/${bundleId}/draft-inputs/schedule-a`, { stateIncomeTaxCents: 100_000 })).statusCode).toBe(200);
+    });
+
+    it('refuses a birth date that is not a day, or is after the tax year', async () => {
+      // Eight digits and two dashes, and not a date. The engine accepted it and computed nothing.
+      expect((await dependent({ dob: '2025-13-45' })).statusCode).toBe(400);
+      expect((await dependent({ dob: '2025-02-30' })).statusCode).toBe(400);
+      // A dependent born after the year being drafted cannot be on that return.
+      const future = await dependent({ dob: '2030-01-01' });
+      expect(future.statusCode).toBe(400);
+      expect(future.json<ErrorBody>().error).toBe('dob_after_tax_year');
+      // Born on the last day of the tax year is on it.
+      const edge = await dependent({ dob: '2025-12-31' });
+      expect(edge.statusCode).toBe(200);
+      await send('DELETE', `/api/bundles/${bundleId}/draft-inputs/dependents/${edge.json<{ id: string }>().id}`);
+    });
+  });
+
   describe('the full round trip a preparer makes', () => {
     it('stores, reads back, amends and removes — and audits every write', async () => {
       expect((await send('PATCH', `/api/bundles/${bundleId}/draft-inputs`, { filingStatus: 'mfj' })).statusCode).toBe(200);

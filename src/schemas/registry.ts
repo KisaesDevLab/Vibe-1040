@@ -31,6 +31,15 @@ const fieldSchema = z
     judgmentRequired: z.boolean().default(false),
     judgmentReason: z.string().optional(),
     /**
+     * Routes to Judgment Required only when the box prints one of these codes — for a `code`
+     * field whose *value* decides, where `judgmentRequired` would catch every document. The
+     * live case is a 1099-R box 7 reading `G` or `H`, a rollover §9 names: the engine would
+     * otherwise treat the whole distribution as nontaxable on its own, which is a
+     * characterisation this app does not make. Each entry is one printed code character; a box
+     * that prints two (`4G`) matches on either.
+     */
+    judgmentCodes: z.array(z.string().regex(/^[A-Z0-9]$/, 'one printed code character')).min(1).optional(),
+    /**
      * `tin` marks a field that is extracted but **never persisted** (§7). Identity
      * resolution consumes the plaintext in memory, stores a salted hash plus the last
      * four, and the value is dropped. `src/extract/persist.ts` refuses to write these.

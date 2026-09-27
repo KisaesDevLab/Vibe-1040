@@ -324,6 +324,15 @@ describe('the Hand check sheet', () => {
     expect(text).toContain('Expected: The 1099-R was withheld');
   });
 
+  it('says in words when no document reached the engine, rather than leaving a count to be read past', async () => {
+    // 2026-09-27 QA pass: an SSA-1099-only bundle produced a confident all-zero return whose only
+    // trace on the sheet was the `0` in "0 document(s) computed".
+    const empty = (await handCheckText({ ...handCheck, documentsIncluded: 0, documentsWithheld: 1 }))!;
+    expect(empty).toMatch(/NO SOURCE DOCUMENT REACHED THE ENGINE/);
+    const normal = (await handCheckText(handCheck))!;
+    expect(normal).not.toMatch(/NO SOURCE DOCUMENT REACHED THE ENGINE/);
+  });
+
   it('keeps what a person typed apart from what was read off a page', async () => {
     const text = (await handCheckText(handCheck))!;
     expect(text).toContain('Stated by the preparer — not read from any document');
