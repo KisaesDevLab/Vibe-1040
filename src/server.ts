@@ -271,9 +271,21 @@ async function main(): Promise<void> {
       try {
         const readiness = await engineReadiness();
         if (!readiness.engine.ok) {
+          // Name the likeliest cause and its fix. The engine is behind the `draft-return`
+          // compose profile, so a deployment that turned the feature on without adding the
+          // profile gets a service that was never pulled, let alone started — which is exactly
+          // what happened on an appliance on 2026-09-27, where the whole app was then reported
+          // unhealthy because `/health` waited for this. It no longer waits; this line is what
+          // tells whoever reads the log what to actually do.
           console.warn(
             `[startup] draft return: engine unreachable at ${env.OPENTAX_URL} ` +
-              `(${readiness.engine.reason ?? 'no reason given'}). Draft returns park; nothing else is affected.`,
+              `(${readiness.engine.reason ?? 'no reason given'}). Draft returns park; the ` +
+              'worksheet and everything else are unaffected, and the app is healthy.\n' +
+              '          If you meant to run it, the engine is a separate compose service behind ' +
+              'the `draft-return` profile:\n' +
+              '            docker compose --profile draft-return up -d opentax\n' +
+              '          If you did not, switch the draft return off in Admin → Settings → ' +
+              'Engine and pipeline and this warning stops.',
           );
           return;
         }

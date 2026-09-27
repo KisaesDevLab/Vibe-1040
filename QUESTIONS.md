@@ -11,6 +11,42 @@ to the Resolved section.
 
 ## Blocking
 
+### Q27 — Does the appliance mean to run the draft-return engine, or not?
+**Gates:** nothing in this repo — **the app-side defect is fixed.** This is a Vibe-Appliance
+question. **Raised:** 2026-09-27, from a real deployment.
+
+An appliance bootstrap on 2026-09-27 brought `vibe-1040` up with the draft return **enabled**
+and the engine **not running**, then failed the whole app: *"App vibe-1040 did not become
+healthy within 180s."*
+
+**The app's part was a genuine defect and is fixed.** `GET /health` awaited a live probe of the
+sidecar with a 5000 ms budget, and the container healthcheck's timeout is 5 s — the same number,
+so an unreachable engine meant the healthcheck could never pass. The route's comment claimed an
+unreachable engine was "never a reason for `ok: false`", which was true of the JSON and false of
+the latency. `/health` now reads a background probe and waits for nothing; `test/health.test.ts`
+holds it, and mutation-checks against a stub that takes the real 5000 ms.
+
+**What is left is the appliance's, and it is a straight question: did it mean to?** The compose
+service is behind the `draft-return` profile, and the bootstrap's pull list shows only
+`vibe-1040`, `vibe-1040-sidecar`, `redis` and `paradedb` — the engine image was never fetched,
+so the profile was not in the compose invocation. Meanwhile something set the feature on. Those
+two facts disagree with each other, and only the appliance knows which one was intended:
+
+- **If the draft return is meant to run**, the manifest needs the `draft-return` profile (and
+  the engine image, and the staging volume if Q23's staging is wanted). Note this would put a
+  draft-return engine next to live client data, which **Q21 says must not happen yet** — so the
+  honest answer today is probably the other one.
+- **If it is not meant to run**, nothing should be switching the feature on. `DRAFT_RETURN_ENABLED`
+  now only *seeds* a deployment that has never set it (Q26), so the appliance's env template is
+  the likely source. Leaving it off is also what Q21 requires until the WISP question is answered.
+
+The startup log now names both the profile command and the settings toggle, so the next operator
+to read it does not have to work this out. **No app change is waiting on the answer** — this is
+recorded so the appliance's env template and manifest get looked at together rather than one of
+them being changed to match a mistake in the other.
+
+---
+
 ### Q26 — Which controls may be a click, and which may not?
 **Gates:** nothing — **answered on the day it was raised.** **Raised and answered:** 2026-09-25.
 

@@ -137,8 +137,12 @@ const get = <T>(path: string): Promise<T> => request<T>(path, { method: 'GET' })
 /**
  * Ask the sidecar whether it is there and which engine it holds.
  *
- * Never throws. `/health` reports degraded rather than refusing to answer, so a missing
- * optional service cannot take the app down with it.
+ * Never throws. Callers report degraded rather than refusing to answer, so a missing optional
+ * service cannot take the app down with it.
+ *
+ * **This blocks for up to five seconds and must never be awaited on a liveness path** — use
+ * `lastKnownEngineHealth()` there. See the comment on that function: awaiting this from
+ * `GET /health` took an appliance down on 2026-09-27.
  */
 export async function engineHealth(): Promise<EngineHealth> {
   const controller = new AbortController();
@@ -158,6 +162,59 @@ export async function engineHealth(): Promise<EngineHealth> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * The engine's reachability **without waiting for it** — for `GET /health` and nothing else.
+ *
+ * ## Why this exists
+ *
+ * `/health` awaited `engineHealth()`, whose budget is five seconds, and the container's
+ * healthcheck has a timeout of five seconds. With the sidecar unreachable those two numbers are
+ * the same number, so the probe could never win: every `/health` took *at least* 5000 ms, the
+ * healthcheck killed it at exactly 5000 ms, and the container never reported healthy. The
+ * appliance then gave up after its start period plus five retries — 30s + 5 × 30s = the 180s in
+ * the failure message. Observed on a real deployment on 2026-09-27, where the engine was enabled
+ * but its compose service had not been started.
+ *
+ * The route's own comment said an unreachable engine is "never a reason for `ok: false`", and
+ * that was true of the JSON it returned and false of the latency it took. **An optional
+ * dependency must not be able to fail a liveness check, and the way to guarantee that is to
+ * never call it from one** — not to pick a smaller timeout, which is the same bug with a
+ * different constant.
+ *
+ * So: return whatever the last probe found, immediately, and refresh in the background when the
+ * answer is stale. A cold cache reports `not yet probed` rather than waiting to find out.
+ */
+const PROBE_TTL_MS = 30_000;
+let lastProbe: { at: number; value: EngineHealth } | null = null;
+let probeInFlight: Promise<void> | null = null;
+
+function refreshEngineHealthInBackground(): void {
+  if (probeInFlight) return;
+  probeInFlight = engineHealth()
+    .then((value) => {
+      lastProbe = { at: Date.now(), value };
+    })
+    .catch(() => {
+      // engineHealth never throws; this is belt and braces so a rejection cannot wedge the
+      // in-flight guard and leave the probe permanently stuck.
+      lastProbe = { at: Date.now(), value: { ok: false, version: null, reason: 'unreachable' } };
+    })
+    .finally(() => {
+      probeInFlight = null;
+    });
+}
+
+export function lastKnownEngineHealth(): EngineHealth {
+  const fresh = lastProbe !== null && Date.now() - lastProbe.at < PROBE_TTL_MS;
+  if (!fresh) refreshEngineHealthInBackground();
+  return lastProbe?.value ?? { ok: false, version: null, reason: 'not yet probed' };
+}
+
+/** Test seam, so a test can assert the liveness path without a sidecar. */
+export function __setLastEngineProbe(value: EngineHealth | null): void {
+  lastProbe = value === null ? null : { at: Date.now(), value };
 }
 
 /** One input node's field catalogue, as the engine itself reports it. */

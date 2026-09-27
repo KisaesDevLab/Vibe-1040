@@ -22,7 +22,13 @@ import { buildWorksheetModel } from '../mapping/engine.ts';
 import { assertWorksheetAllowed } from '../reconcile/gate.ts';
 import { setting } from '../settings/store.ts';
 import { loadMappedDocuments } from '../worksheet/generate.ts';
-import { computeReturn, DraftEngineError, engineHealth, type EngineResult } from './client.ts';
+import {
+  computeReturn,
+  DraftEngineError,
+  engineHealth,
+  lastKnownEngineHealth,
+  type EngineResult,
+} from './client.ts';
 import { compareDraft, type DraftComparison } from './compare.ts';
 import { engineCatalogCheck, formatFindings, type CatalogCheck } from './catalog.ts';
 import { draftInputsForBundle } from './inputs.ts';
@@ -319,7 +325,20 @@ export async function latestDraftReturn(bundleId: string): Promise<{
  * Reports rather than throws: an unreachable optional engine is a degraded state, not an
  * outage, and the same reasoning as router-down parking applies (§3).
  */
-export async function draftReturnStatus(taxYear?: number): Promise<{
+export async function draftReturnStatus(
+  taxYear?: number,
+  options: {
+    /**
+     * Report the engine from the last background probe instead of asking it now.
+     *
+     * `GET /health` passes this and nothing else does. Awaiting a five-second probe from a
+     * liveness path whose healthcheck also allows five seconds is what took an appliance down
+     * on 2026-09-27 — see `lastKnownEngineHealth`. The UI's own status route still asks live,
+     * because a page load can afford to wait and an operator wants the current answer.
+     */
+    liveness?: boolean;
+  } = {},
+): Promise<{
   enabled: boolean;
   engine: Awaited<ReturnType<typeof engineHealth>> | null;
   expectedVersion: string;
@@ -371,7 +390,7 @@ export async function draftReturnStatus(taxYear?: number): Promise<{
   }
   return {
     enabled: true,
-    engine: await engineHealth(),
+    engine: options.liveness ? lastKnownEngineHealth() : await engineHealth(),
     expectedVersion: await setting<string>('engine.opentax_version'),
     filingStatuses,
     filingStatusYear,

@@ -109,10 +109,19 @@ export function registerRoutes(app: FastifyInstance): void {
     service: 'vibe-1040',
     // Degraded but serving: existing bundles remain readable when the router is down (§3).
     router: isRouterReachable() ? 'reachable' : 'unreachable',
-    // Same posture for the draft-return engine (P17): 'off' when the deployment has not
-    // enabled it, and a reachability report when it has. Never a reason for `ok: false` —
-    // an optional checking aid does not make the appliance unhealthy.
-    draftReturn: await draftReturnStatus(),
+    /**
+     * Same posture for the draft-return engine (P17): 'off' when the deployment has not
+     * enabled it, and a reachability report when it has. Never a reason for `ok: false` — an
+     * optional checking aid does not make the appliance unhealthy.
+     *
+     * **`liveness: true` is what makes that sentence true.** It was here before and it was a
+     * lie: this awaited a live probe of the sidecar with a five-second budget, and the
+     * container's healthcheck allows five seconds, so an unreachable engine meant the
+     * healthcheck could never pass and the appliance failed to come up at all (2026-09-27).
+     * The body said healthy; the latency said otherwise. The engine's reachability now comes
+     * from a background probe and this route waits for nothing.
+     */
+    draftReturn: await draftReturnStatus(undefined, { liveness: true }),
   }));
 
   // ── auth ───────────────────────────────────────────────────────────────────

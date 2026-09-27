@@ -1655,6 +1655,46 @@ and remains deferred.
 
 ---
 
+## Incident — 2026-09-27, the appliance would not come up
+
+**Symptom:** a Vibe-Appliance bootstrap reported *"App vibe-1040 did not become healthy within
+180s"*. The app was fine: it migrated (`no pending migrations`), the worker and sidecar started,
+and it was answering requests on 8240 throughout.
+
+**Cause, and the numbers make it exact.** `GET /health` awaited `engineHealth()`, whose budget is
+**5000 ms**, and the container healthcheck's timeout is **5 s**. With the OpenTax sidecar
+unreachable those are the same number, so the probe could never win — every `/health` took *at
+least* 5000 ms and was killed at exactly 5000 ms. The container never went healthy, and the
+appliance gave up after its start period plus five retries: 30 s + 5 × 30 s = **180 s**, the
+number in the message. The deployment logs show `responseTime: 5002, 5000.07, 5001.19, …` —
+every one pinned to the budget.
+
+**Why it was worse than a bad deploy.** This was not specific to first boot. *Any* engine
+outage — a crash, a restart, an upgrade — would have taken the entire appliance down with it,
+which is the exact opposite of the posture the code claimed: §3's parking rule, and the route's
+own comment saying an unreachable engine is "never a reason for `ok: false`". That comment was
+true of the JSON it returned and false of the latency it took, and a healthcheck reads latency.
+
+**Fixed:** the engine's reachability on `/health` now comes from a background probe
+(`lastKnownEngineHealth`), so the liveness path waits for nothing and a cold cache reports
+`not yet probed` rather than blocking to find out. Measured after the fix: 416 ms cold, then
+0.5–3 ms. The live probe stays where blocking is fine and expected — the Admin engine page.
+
+**The lesson worth keeping, because a smaller constant would not have been a fix.** An optional
+dependency must not be able to fail a liveness check, and the only way to guarantee that is to
+never call it from one. Picking a shorter timeout is the same bug with different arithmetic.
+
+**Caught by nothing, which is its own finding.** Every test called `/health` with the suite's
+wrapper running, so the probe answered in milliseconds and the blocking call was invisible.
+`test/health.test.ts` now stubs `engineHealth` to take the real 5000 ms and asserts `/health`
+answers inside half the healthcheck's budget, with the budget *read out of the Dockerfile* so the
+two cannot drift apart. The first version of that test passed against the broken code for exactly
+the old reason, and the stub is what fixed it.
+
+**Still open, and not this repo's:** the appliance had the feature enabled with the engine's
+compose profile absent. QUESTIONS.md **Q27** puts that to whoever owns the manifest — and notes
+that Q21 says a draft-return engine should not be running next to live client data yet anyway.
+
 ## Known risks
 
 | Risk | Phase | Mitigation |
@@ -1681,6 +1721,7 @@ and remains deferred.
 | **An engine field renamed between releases disappears silently** | P17 | Verified on 2.0.4 by probe: a renamed *required* field is refused loudly, but a renamed **optional** one is accepted and ignored, so the amount never arrives and the line reads as absent — with nothing in `rejected`, the diagnostics or the omissions saying so. `src/draft/catalog.ts` compares the map's field names against the engine's own catalogue before sending, and a blocking mismatch withholds draft returns (the worksheet is unaffected). A **name** check only: `npm run draft -- --truth` measures behaviour, and `docs/opentax-draft-return.md` §7 requires both on every upgrade |
 | **A stand-in binary that shares a wrong assumption tests nothing** | P17 | Learned the hard way: the stub encoded a nested `lines` shape the engine does not use, so all 328 tests agreed with the mistake. `test/helpers/fake-opentax.mjs` now mirrors the engine's real shapes — flat keys, array-valued lines, absent source lines, present zero totals — and its comments say where each came from. Re-derive it against the binary whenever the pin moves | It must also know about **every** node type the map declares, not a representative few: carrying three made the catalogue check report the other eleven as absent and refuse every draft. `test/helpers/fake-opentax-catalog.json` is derived from the real binary for that reason |
 | **The released image resolves dependencies no test has ever run against** | P0 | Found on 2026-09-25 when it finally bit: `Dockerfile` copied `package.json` without `package-lock.json`, so every image since P0 — v0.10.0 included — floated `@kisaesdevlab/vibe-auth` and everything else to whatever the latest matching version was at build time. The v0.11.0 build failed to compile on a widened union in a newer 1.x. Both install stages now copy the lockfile, so the image and the test run agree by construction. **The type error was the symptom; shipping an untested tree was the defect, and it was silent for nine releases** |
+| **An optional dependency on the liveness path can take the whole appliance down** | P17 | Hit for real on 2026-09-27: `/health` awaited a 5000 ms engine probe against a 5 s healthcheck timeout, so an unreachable sidecar meant the container never went healthy. Fixed by never calling it from a liveness path — `/health` reads a background probe. `test/health.test.ts` asserts the budget against the Dockerfile's own number. **Apply the same rule to anything optional added to `/health` later**: a shorter timeout is not a fix |
 | Powered-off GPU droplets still bill if the Router ever provisions one | Router-side | Not this repo's concern, but flag to Router work |
 
 ---
