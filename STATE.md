@@ -34,7 +34,10 @@ code complete and **driven end to end in a browser against that engine and a rea
 below): fifteen defects fixed with tests, four high — a poison row that made a bundle's inputs
 unreadable, a NEC silently discarding a preparer's Schedule C, code-G rollovers computed as
 nontaxable by the engine alone, and four refundable-credit lines computed and shown nowhere —
-and three questions raised (Q28–Q30). The node map is at `2025.2`.
+and three questions raised (Q28–Q30). The node map is at `2025.2`. **v0.12.1 images are
+published** as of 2026-09-27 (release run 30, on merge `28c9ad2`, dispatched by hand — again no
+git tag), carrying that review and the `/health` liveness fix from the appliance incident, both
+via PR #9 (`5169c31`).
 **Blocked by:** nothing for development. P14 cannot *exit* until Router region pinning
 lands (QUESTIONS.md Q11). P16 cannot *exit* until it has been signed into from a real browser
 against a real Vibe Auth (below). P17 cannot *exit* until Q21 is answered and the fixture
@@ -147,8 +150,14 @@ to `2025.2`; three questions were raised (Q28–Q30) and none decided in passing
 **What does not change.** Q21 is still unanswered, so neither P17 nor P18 is closer to exiting,
 and the draft return still must not be pointed at live client data. Q27 — whether the appliance
 means to run the engine at all — is the appliance's to answer; nothing in this release depends on
-it. The git tag is expected to fail from an agent session as it did for v0.11.0 and v0.12.0, so
-the release run is dispatched by hand and the run number recorded here once it has published.
+it. **Published 2026-09-27 as release run 30** (`36287033122`), dispatched by hand against merge
+`28c9ad2` (PR #10, the version bump) with the tag input `v0.12.1`: the appliance, the sidecar and
+the OpenTax engine image at `0.12.1` and `latest`, the published engine verified to report the
+pinned 2.0.4, and all manifests verified anonymously pullable by the run itself. **The git tag
+`v0.12.1` is not pushed**, for the same reason as v0.11.0 and v0.12.0: tag pushes from an agent
+session are refused by organization policy, and a policy denial is reported rather than retried.
+Until someone pushes it, no floating `0.12` tag exists and the tag-triggered path of
+`release.yml` has still never run.
 
 ### v0.12.0 — what a firm admin can change, and what they still cannot
 
