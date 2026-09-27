@@ -129,6 +129,27 @@ skips locally — the auth package is stubbed here, so CI is the only place its 
 the UI, against a real Postgres at 0013. `npm run lint` clean in both packages.
 `npm run draft -- --truth` still 13 agreed, 0 disagreed.
 
+### v0.12.1 — the appliance comes up, and the OpenTax review lands
+
+Cut 2026-09-27 from merge `5169c31` (PR #9), on Kurt's instruction to merge and tag. A patch
+release, and the two things in it are the two things the day found:
+
+**The appliance would not come up** — `/health` awaited a 5000 ms engine probe against a 5 s
+healthcheck timeout, so an unreachable optional sidecar failed the whole container (*Incident —
+2026-09-27* below). `/health` now reads a background probe and waits for nothing.
+
+**The OpenTax integration was reviewed by execution** — fifteen defects fixed with tests, four
+high (*QA review — 2026-09-27* below): a poison row that made a bundle's inputs unreadable, a
+1099-NEC silently discarding a preparer's Schedule C, code-G rollovers computed as nontaxable by
+the engine alone, and four refundable-credit lines computed and shown nowhere. The node map moves
+to `2025.2`; three questions were raised (Q28–Q30) and none decided in passing.
+
+**What does not change.** Q21 is still unanswered, so neither P17 nor P18 is closer to exiting,
+and the draft return still must not be pointed at live client data. Q27 — whether the appliance
+means to run the engine at all — is the appliance's to answer; nothing in this release depends on
+it. The git tag is expected to fail from an agent session as it did for v0.11.0 and v0.12.0, so
+the release run is dispatched by hand and the run number recorded here once it has published.
+
 ### v0.12.0 — what a firm admin can change, and what they still cannot
 
 Released 2026-09-25 as run 29 from merge `58d6205`, carrying PR #6 (`faa4c99`). Two changes,
