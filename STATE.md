@@ -1043,6 +1043,26 @@ requires an explicit decision entry below, not a silent implementation choice.
 Append here when a locked decision changes or a significant implementation choice is made
 that future phases depend on. Date, decision, reason, phases affected.
 
+**2026-09-28 — Form 1040 line 8 becomes a computed rollup of the Schedule 1 income lines; the
+appliance gets the engine.** (§10, §14, QUESTIONS.md Q27 and Q28. Kurt's call, in his own words:
+"Do what is necessary! I want to be able to process documents, make edits and generate a draft
+return.")
+
+Two things stood between "implemented" and "usable", and neither was code in `src/`. First, the
+engine did not exist on the appliance: its overlay started four services and no engine, so the
+draft-return setting was on with nothing behind it (Q27). That is fixed in the appliance repo —
+Vibe-Appliance PR #17 adds the `vibe-1040-opentax` service, `OPENTAX_URL`, the engine image in the
+manifest's extras and a `health_extra` probe; the pinned uid was verified by running the real
+wrapper and engine as an unprivileged non-image user. Second, `1040:8` was declared comparable and
+nothing ever fed it, so a 1099-NEC or unemployment figure was never compared against a draft (Q28).
+Line mappings **2025.4** make it a `computed` rollup over the seven Schedule 1 income lines the
+worksheet reports, at gross; the node map says beside the figure that the engine nets a preparer's
+Schedule C expenses while this side does not. The mapping change is data only (§10), carried into
+`2026.0-unverified` without a version change because it is structural. **What this does not
+change:** the worksheet still reports what the documents say and computes no tax; Q21 is still
+unanswered, and running the engine on an appliance holding live client data is a decision taken
+with that question open (recorded under Q27), not an answer to it.
+
 **2026-09-25 — Five environment keys become audited settings; five stay in the environment.**
 (§11, §14, QUESTIONS.md Q26. Kurt's call, asked in his own words: "Please turn on by default or
 allow a toggle in UI", then "you know what may all these accessible via UI!")

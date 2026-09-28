@@ -50,6 +50,32 @@ describe('line mapping (P10)', () => {
     expect(line(model, '1040:1z').totalCents).toBe(7_500_000);
   });
 
+  /**
+   * 2025.4, QUESTIONS.md Q28. Before this, nothing mapped to line 8 and it was blank on every
+   * worksheet — and since the engine surfaces only Form 1040 lines, a 1099-NEC or unemployment
+   * figure was never actually compared against a draft return. The rollup is gross, like the
+   * Schedule 1 lines it sums, and a component with no contributor counts as null, not zero.
+   */
+  it('rolls the Schedule 1 income lines it reports into Form 1040 line 8, at gross (Q28)', async () => {
+    const model = await buildWorksheetModel(
+      2025,
+      [
+        await doc('1099-NEC', { box_1: field({ cents: 888_800 }) }),
+        await doc('1099-G', { box_1: field({ cents: 120_000 }) }),
+        await doc('W-2G', { box_1: field({ cents: 50_000 }) }),
+      ],
+      join(DATA_ROOT, 'line-mappings'),
+    );
+    expect(line(model, 'SCH1:3').totalCents).toBe(888_800);
+    expect(line(model, 'SCH1:7').totalCents).toBe(120_000);
+    expect(line(model, 'SCH1:8b').totalCents).toBe(50_000);
+    const l8 = line(model, '1040:8');
+    expect(l8.totalCents).toBe(888_800 + 120_000 + 50_000);
+    // Seven components; the four with nothing in this bundle are null contributors, never zeros.
+    expect(l8.contributorCount).toBe(7);
+    expect(l8.nullContributorCount).toBe(4);
+  });
+
   it('sums non-null contributors and reports the blank count separately (§5)', async () => {
     const model = await buildWorksheetModel(
       2025,

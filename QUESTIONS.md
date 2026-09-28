@@ -496,32 +496,6 @@ that conversation is independent of this question and worth starting separately.
 
 ## Non-blocking, working assumption recorded
 
-### Q28 — Five comparable 1040 lines can never be compared, and one of them hides every NEC
-**Gates:** nothing. **Raised:** 2026-09-27, by the OpenTax QA pass.
-
-`data/opentax-nodes/2025.json` declares `1040:1b`, `1040:7`, `1040:8`, `1040:13b` and `1040:25c`
-as `comparable`, and `data/line-mappings/2025.json` gives none of them a contributor or a
-`computed` rollup. The worksheet side is therefore always blank, so the verdict on each is
-`worksheet_silent` or `both_blank` forever. For four of them that is honest: nothing this app
-reads feeds household wages, capital gains (1099-B is unmappable, and the line carries a note),
-Schedule 1-A or "other withholding".
-
-**`1040:8` is different.** It is Schedule 1 line 10, the sum of lines the worksheet *does* report —
-`SCH1:3` (1099-NEC) and `SCH1:7` (1099-G unemployment) — and engine 2.0.4 surfaces only Form 1040
-lines, so line 8 is the **only** place a NEC or an unemployment figure can ever be compared. Today
-it never is: a bundle with a 1099-NEC gets `worksheet_silent` on line 8 and no check at all on the
-amount, while the harness counts the line as compared.
-
-**Working assumption:** leave the map as it is and record the gap, because the fix is a line-mapping
-change — `"computed": ["SCH1:3", "SCH1:7", …]` on `1040:8`, the way `1040:1z` already rolls up
-`1a` and `1b` — and the line mappings are a versioned, person-reviewed table (Q25), not something a
-QA pass rewrites. Two things to decide when it is taken up: which `SCH1` lines belong in the rollup
-(the worksheet reports NEC *gross*, so line 8 would be gross too, which matches how `SCH1:3` already
-reads), and whether `assertConsistent` should refuse a `comparable` line with neither a contributor
-nor a rollup, which would force the other four to be declared `notCompared` with their reasons.
-
----
-
 ### Q29 — Which 1099-R distribution codes are a judgment call, and should the worksheet agree?
 **Gates:** nothing. **Raised:** 2026-09-27, by the OpenTax QA pass.
 
@@ -1014,6 +988,47 @@ Probably a season-two question once real volume exists.
 ---
 
 ## Resolved
+
+### Q28 — Five comparable 1040 lines can never be compared, and one of them hides every NEC
+**Gates:** nothing. **Raised:** 2026-09-27, by the OpenTax QA pass.
+
+`data/opentax-nodes/2025.json` declares `1040:1b`, `1040:7`, `1040:8`, `1040:13b` and `1040:25c`
+as `comparable`, and `data/line-mappings/2025.json` gives none of them a contributor or a
+`computed` rollup. The worksheet side is therefore always blank, so the verdict on each is
+`worksheet_silent` or `both_blank` forever. For four of them that is honest: nothing this app
+reads feeds household wages, capital gains (1099-B is unmappable, and the line carries a note),
+Schedule 1-A or "other withholding".
+
+**`1040:8` is different.** It is Schedule 1 line 10, the sum of lines the worksheet *does* report —
+`SCH1:3` (1099-NEC) and `SCH1:7` (1099-G unemployment) — and engine 2.0.4 surfaces only Form 1040
+lines, so line 8 is the **only** place a NEC or an unemployment figure can ever be compared. Today
+it never is: a bundle with a 1099-NEC gets `worksheet_silent` on line 8 and no check at all on the
+amount, while the harness counts the line as compared.
+
+**Working assumption:** leave the map as it is and record the gap, because the fix is a line-mapping
+change — `"computed": ["SCH1:3", "SCH1:7", …]` on `1040:8`, the way `1040:1z` already rolls up
+`1a` and `1b` — and the line mappings are a versioned, person-reviewed table (Q25), not something a
+QA pass rewrites. Two things to decide when it is taken up: which `SCH1` lines belong in the rollup
+(the worksheet reports NEC *gross*, so line 8 would be gross too, which matches how `SCH1:3` already
+reads), and whether `assertConsistent` should refuse a `comparable` line with neither a contributor
+nor a rollup, which would force the other four to be declared `notCompared` with their reasons.
+
+**A:** 2026-09-28 — **Make the rollup.** Kurt, in his own words: "Do what is necessary! I want to be
+able to process documents, make edits and generate a draft return." Line mappings **2025.4**: `1040:8`
+is `computed` over the seven Schedule 1 income lines the worksheet reports — `SCH1:1`, `SCH1:3`,
+`SCH1:5`, `SCH1:7`, `SCH1:8b`, `SCH1:8f`, `SCH1:8z` — at gross, exactly as those lines read. Carried
+into `2026.0-unverified` unchanged in version, since it is structural and does not alter which
+printed lines Q25 still needs read. The node map's `1040:8` entry carries a note saying the engine
+side nets a preparer's Schedule C expenses while this side is gross, so a difference equal to the
+entered expenses is expected whenever a business summary was entered. `test/mapping.test.ts` holds
+the rollup (NEC + unemployment + gambling sum to line 8; four components null, never zero).
+
+The second question — refusing a `comparable` line with neither contributor nor rollup — is **not**
+done: `1040:1b`, `1040:7`, `1040:13b` and `1040:25c` stay comparable and read `worksheet_silent`
+when the engine computes something there, which is honest, and `1040:7` already carries the 1099-B
+note. Revisit if a fifth such line appears.
+
+---
 
 ### Q1 — Primary stack confirmation
 **Gated:** P0.
