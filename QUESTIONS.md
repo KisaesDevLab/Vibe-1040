@@ -45,6 +45,60 @@ to read it does not have to work this out. **No app change is waiting on the ans
 recorded so the appliance's env template and manifest get looked at together rather than one of
 them being changed to match a mistake in the other.
 
+**2026-09-28 — the appliance answered "yes" by switching it on, and what that shows.** With the
+setting on, Admin → Draft engine reads *Running: unreachable — timed out*, `OPENTAX_VERSION 2.0.4`,
+node map `2025.2` written against 2.0.4. That is the app dialing its default `http://opentax:8230`
+on a network where no such container exists: the appliance overlay `apps/vibe-1040.yml` has four
+services (migrate, api, worker, sidecar) and no engine, its env template sets no `OPENTAX_URL`, and
+the manifest's `image.extras` lists only the sidecar, so `update.sh` would never pull or roll back
+an engine image either. Verified against Vibe-Appliance at `f85c432`.
+
+**What the appliance needs, if the answer stays "yes"** (Vibe-Appliance repo, not this one):
+
+1. A fifth service in `apps/vibe-1040.yml`, mirroring this repo's `opentax` service without the
+   build block and without the compose profile — the appliance's enable brings up the routing
+   service and whatever it depends on, so the dependency edge is what starts it, exactly as the
+   worker is pulled in today:
+
+   ```yaml
+   vibe-1040-opentax:
+     image: ghcr.io/kisaesdevlab/vibe-1040-opentax:${APP_TAG:-latest}
+     container_name: vibe-1040-opentax
+     restart: unless-stopped
+     init: true
+     read_only: true
+     tmpfs:
+       - /tmp
+     networks:
+       - vibe_net
+     healthcheck:
+       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8230/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+       interval: 30s
+       timeout: 5s
+       retries: 3
+       start_period: 5s
+   ```
+
+   and on the `vibe-1040` service, `depends_on: vibe-1040-opentax: { condition: service_started }`.
+   No volumes: the engine holds nothing between requests, and `read_only` plus a tmpfs `/tmp` is
+   what makes that true rather than assumed (§14).
+2. `OPENTAX_URL=http://vibe-1040-opentax:8230` in `env-templates/per-app/vibe-1040.env.tmpl`. The
+   app's default name is `opentax`, which is not this container's name on the appliance.
+3. `{ "name": "opentax", "image": "ghcr.io/kisaesdevlab/vibe-1040-opentax" }` added to the
+   manifest's `image.extras`, so the engine image is pulled, updated and rolled back with the app
+   the way the sidecar is. The image is published at `latest` and `v0.12.1` and its engine is
+   verified at build time to report the pinned 2.0.4.
+
+Nothing else changes: `/health` already degrades rather than fails when the engine is absent (the
+2026-09-27 incident fix), and the setting's acknowledgement text is unchanged.
+
+**And the caveat that does not go away.** Turning this on where the appliance holds live client
+data is the thing Q21 says not to do until `docs/wisp-amendment.md` §4.1 is approved. The switch
+was shipped ahead of Q21 deliberately (Q26), the acknowledgement says so at the moment of
+switching, and the WISP owner is the person doing the switching — so this is recorded as a
+decision taken with the question open, not as the question being answered. Answering it is still
+a written ruling on §4.1.
+
 ---
 
 ### Q26 — Which controls may be a click, and which may not?
