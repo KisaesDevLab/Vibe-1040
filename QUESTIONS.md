@@ -45,6 +45,60 @@ to read it does not have to work this out. **No app change is waiting on the ans
 recorded so the appliance's env template and manifest get looked at together rather than one of
 them being changed to match a mistake in the other.
 
+**2026-09-28 — the appliance answered "yes" by switching it on, and what that shows.** With the
+setting on, Admin → Draft engine reads *Running: unreachable — timed out*, `OPENTAX_VERSION 2.0.4`,
+node map `2025.2` written against 2.0.4. That is the app dialing its default `http://opentax:8230`
+on a network where no such container exists: the appliance overlay `apps/vibe-1040.yml` has four
+services (migrate, api, worker, sidecar) and no engine, its env template sets no `OPENTAX_URL`, and
+the manifest's `image.extras` lists only the sidecar, so `update.sh` would never pull or roll back
+an engine image either. Verified against Vibe-Appliance at `f85c432`.
+
+**What the appliance needs, if the answer stays "yes"** (Vibe-Appliance repo, not this one):
+
+1. A fifth service in `apps/vibe-1040.yml`, mirroring this repo's `opentax` service without the
+   build block and without the compose profile — the appliance's enable brings up the routing
+   service and whatever it depends on, so the dependency edge is what starts it, exactly as the
+   worker is pulled in today:
+
+   ```yaml
+   vibe-1040-opentax:
+     image: ghcr.io/kisaesdevlab/vibe-1040-opentax:${APP_TAG:-latest}
+     container_name: vibe-1040-opentax
+     restart: unless-stopped
+     init: true
+     read_only: true
+     tmpfs:
+       - /tmp
+     networks:
+       - vibe_net
+     healthcheck:
+       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8230/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+       interval: 30s
+       timeout: 5s
+       retries: 3
+       start_period: 5s
+   ```
+
+   and on the `vibe-1040` service, `depends_on: vibe-1040-opentax: { condition: service_started }`.
+   No volumes: the engine holds nothing between requests, and `read_only` plus a tmpfs `/tmp` is
+   what makes that true rather than assumed (§14).
+2. `OPENTAX_URL=http://vibe-1040-opentax:8230` in `env-templates/per-app/vibe-1040.env.tmpl`. The
+   app's default name is `opentax`, which is not this container's name on the appliance.
+3. `{ "name": "opentax", "image": "ghcr.io/kisaesdevlab/vibe-1040-opentax" }` added to the
+   manifest's `image.extras`, so the engine image is pulled, updated and rolled back with the app
+   the way the sidecar is. The image is published at `latest` and `v0.12.1` and its engine is
+   verified at build time to report the pinned 2.0.4.
+
+Nothing else changes: `/health` already degrades rather than fails when the engine is absent (the
+2026-09-27 incident fix), and the setting's acknowledgement text is unchanged.
+
+**And the caveat that does not go away.** Turning this on where the appliance holds live client
+data is the thing Q21 says not to do until `docs/wisp-amendment.md` §4.1 is approved. The switch
+was shipped ahead of Q21 deliberately (Q26), the acknowledgement says so at the moment of
+switching, and the WISP owner is the person doing the switching — so this is recorded as a
+decision taken with the question open, not as the question being answered. Answering it is still
+a written ruling on §4.1.
+
 ---
 
 ### Q26 — Which controls may be a click, and which may not?
@@ -441,32 +495,6 @@ that conversation is independent of this question and worth starting separately.
 ---
 
 ## Non-blocking, working assumption recorded
-
-### Q28 — Five comparable 1040 lines can never be compared, and one of them hides every NEC
-**Gates:** nothing. **Raised:** 2026-09-27, by the OpenTax QA pass.
-
-`data/opentax-nodes/2025.json` declares `1040:1b`, `1040:7`, `1040:8`, `1040:13b` and `1040:25c`
-as `comparable`, and `data/line-mappings/2025.json` gives none of them a contributor or a
-`computed` rollup. The worksheet side is therefore always blank, so the verdict on each is
-`worksheet_silent` or `both_blank` forever. For four of them that is honest: nothing this app
-reads feeds household wages, capital gains (1099-B is unmappable, and the line carries a note),
-Schedule 1-A or "other withholding".
-
-**`1040:8` is different.** It is Schedule 1 line 10, the sum of lines the worksheet *does* report —
-`SCH1:3` (1099-NEC) and `SCH1:7` (1099-G unemployment) — and engine 2.0.4 surfaces only Form 1040
-lines, so line 8 is the **only** place a NEC or an unemployment figure can ever be compared. Today
-it never is: a bundle with a 1099-NEC gets `worksheet_silent` on line 8 and no check at all on the
-amount, while the harness counts the line as compared.
-
-**Working assumption:** leave the map as it is and record the gap, because the fix is a line-mapping
-change — `"computed": ["SCH1:3", "SCH1:7", …]` on `1040:8`, the way `1040:1z` already rolls up
-`1a` and `1b` — and the line mappings are a versioned, person-reviewed table (Q25), not something a
-QA pass rewrites. Two things to decide when it is taken up: which `SCH1` lines belong in the rollup
-(the worksheet reports NEC *gross*, so line 8 would be gross too, which matches how `SCH1:3` already
-reads), and whether `assertConsistent` should refuse a `comparable` line with neither a contributor
-nor a rollup, which would force the other four to be declared `notCompared` with their reasons.
-
----
 
 ### Q29 — Which 1099-R distribution codes are a judgment call, and should the worksheet agree?
 **Gates:** nothing. **Raised:** 2026-09-27, by the OpenTax QA pass.
@@ -960,6 +988,47 @@ Probably a season-two question once real volume exists.
 ---
 
 ## Resolved
+
+### Q28 — Five comparable 1040 lines can never be compared, and one of them hides every NEC
+**Gates:** nothing. **Raised:** 2026-09-27, by the OpenTax QA pass.
+
+`data/opentax-nodes/2025.json` declares `1040:1b`, `1040:7`, `1040:8`, `1040:13b` and `1040:25c`
+as `comparable`, and `data/line-mappings/2025.json` gives none of them a contributor or a
+`computed` rollup. The worksheet side is therefore always blank, so the verdict on each is
+`worksheet_silent` or `both_blank` forever. For four of them that is honest: nothing this app
+reads feeds household wages, capital gains (1099-B is unmappable, and the line carries a note),
+Schedule 1-A or "other withholding".
+
+**`1040:8` is different.** It is Schedule 1 line 10, the sum of lines the worksheet *does* report —
+`SCH1:3` (1099-NEC) and `SCH1:7` (1099-G unemployment) — and engine 2.0.4 surfaces only Form 1040
+lines, so line 8 is the **only** place a NEC or an unemployment figure can ever be compared. Today
+it never is: a bundle with a 1099-NEC gets `worksheet_silent` on line 8 and no check at all on the
+amount, while the harness counts the line as compared.
+
+**Working assumption:** leave the map as it is and record the gap, because the fix is a line-mapping
+change — `"computed": ["SCH1:3", "SCH1:7", …]` on `1040:8`, the way `1040:1z` already rolls up
+`1a` and `1b` — and the line mappings are a versioned, person-reviewed table (Q25), not something a
+QA pass rewrites. Two things to decide when it is taken up: which `SCH1` lines belong in the rollup
+(the worksheet reports NEC *gross*, so line 8 would be gross too, which matches how `SCH1:3` already
+reads), and whether `assertConsistent` should refuse a `comparable` line with neither a contributor
+nor a rollup, which would force the other four to be declared `notCompared` with their reasons.
+
+**A:** 2026-09-28 — **Make the rollup.** Kurt, in his own words: "Do what is necessary! I want to be
+able to process documents, make edits and generate a draft return." Line mappings **2025.4**: `1040:8`
+is `computed` over the seven Schedule 1 income lines the worksheet reports — `SCH1:1`, `SCH1:3`,
+`SCH1:5`, `SCH1:7`, `SCH1:8b`, `SCH1:8f`, `SCH1:8z` — at gross, exactly as those lines read. Carried
+into `2026.0-unverified` unchanged in version, since it is structural and does not alter which
+printed lines Q25 still needs read. The node map's `1040:8` entry carries a note saying the engine
+side nets a preparer's Schedule C expenses while this side is gross, so a difference equal to the
+entered expenses is expected whenever a business summary was entered. `test/mapping.test.ts` holds
+the rollup (NEC + unemployment + gambling sum to line 8; four components null, never zero).
+
+The second question — refusing a `comparable` line with neither contributor nor rollup — is **not**
+done: `1040:1b`, `1040:7`, `1040:13b` and `1040:25c` stay comparable and read `worksheet_silent`
+when the engine computes something there, which is honest, and `1040:7` already carries the 1099-B
+note. Revisit if a fifth such line appears.
+
+---
 
 ### Q1 — Primary stack confirmation
 **Gated:** P0.
